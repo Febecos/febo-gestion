@@ -5,7 +5,7 @@ import LogoutButton from "./LogoutButton";
 const MODULOS = [
   { href: "/clientes", label: "Clientes / CRM", icon: "👥", ready: true },
   { href: "/productos", label: "Productos / Stock", icon: "📦", ready: false },
-  { href: "/ventas", label: "Ventas", icon: "🧾", ready: false },
+  { href: "/ventas", label: "Ventas", icon: "🧾", ready: true },
   { href: "/compras", label: "Compras", icon: "🛒", ready: false },
   { href: "/tesoreria", label: "Tesorería", icon: "💰", ready: false },
   { href: "/reportes", label: "Reportes", icon: "📊", ready: false },
