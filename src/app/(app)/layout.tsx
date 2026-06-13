@@ -1,4 +1,5 @@
 import Link from "next/link";
+import LogoutButton from "./LogoutButton";
 
 // Módulos del ERP+CRM. `ready` = ya funcional; el resto aparece como "próximamente".
 const MODULOS = [
@@ -36,6 +37,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
+        <div className="mt-6 pt-4 border-t border-gray-100"><LogoutButton /></div>
       </aside>
       <main className="flex-1 p-8 overflow-auto">{children}</main>
     </div>
