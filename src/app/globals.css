@@ -1,0 +1,6 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --bg: #f6f7f9; }
+body { background: var(--bg); color: #1f2937; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
