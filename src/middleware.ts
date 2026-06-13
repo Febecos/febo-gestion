@@ -10,7 +10,7 @@ export async function middleware(req: NextRequest) {
   if (PUBLIC.some((p) => pathname.startsWith(p))) return NextResponse.next();
 
   const token = req.cookies.get("fg_token")?.value;
-  const secret = process.env.ADMIN_JWT_SECRET;
+  const secret = process.env.FG_JWT_SECRET;
   if (token && secret) {
     try {
       await jwtVerify(token, new TextEncoder().encode(secret));
