@@ -4,7 +4,7 @@ import LogoutButton from "./LogoutButton";
 // Módulos del ERP+CRM. `ready` = ya funcional; el resto aparece como "próximamente".
 const MODULOS = [
   { href: "/clientes", label: "Clientes / CRM", icon: "👥", ready: true },
-  { href: "/productos", label: "Productos / Stock", icon: "📦", ready: false },
+  { href: "/productos", label: "Productos / Stock", icon: "📦", ready: true },
   { href: "/ventas", label: "Ventas", icon: "🧾", ready: true },
   { href: "/compras", label: "Compras", icon: "🛒", ready: false },
   { href: "/tesoreria", label: "Tesorería", icon: "💰", ready: false },
