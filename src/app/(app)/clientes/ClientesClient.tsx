@@ -195,7 +195,13 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
           <label className={lbl}>EMAIL<input value={f.email} onChange={(e) => set("email", e.target.value)} className={inp} /></label>
           <label className={lbl}>WHATSAPP<input value={f.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} className={inp} /></label>
           <label className={lbl}>ESTADO<select value={f.tipo} onChange={(e) => set("tipo", e.target.value)} className={inp}>{ESTADOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
-          <label className={lbl}>CONDICIÓN FISCAL<input value={f.condicion_fiscal} onChange={(e) => set("condicion_fiscal", e.target.value)} className={inp} /></label>
+          <label className={lbl}>CONDICIÓN FISCAL<select value={f.condicion_fiscal} onChange={(e) => set("condicion_fiscal", e.target.value)} className={inp}>
+            <option value="">— sin datos —</option>
+            <option value="responsable_inscripto">Responsable Inscripto</option>
+            <option value="monotributista">Monotributista</option>
+            <option value="consumidor_final">Consumidor Final</option>
+            <option value="exento">Exento</option>
+          </select></label>
           <label className={lbl}>PROVINCIA<input value={f.provincia} onChange={(e) => set("provincia", e.target.value)} className={inp} /></label>
           <label className={lbl}>LOCALIDAD<input value={f.localidad} onChange={(e) => set("localidad", e.target.value)} className={inp} /></label>
           <label className={lbl}>CÓDIGO POSTAL<input value={f.cod_postal} onChange={(e) => set("cod_postal", e.target.value)} className={inp} /></label>
