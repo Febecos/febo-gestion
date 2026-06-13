@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { Pool } from "@neondatabase/serverless";
 
-const ALLOWED = new Set(["codigo", "descripcion", "categoria", "marca", "proveedor", "precio", "iva_pct", "stock", "activo"]);
+const ALLOWED = new Set(["codigo", "descripcion", "descripcion_alt", "categoria", "marca", "proveedor", "precio", "iva_pct", "stock", "activo"]);
+// descripcion_alt (nombre corto para presupuesto/factura) se puede editar en CUALQUIER
+// producto, incluso los importados — porque NO toca la descripción original (que va al
+// pedido al proveedor). El resto de los campos, solo en productos propios (origen='manual').
+const SIEMPRE_EDITABLE = new Set(["descripcion_alt"]);
 
-// PATCH /api/productos/:id  Body: { field, value } — SOLO productos propios (origen='manual')
+// PATCH /api/productos/:id  Body: { field, value }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {
     const id = Number(params.id);
@@ -14,8 +18,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const sql = getDb();
     const prod = await sql`SELECT origen FROM fg_productos WHERE id = ${id}`;
     if (!prod.length) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
-    if (prod[0].origen !== "manual")
-      return NextResponse.json({ ok: false, error: "Los productos de los listados (bombas/FV) no se pueden modificar" }, { status: 403 });
+    if (prod[0].origen !== "manual" && !SIEMPRE_EDITABLE.has(field))
+      return NextResponse.json({ ok: false, error: "La descripción original de bombas/FV no se modifica. Usá la descripción alternativa." }, { status: 403 });
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try { await pool.query(`UPDATE fg_productos SET "${field}" = $1, updated_at = now() WHERE id = $2`, [value, id]); }
     finally { await pool.end(); }

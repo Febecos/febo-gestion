@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 
-type Prod = { id: number; codigo: string; descripcion: string; categoria: string; origen: string; marca: string; proveedor: string; precio: number; costo_usd: number; iva_pct: number; stock: number };
+type Prod = { id: number; codigo: string; descripcion: string; descripcion_alt: string; categoria: string; origen: string; marca: string; proveedor: string; precio: number; costo_usd: number; iva_pct: number; stock: number };
 
 const fmt = (v: number) => (v ? "$ " + Math.round(Number(v)).toLocaleString("es-AR") : "—");
 const fmtU = (v: number) => (v ? "US$ " + Number(v).toLocaleString("es-AR") : "—");
@@ -48,12 +48,15 @@ export default function ProductosClient() {
               return (
                 <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-2 font-mono text-xs">{p.codigo || "—"}</td>
-                  <td className="px-4 py-2">{p.descripcion}{propio && <span className="ml-1.5 text-[9px] bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5 font-bold">PROPIO</span>}</td>
+                  <td className="px-4 py-2">
+                    {p.descripcion}{propio && <span className="ml-1.5 text-[9px] bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5 font-bold">PROPIO</span>}
+                    {p.descripcion_alt && <div className="text-[11px] text-febo-cyan">↳ {p.descripcion_alt}</div>}
+                  </td>
                   <td className="px-4 py-2 text-gray-500 text-xs">{p.categoria}</td>
                   <td className="px-4 py-2 text-gray-600">{p.marca || p.proveedor || "—"}</td>
                   <td className="px-4 py-2 text-right font-semibold">{p.origen === "fv" ? fmtU(p.costo_usd) : fmt(p.precio)}</td>
                   <td className="px-4 py-2 text-center text-xs text-gray-500">{p.iva_pct}%</td>
-                  <td className="px-4 py-2 text-right">{propio ? <button onClick={() => setEdit(p)} className="text-gray-400" title="Editar">✏️</button> : <span title="Producto del listado (no editable)" className="text-gray-300">🔒</span>}</td>
+                  <td className="px-4 py-2 text-right"><button onClick={() => setEdit(p)} className="text-gray-400" title={propio ? "Editar" : "Editar nombre corto"}>✏️</button></td>
                 </tr>
               );
             })}
@@ -67,13 +70,14 @@ export default function ProductosClient() {
 
 function ProductoModal({ prod, cats, onClose, onSaved }: { prod: Prod | null; cats: string[]; onClose: () => void; onSaved: () => void }) {
   const esNuevo = !prod;
+  const propio = esNuevo || prod?.origen === "manual";
   const [f, setF] = useState<any>(() => ({
-    codigo: prod?.codigo || "", descripcion: prod?.descripcion || "", categoria: prod?.categoria || "OTROS",
+    codigo: prod?.codigo || "", descripcion: prod?.descripcion || "", descripcion_alt: prod?.descripcion_alt || "", categoria: prod?.categoria || "OTROS",
     marca: prod?.marca || "", proveedor: prod?.proveedor || "", precio: prod?.precio ?? "", iva_pct: prod?.iva_pct ?? 21, stock: prod?.stock ?? "",
   }));
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
-  const CAMPOS = ["codigo", "descripcion", "categoria", "marca", "proveedor", "precio", "iva_pct", "stock"];
+  const CAMPOS = ["codigo", "descripcion", "descripcion_alt", "categoria", "marca", "proveedor", "precio", "iva_pct", "stock"];
 
   async function guardar() {
     if (!f.descripcion.trim()) { alert("Poné una descripción"); return; }
@@ -83,7 +87,9 @@ function ProductoModal({ prod, cats, onClose, onSaved }: { prod: Prod | null; ca
         const r = await fetch("/api/productos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
         const d = await r.json(); if (!d.ok) throw new Error(d.error);
       } else {
-        for (const k of CAMPOS) {
+        // importados: solo se manda descripcion_alt; propios: todos los campos
+        const campos = propio ? CAMPOS : ["descripcion_alt"];
+        for (const k of campos) {
           const nv = (f[k] ?? "").toString().trim();
           const ov = ((prod as any)[k] ?? "").toString();
           if (nv !== ov) { const r = await fetch(`/api/productos/${prod!.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ field: k, value: ["precio", "iva_pct", "stock"].includes(k) ? (Number(f[k]) || null) : (f[k] || null) }) }); const d = await r.json(); if (!d.ok) throw new Error(d.error); }
@@ -103,19 +109,21 @@ function ProductoModal({ prod, cats, onClose, onSaved }: { prod: Prod | null; ca
   return (
     <div className="fixed inset-0 bg-black/45 z-50 overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-xl mx-auto my-10 p-7" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold mb-4">{esNuevo ? "＋ Nuevo producto propio" : "✏️ Editar producto"}</h2>
+        <h2 className="text-lg font-bold mb-1">{esNuevo ? "＋ Nuevo producto propio" : propio ? "✏️ Editar producto" : "✏️ Nombre corto del producto"}</h2>
+        {!propio && <p className="text-xs text-gray-400 mb-4">Producto del listado (bombas/FV): la descripción original no se modifica (va al pedido al proveedor). Solo podés definir un nombre corto para presupuesto/factura.</p>}
         <div className="grid grid-cols-2 gap-3">
-          <label className={lbl}>CÓDIGO<input value={f.codigo} onChange={(e) => set("codigo", e.target.value)} className={inp} placeholder="opcional" /></label>
-          <label className={lbl}>CATEGORÍA<input value={f.categoria} onChange={(e) => set("categoria", e.target.value)} className={inp} list="cats" /><datalist id="cats">{cats.map((c) => <option key={c} value={c} />)}</datalist></label>
-          <label className={lbl + " col-span-2"}>DESCRIPCIÓN *<input value={f.descripcion} onChange={(e) => set("descripcion", e.target.value)} className={inp} /></label>
-          <label className={lbl}>MARCA<input value={f.marca} onChange={(e) => set("marca", e.target.value)} className={inp} /></label>
-          <label className={lbl}>PROVEEDOR<input value={f.proveedor} onChange={(e) => set("proveedor", e.target.value)} className={inp} placeholder="ej: Mercado Libre - X" /></label>
-          <label className={lbl}>PRECIO (ARS)<input type="number" value={f.precio} onChange={(e) => set("precio", e.target.value)} className={inp} /></label>
-          <label className={lbl}>IVA %<select value={f.iva_pct} onChange={(e) => set("iva_pct", e.target.value)} className={inp}><option value="21">21%</option><option value="10.5">10,5%</option><option value="0">0%</option></select></label>
-          <label className={lbl}>STOCK<input type="number" value={f.stock} onChange={(e) => set("stock", e.target.value)} className={inp} /></label>
+          <label className={lbl}>CÓDIGO<input value={f.codigo} onChange={(e) => set("codigo", e.target.value)} className={inp} placeholder="opcional" disabled={!propio} /></label>
+          <label className={lbl}>CATEGORÍA<input value={f.categoria} onChange={(e) => set("categoria", e.target.value)} className={inp} list="cats" disabled={!propio} /><datalist id="cats">{cats.map((c) => <option key={c} value={c} />)}</datalist></label>
+          <label className={lbl + " col-span-2"}>DESCRIPCIÓN ORIGINAL{!propio && " (va al pedido al proveedor)"}<input value={f.descripcion} onChange={(e) => set("descripcion", e.target.value)} className={inp + (propio ? "" : " bg-gray-100 text-gray-500")} disabled={!propio} /></label>
+          <label className={lbl + " col-span-2"}>DESCRIPCIÓN ALTERNATIVA <span className="font-normal text-febo-cyan">(corta, sale en presupuesto/factura)</span><input value={f.descripcion_alt} onChange={(e) => set("descripcion_alt", e.target.value)} className={inp} placeholder="ej: Panel 550W Jinko" /></label>
+          <label className={lbl}>MARCA<input value={f.marca} onChange={(e) => set("marca", e.target.value)} className={inp} disabled={!propio} /></label>
+          <label className={lbl}>PROVEEDOR<input value={f.proveedor} onChange={(e) => set("proveedor", e.target.value)} className={inp} placeholder="ej: Mercado Libre - X" disabled={!propio} /></label>
+          <label className={lbl}>PRECIO (ARS)<input type="number" value={f.precio} onChange={(e) => set("precio", e.target.value)} className={inp} disabled={!propio} /></label>
+          <label className={lbl}>IVA %<select value={f.iva_pct} onChange={(e) => set("iva_pct", e.target.value)} className={inp} disabled={!propio}><option value="21">21%</option><option value="10.5">10,5%</option><option value="0">0%</option></select></label>
+          <label className={lbl}>STOCK<input type="number" value={f.stock} onChange={(e) => set("stock", e.target.value)} className={inp} disabled={!propio} /></label>
         </div>
         <div className="flex justify-between items-center mt-6">
-          {esNuevo ? <span /> : <button onClick={eliminar} className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold">🗑 Eliminar</button>}
+          {!esNuevo && propio ? <button onClick={eliminar} className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold">🗑 Eliminar</button> : <span />}
           <div className="flex gap-2">
             <button onClick={onClose} className="border border-gray-300 rounded-lg px-5 py-2 text-sm">Cancelar</button>
             <button onClick={guardar} disabled={saving} className="bg-febo-verde text-white rounded-lg px-6 py-2 text-sm font-semibold disabled:opacity-50">{saving ? "Guardando…" : esNuevo ? "Crear" : "Guardar"}</button>

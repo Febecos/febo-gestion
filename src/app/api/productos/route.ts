@@ -29,7 +29,7 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(100, Number(sp.get("limit")) || 50);
     const like = `%${q}%`;
     const rows = await sql`
-      SELECT id, codigo, descripcion, categoria, origen, marca, proveedor, precio, costo_usd, iva_pct, stock, activo
+      SELECT id, codigo, descripcion, descripcion_alt, categoria, origen, marca, proveedor, precio, costo_usd, iva_pct, stock, activo
       FROM fg_productos
       WHERE activo = true
         AND (${q} = '' OR lower(coalesce(codigo,'')||' '||coalesce(descripcion,'')||' '||coalesce(marca,'')) LIKE ${like})
