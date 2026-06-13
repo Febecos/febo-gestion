@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 
-type Prod = { id: number; codigo: string; descripcion: string; descripcion_alt: string; categoria: string; origen: string; marca: string; proveedor: string; precio: number; costo_usd: number; iva_pct: number; stock: number };
+type Prod = { id: number; codigo: string; descripcion: string; descripcion_alt: string; categoria: string; origen: string; marca: string; fabricante: string; proveedor: string; precio: number; costo_usd: number; costo_ars: number; precio_venta: number; iva_pct: number; disponibilidad: string; sin_precio: boolean; en_stock: boolean; stock: number };
 
 const fmt = (v: number) => (v ? "$ " + Math.round(Number(v)).toLocaleString("es-AR") : "—");
 const fmtU = (v: number) => (v ? "US$ " + Number(v).toLocaleString("es-AR") : "—");
@@ -9,7 +9,9 @@ const fmtU = (v: number) => (v ? "US$ " + Number(v).toLocaleString("es-AR") : "�
 export default function ProductosClient() {
   const [rows, setRows] = useState<Prod[]>([]);
   const [cats, setCats] = useState<{ categoria: string; n: number }[]>([]);
-  const [q, setQ] = useState(""); const [cat, setCat] = useState("");
+  const [provs, setProvs] = useState<{ proveedor: string; n: number }[]>([]);
+  const [dolar, setDolar] = useState(0);
+  const [q, setQ] = useState(""); const [cat, setCat] = useState(""); const [prov, setProv] = useState(""); const [soloStock, setSoloStock] = useState(false);
   const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<Prod | null>(null);
   const [nuevo, setNuevo] = useState(false);
@@ -17,46 +19,54 @@ export default function ProductosClient() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const p = new URLSearchParams({ q, categoria: cat, limit: "100" });
+      const p = new URLSearchParams({ q, categoria: cat, proveedor: prov, stock: soloStock ? "1" : "", limit: "200" });
       const r = await fetch("/api/productos?" + p); const d = await r.json();
-      if (d.ok) { setRows(d.productos); setCats(d.categorias); }
+      if (d.ok) { setRows(d.productos); setCats(d.categorias); setProvs(d.proveedores || []); setDolar(d.dolar || 0); }
     } finally { setLoading(false); }
-  }, [q, cat]);
+  }, [q, cat, prov, soloStock]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
   return (
     <div>
       <div className="flex flex-wrap gap-3 mb-4 items-center">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar código / descripción / marca…" className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[260px]" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar código / descripción / fabricante…" className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[240px]" />
         <select value={cat} onChange={(e) => setCat(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
           <option value="">Todas las categorías</option>
           {cats.map((c) => <option key={c.categoria} value={c.categoria}>{c.categoria} ({c.n})</option>)}
         </select>
-        <span className="text-sm text-gray-500">{rows.length} productos</span>
+        <select value={prov} onChange={(e) => setProv(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+          <option value="">Todos los proveedores</option>
+          {provs.map((p) => <option key={p.proveedor} value={p.proveedor}>{p.proveedor} ({p.n})</option>)}
+        </select>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer"><input type="checkbox" checked={soloStock} onChange={(e) => setSoloStock(e.target.checked)} /> Solo en stock</label>
+        <span className="text-sm text-gray-500">{rows.length} prod.{dolar ? ` · US$ = $${dolar}` : ""}</span>
         <button onClick={() => setNuevo(true)} className="ml-auto bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">＋ Nuevo producto</button>
       </div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
-            <th className="text-left px-4 py-3">Código</th><th className="text-left px-4 py-3">Descripción</th><th className="text-left px-4 py-3">Categoría</th><th className="text-left px-4 py-3">Marca / Prov.</th><th className="text-right px-4 py-3">Precio / Costo</th><th className="text-center px-4 py-3">IVA</th><th></th>
+            <th className="text-left px-3 py-3">Código</th><th className="text-left px-3 py-3">Descripción</th><th className="text-left px-3 py-3">Categoría</th><th className="text-left px-3 py-3">Fabricante</th><th className="text-left px-3 py-3">Proveedor</th><th className="text-center px-3 py-3">Stock</th><th className="text-right px-3 py-3">Costo USD</th><th className="text-right px-3 py-3">Costo ARS</th><th className="text-right px-3 py-3">Precio venta</th><th></th>
           </tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={7} className="text-center py-8 text-gray-400">Cargando…</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-8 text-gray-400">Sin resultados</td></tr>
+            {loading ? <tr><td colSpan={10} className="text-center py-8 text-gray-400">Cargando…</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={10} className="text-center py-8 text-gray-400">Sin resultados</td></tr>
             : rows.map((p) => {
               const propio = p.origen === "manual";
               return (
                 <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-2 font-mono text-xs">{p.codigo || "—"}</td>
-                  <td className="px-4 py-2">
-                    {p.descripcion}{propio && <span className="ml-1.5 text-[9px] bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5 font-bold">PROPIO</span>}
+                  <td className="px-3 py-2 font-mono text-[11px]">{p.codigo || "—"}</td>
+                  <td className="px-3 py-2 max-w-[280px]">
+                    <div className="truncate" title={p.descripcion}>{p.descripcion}{propio && <span className="ml-1.5 text-[9px] bg-emerald-100 text-emerald-700 rounded px-1.5 py-0.5 font-bold">PROPIO</span>}</div>
                     {p.descripcion_alt && <div className="text-[11px] text-febo-cyan">↳ {p.descripcion_alt}</div>}
                   </td>
-                  <td className="px-4 py-2 text-gray-500 text-xs">{p.categoria}</td>
-                  <td className="px-4 py-2 text-gray-600">{p.marca || p.proveedor || "—"}</td>
-                  <td className="px-4 py-2 text-right font-semibold">{p.origen === "fv" ? fmtU(p.costo_usd) : fmt(p.precio)}</td>
-                  <td className="px-4 py-2 text-center text-xs text-gray-500">{p.iva_pct}%</td>
-                  <td className="px-4 py-2 text-right"><button onClick={() => setEdit(p)} className="text-gray-400" title={propio ? "Editar" : "Editar nombre corto"}>✏️</button></td>
+                  <td className="px-3 py-2 text-gray-500 text-xs">{p.categoria}</td>
+                  <td className="px-3 py-2 text-gray-600 text-xs">{p.fabricante || p.marca || "—"}</td>
+                  <td className="px-3 py-2 text-gray-600 text-xs">{p.proveedor || "—"}</td>
+                  <td className="px-3 py-2 text-center">{p.en_stock ? <span className="text-emerald-600" title={p.disponibilidad}>●</span> : <span className="text-gray-300" title={p.disponibilidad || "sin fecha"}>○</span>}</td>
+                  <td className="px-3 py-2 text-right text-gray-500 text-xs">{p.origen === "fv" ? fmtU(p.costo_usd) : "—"}</td>
+                  <td className="px-3 py-2 text-right text-gray-500 text-xs">{p.costo_ars ? fmt(p.costo_ars) : "—"}</td>
+                  <td className="px-3 py-2 text-right font-semibold">{p.sin_precio ? <span className="text-amber-500 text-xs">s/precio</span> : fmt(p.precio_venta)}</td>
+                  <td className="px-3 py-2 text-right"><button onClick={() => setEdit(p)} className="text-gray-400" title={propio ? "Editar" : "Editar nombre corto"}>✏️</button></td>
                 </tr>
               );
             })}

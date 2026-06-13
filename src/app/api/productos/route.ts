@@ -19,24 +19,52 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// GET /api/productos?q=&categoria=&limit=  → catálogo unificado (bombas + FV)
+// GET /api/productos?q=&categoria=&proveedor=&stock=&limit=  → catálogo unificado.
+// Calcula precios FV con la MISMA lógica del cotizador: costo_usd × dólar (fv_config)
+// × markup × IVA. El dólar sale de fv_config (no se duplica).
+const MARKUP = 1.30; // markup 30% (catálogo Multiradio). TODO: configurable / multi-lista.
+
 export async function GET(req: NextRequest) {
   try {
     const sql = getDb();
     const sp = req.nextUrl.searchParams;
     const q = (sp.get("q") || "").trim().toLowerCase();
     const categoria = (sp.get("categoria") || "").trim();
-    const limit = Math.min(100, Number(sp.get("limit")) || 50);
+    const proveedor = (sp.get("proveedor") || "").trim();
+    const stock = (sp.get("stock") || "").trim(); // '1' = solo en stock
+    const limit = Math.min(200, Number(sp.get("limit")) || 50);
     const like = `%${q}%`;
+
+    // dólar del sistema FV (mismas reglas)
+    let dolar = 1460;
+    try { const cfg = await sql`SELECT data FROM fv_config WHERE id = 1`; if (cfg[0]?.data?.dolar) dolar = Number(cfg[0].data.dolar); } catch {}
+
     const rows = await sql`
-      SELECT id, codigo, descripcion, descripcion_alt, categoria, origen, marca, proveedor, precio, costo_usd, iva_pct, stock, activo
+      SELECT id, codigo, descripcion, descripcion_alt, categoria, origen, marca, fabricante, proveedor,
+             precio, costo_usd, iva_pct, disponibilidad, sin_precio, stock, activo
       FROM fg_productos
       WHERE activo = true
-        AND (${q} = '' OR lower(coalesce(codigo,'')||' '||coalesce(descripcion,'')||' '||coalesce(marca,'')) LIKE ${like})
+        AND (${q} = '' OR lower(coalesce(codigo,'')||' '||coalesce(descripcion,'')||' '||coalesce(marca,'')||' '||coalesce(fabricante,'')) LIKE ${like})
         AND (${categoria} = '' OR categoria = ${categoria})
+        AND (${proveedor} = '' OR proveedor = ${proveedor})
+        AND (${stock} = '' OR disponibilidad ILIKE '%stock%')
       ORDER BY categoria, descripcion LIMIT ${limit}`;
+
+    const productos = rows.map((p: any) => {
+      let costo_ars = null, precio_venta = null;
+      if (p.origen === "fv" && p.costo_usd && !p.sin_precio) {
+        costo_ars = Math.round(Number(p.costo_usd) * dolar);
+        precio_venta = Math.round(costo_ars * MARKUP * (1 + Number(p.iva_pct || 21) / 100));
+      } else if (p.precio) {
+        precio_venta = Number(p.precio);
+      }
+      const en_stock = (p.disponibilidad || "").toLowerCase().includes("stock");
+      return { ...p, costo_ars, precio_venta, en_stock };
+    });
+
     const cats = await sql`SELECT categoria, COUNT(*)::int n FROM fg_productos WHERE activo = true GROUP BY categoria ORDER BY categoria`;
-    return NextResponse.json({ ok: true, productos: rows, categorias: cats });
+    const provs = await sql`SELECT proveedor, COUNT(*)::int n FROM fg_productos WHERE activo = true AND proveedor IS NOT NULL GROUP BY proveedor ORDER BY proveedor`;
+    return NextResponse.json({ ok: true, productos, categorias: cats, proveedores: provs, dolar });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
