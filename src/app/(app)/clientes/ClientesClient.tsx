@@ -287,14 +287,23 @@ const TIPO_COMP: Record<string, { l: string; c: string; o: number }> = {
   factura: { l: "Factura", c: "#059669", o: 2 }, remito: { l: "Remito", c: "#7c3aed", o: 3 },
 };
 
+const FICHA_TABS = [
+  { k: "presupuestos", l: "Presupuestos" }, { k: "pedidos", l: "Pedidos" },
+  { k: "facturas", l: "Facturas" }, { k: "remitos", l: "Remitos" }, { k: "pagos", l: "Pagos" },
+] as const;
+type FichaTab = (typeof FICHA_TABS)[number]["k"];
+const COTI_BASE = "https://coti.febecos.com";
+const esPedidoEstado = (e: string) => ["pedido", "convertido"].includes((e || "").toLowerCase());
+
 function OperacionesTab({ clienteId }: { clienteId: number }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [sub, setSub] = useState<FichaTab>("presupuestos");
   useEffect(() => {
     let vivo = true;
     setLoading(true);
     fetch(`/api/clientes/${clienteId}/operaciones`).then((r) => r.json()).then((d) => {
-      if (vivo) { setData(d.ok ? d : { comprobantes: [], pagos: [], resumen: {} }); setLoading(false); }
+      if (vivo) { setData(d.ok ? d : {}); setLoading(false); }
     }).catch(() => vivo && setLoading(false));
     return () => { vivo = false; };
   }, [clienteId]);
@@ -305,29 +314,20 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
   const compras = data?.compras || [];
   const pagos = data?.pagos || [];
   const r = data?.resumen || {};
-  const COTI = "https://coti.febecos.com";
-  const tipoP = (t: string) => (t === "fv" ? ["FV", "#d97706"] : ["Rev", "#2563eb"]);
-
-  // Agrupar comprobantes por operación (cabeza = presupuesto). Cada operación = una cadena.
-  const ops = new Map<number, any[]>();
-  for (const c of comps) {
-    const k = c.operacion_id || c.id;
-    if (!ops.has(k)) ops.set(k, []);
-    ops.get(k)!.push(c);
-  }
-  const operaciones = Array.from(ops.entries()).map(([opId, list]) => {
-    const ordenada = [...list].sort((a, b) => (TIPO_COMP[a.tipo]?.o ?? 9) - (TIPO_COMP[b.tipo]?.o ?? 9));
-    const cabeza = ordenada.find((c) => c.tipo === "presupuesto") || ordenada[0];
-    const pagosOp = pagos.filter((p: any) => ordenada.some((c) => c.id === p.comprobante_id));
-    return { opId, cabeza, docs: ordenada, pagos: pagosOp };
-  }).sort((a, b) => b.opId - a.opId);
+  const pedidos = presupuestos.filter((p: any) => esPedidoEstado(p.estado));
+  const facturasFg = comps.filter((c: any) => c.tipo === "factura");
+  const remitos = comps.filter((c: any) => c.tipo === "remito");
   const estadoChip = r.estado_derivado === "compro" ? ["✅ Cliente que compró", "#059669"]
     : r.estado_derivado === "cotizo" ? ["📝 Cliente que cotizó", "#d97706"]
     : ["📇 Sin operaciones", "#64748b"];
+  const cuenta: Record<FichaTab, number> = {
+    presupuestos: presupuestos.length, pedidos: pedidos.length,
+    facturas: facturasFg.length + compras.length, remitos: remitos.length, pagos: pagos.length,
+  };
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-3">
         <span style={{ background: (estadoChip[1] as string) + "1a", color: estadoChip[1] as string }} className="rounded-lg px-3 py-1.5 text-sm font-semibold">{estadoChip[0]}</span>
         <div className="ml-auto grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-1 text-sm">
           <div className="text-right">
@@ -347,114 +347,79 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
         </div>
       </div>
 
-      {presupuestos.length === 0 && comps.length === 0 && compras.length === 0 ? (
-        <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
-          Este cliente todavía no tiene operaciones.<br />
-          <span className="text-xs">Creá un presupuesto en coti.febecos.com con su CUIT o email.</span>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {presupuestos.length > 0 && (
-            <div>
-              <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Presupuestos (coti)</div>
-              <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-                    <tr><th className="text-left px-3 py-2">Número</th><th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Detalle</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Estado</th><th className="text-right px-3 py-2">Precio</th><th></th></tr>
-                  </thead>
-                  <tbody>
-                    {presupuestos.map((p: any) => {
-                      const tp = tipoP(p.tipo); const m = p.tipo === "fv" ? "USD" : "$";
-                      return (
-                        <tr key={p.id} className="border-t border-gray-100">
-                          <td className="px-3 py-2 font-semibold">{p.numero}</td>
-                          <td className="px-3 py-2"><span style={{ background: (tp[1] as string) + "1a", color: tp[1] as string }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{tp[0]}</span></td>
-                          <td className="px-3 py-2 text-gray-600">{p.bomba_codigo || p.bomba_descripcion || "—"}</td>
-                          <td className="px-3 py-2 text-gray-500">{p.created_at ? new Date(p.created_at).toLocaleDateString("es-AR") : "—"}</td>
-                          <td className="px-3 py-2 text-gray-500">{p.estado || "—"}</td>
-                          <td className="px-3 py-2 text-right font-semibold">{m} {Math.round(Number(p.precio_ofrecido) || 0).toLocaleString("es-AR")}</td>
-                          <td className="px-3 py-2 text-right whitespace-nowrap">
-                            {p.public_token && <a href={`${COTI}/p/${p.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (link público)" className="text-gray-400 hover:text-febo-azul">📄</a>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+      {/* Solapas internas: Presupuestos / Pedidos / Facturas / Remitos / Pagos */}
+      <div className="flex gap-1 border-b border-gray-200 mb-3 text-sm">
+        {FICHA_TABS.map((t) => (
+          <button key={t.k} onClick={() => setSub(t.k)}
+            className={`px-3 py-1.5 font-semibold border-b-2 -mb-px ${sub === t.k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
+            {t.l} <span className="text-[11px] text-gray-400">({cuenta[t.k]})</span>
+          </button>
+        ))}
+      </div>
+
+      {sub === "presupuestos" && <TablaPresup rows={presupuestos} vacio="Sin presupuestos." />}
+      {sub === "pedidos" && <TablaPresup rows={pedidos} vacio="Sin pedidos (presupuestos confirmados como pedido)." />}
+      {sub === "facturas" && (
+        (facturasFg.length + compras.length) === 0
+          ? <Vacio txt="Sin facturas." />
+          : <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr><th className="text-left px-3 py-2">Comprobante</th><th className="text-left px-3 py-2">Origen</th><th className="text-left px-3 py-2">Fecha</th><th className="text-right px-3 py-2">Monto</th></tr></thead>
+                <tbody>
+                  {facturasFg.map((c: any) => <tr key={"f" + c.id} className="border-t border-gray-100"><td className="px-3 py-2 font-semibold">{c.numero}</td><td className="px-3 py-2 text-gray-500">FEBO-GESTION</td><td className="px-3 py-2 text-gray-500">{c.fecha ? new Date(c.fecha).toLocaleDateString("es-AR") : "—"}</td><td className="px-3 py-2 text-right font-semibold">{fmtMonto(Number(c.total))}</td></tr>)}
+                  {compras.map((c: any) => <tr key={"x" + c.id} className="border-t border-gray-100"><td className="px-3 py-2 font-semibold">{c.nro_factura || "—"} {c.tiene_archivo && <span title="PDF">📎</span>}</td><td className="px-3 py-2 text-gray-500">Tango (externa)</td><td className="px-3 py-2 text-gray-500">{c.fecha ? new Date(c.fecha).toLocaleDateString("es-AR") : "—"}</td><td className="px-3 py-2 text-right font-semibold">{fmtMonto(Number(c.monto))}</td></tr>)}
+                </tbody>
+              </table>
             </div>
-          )}
-          {operaciones.length > 0 && (
-            <div>
-              <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Operaciones (FEBO-GESTION)</div>
-              <div className="space-y-3">
-                {operaciones.map((op) => {
-                  const tc = TIPO_COMP[op.cabeza.tipo] || { l: op.cabeza.tipo, c: "#888", o: 9 };
-                  const fcab = op.cabeza.fecha || op.cabeza.created_at;
-                  return (
-                    <div key={op.opId} className="border border-gray-200 rounded-xl overflow-hidden">
-                      <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 border-b border-gray-100">
-                        <span className="font-bold text-sm">Operación #{op.opId}</span>
-                        <span className="text-xs text-gray-400">{op.cabeza.numero}</span>
-                        <span className="text-xs text-gray-400 ml-1">{fcab ? new Date(fcab).toLocaleDateString("es-AR") : ""}</span>
-                        <span className="ml-auto font-bold text-sm">{fmtMonto(Number(op.cabeza.total))}</span>
-                      </div>
-                      <div className="divide-y divide-gray-50">
-                        {op.docs.map((c: any, i: number) => {
-                          const t = TIPO_COMP[c.tipo] || { l: c.tipo, c: "#888", o: 9 };
-                          const fecha = c.fecha || c.created_at;
-                          return (
-                            <div key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
-                              <span className="text-gray-300">{i === 0 ? "" : "└─"}</span>
-                              <span style={{ background: t.c + "1a", color: t.c }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{t.l}</span>
-                              <span className="font-semibold">{c.numero || "—"}</span>
-                              <span className="text-xs text-gray-400">{c.estado}</span>
-                              <span className="text-xs text-gray-400">{fecha ? new Date(fecha).toLocaleDateString("es-AR") : ""}</span>
-                              <span className="ml-auto text-gray-600">{fmtMonto(Number(c.total))}</span>
-                              {c.token && <a href={`/p/${c.token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir" className="text-gray-400 hover:text-febo-azul ml-1">📄</a>}
-                            </div>
-                          );
-                        })}
-                        {op.pagos.map((p: any) => (
-                          <div key={"p" + p.id} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-emerald-50/40">
-                            <span className="text-gray-300">└─</span>
-                            <span className="bg-emerald-100 text-emerald-700 rounded px-2 py-0.5 text-[11px] font-semibold">💵 Pago</span>
-                            <span className="text-xs text-gray-500">{p.medio || ""}</span>
-                            <span className="text-xs text-gray-400">{p.fecha ? new Date(p.fecha).toLocaleDateString("es-AR") : ""}</span>
-                            <span className="ml-auto font-semibold text-emerald-700">{fmtMonto(Number(p.monto))}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          {compras.length > 0 && (
-            <div>
-              <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Compras / Facturas externas (Tango)</div>
-              <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-                    <tr><th className="text-left px-3 py-2">Factura</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Descripción</th><th className="text-right px-3 py-2">Monto</th></tr>
-                  </thead>
-                  <tbody>
-                    {compras.map((c: any) => (
-                      <tr key={c.id} className="border-t border-gray-100">
-                        <td className="px-3 py-2 font-semibold">{c.nro_factura || "—"} {c.tiene_archivo && <span title="tiene PDF">📎</span>}</td>
-                        <td className="px-3 py-2 text-gray-500">{c.fecha ? new Date(c.fecha).toLocaleDateString("es-AR") : "—"}</td>
-                        <td className="px-3 py-2 text-gray-600">{c.descripcion || "—"}</td>
-                        <td className="px-3 py-2 text-right font-semibold">{fmtMonto(Number(c.monto))}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
       )}
+      {sub === "remitos" && (
+        remitos.length === 0 ? <Vacio txt="Sin remitos." /> :
+        <div className="border border-gray-200 rounded-xl overflow-hidden"><table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr><th className="text-left px-3 py-2">Número</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Estado</th></tr></thead>
+          <tbody>{remitos.map((c: any) => <tr key={c.id} className="border-t border-gray-100"><td className="px-3 py-2 font-semibold">{c.numero}</td><td className="px-3 py-2 text-gray-500">{c.fecha ? new Date(c.fecha).toLocaleDateString("es-AR") : "—"}</td><td className="px-3 py-2 text-gray-500">{c.estado}</td></tr>)}</tbody>
+        </table></div>
+      )}
+      {sub === "pagos" && (
+        pagos.length === 0 ? <Vacio txt="Sin pagos registrados." /> :
+        <div className="border border-gray-200 rounded-xl overflow-hidden"><table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Medio</th><th className="text-right px-3 py-2">Monto</th></tr></thead>
+          <tbody>{pagos.map((p: any) => <tr key={p.id} className="border-t border-gray-100"><td className="px-3 py-2 text-gray-500">{p.fecha ? new Date(p.fecha).toLocaleDateString("es-AR") : "—"}</td><td className="px-3 py-2 text-gray-600">{p.medio || "—"}</td><td className="px-3 py-2 text-right font-semibold text-emerald-600">{fmtMonto(Number(p.monto))}</td></tr>)}</tbody>
+        </table></div>
+      )}
+    </div>
+  );
+}
+
+function Vacio({ txt }: { txt: string }) {
+  return <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">{txt}</div>;
+}
+
+function TablaPresup({ rows, vacio }: { rows: any[]; vacio: string }) {
+  if (!rows.length) return <Vacio txt={vacio} />;
+  const tipoP = (t: string) => (t === "fv" ? ["FV", "#d97706"] : ["Rev", "#2563eb"]);
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      <table className="w-full text-sm">
+        <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+          <tr><th className="text-left px-3 py-2">Número</th><th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Detalle</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Estado</th><th className="text-right px-3 py-2">Precio</th><th></th></tr>
+        </thead>
+        <tbody>
+          {rows.map((p: any) => {
+            const tp = tipoP(p.tipo); const m = p.tipo === "fv" ? "USD" : "$";
+            return (
+              <tr key={p.id} className="border-t border-gray-100">
+                <td className="px-3 py-2 font-semibold">{p.numero}</td>
+                <td className="px-3 py-2"><span style={{ background: (tp[1] as string) + "1a", color: tp[1] as string }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{tp[0]}</span></td>
+                <td className="px-3 py-2 text-gray-600">{p.bomba_codigo || p.bomba_descripcion || "—"}</td>
+                <td className="px-3 py-2 text-gray-500">{p.created_at ? new Date(p.created_at).toLocaleDateString("es-AR") : "—"}</td>
+                <td className="px-3 py-2 text-gray-500">{p.estado || "—"}</td>
+                <td className="px-3 py-2 text-right font-semibold">{m} {Math.round(Number(p.precio_ofrecido) || 0).toLocaleString("es-AR")}</td>
+                <td className="px-3 py-2 text-right">{p.public_token && <a href={`${COTI_BASE}/p/${p.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
