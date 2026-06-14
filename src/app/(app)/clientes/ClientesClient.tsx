@@ -5,7 +5,7 @@ type Cliente = {
   id: number; tipo: string; nombre: string; email: string; whatsapp: string;
   cuit: string; provincia: string; localidad: string; razon_social?: string;
   domicilio?: string; cod_postal?: string; condicion_fiscal?: string; notas?: string;
-  tags: string[]; origenes: string[]; email_opt_out?: boolean;
+  tags: string[]; origenes: string[]; email_opt_out?: boolean; descuento_pct?: number;
   total_pedidos: number; monto_total: number; ultimo_contacto_at: string;
 };
 
@@ -24,7 +24,7 @@ const COLORES: Record<string, string> = {
   proveedor: "#059669", pocero: "#0d9488", instalador: "#ea580c", prospecto_curso: "#db2777",
 };
 const fmtMonto = (v: number) => (v ? "$ " + Math.round(v).toLocaleString("es-AR") : "—");
-const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas"] as const;
+const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "descuento_pct"] as const;
 
 export default function ClientesClient({ openClienteId }: { openClienteId?: number } = {}) {
   const [rows, setRows] = useState<Cliente[]>([]);
@@ -132,7 +132,7 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
     razon_social: cliente?.razon_social || "", email: cliente?.email || "", whatsapp: cliente?.whatsapp || "",
     cuit: cliente?.cuit || "", provincia: cliente?.provincia || "", localidad: cliente?.localidad || "",
     cod_postal: cliente?.cod_postal || "", domicilio: cliente?.domicilio || "", condicion_fiscal: cliente?.condicion_fiscal || "",
-    notas: cliente?.notas || "",
+    notas: cliente?.notas || "", descuento_pct: cliente?.descuento_pct ?? "",
   }));
   const [tags, setTags] = useState<string[]>(cliente?.tags || []);
   const [optOut, setOptOut] = useState<boolean>(!!cliente?.email_opt_out);
@@ -232,6 +232,7 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
             <option value="consumidor_final">Consumidor Final</option>
             <option value="exento">Exento</option>
           </select></label>
+          <label className={lbl}>DESCUENTO % (predeterminado)<input type="number" value={f.descuento_pct} onChange={(e) => set("descuento_pct", e.target.value)} className={inp} placeholder="0" /></label>
           <label className={lbl}>PROVINCIA<input value={f.provincia} onChange={(e) => set("provincia", e.target.value)} className={inp} /></label>
           <label className={lbl}>LOCALIDAD<input value={f.localidad} onChange={(e) => set("localidad", e.target.value)} className={inp} /></label>
           <label className={lbl}>CÓDIGO POSTAL<input value={f.cod_postal} onChange={(e) => set("cod_postal", e.target.value)} className={inp} /></label>

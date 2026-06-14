@@ -31,8 +31,8 @@ export async function POST(req: NextRequest) {
     }
 
     const ins = await sql`
-      INSERT INTO clientes (tipo, nombre, razon_social, email, whatsapp, cuit, domicilio, localidad, provincia, cod_postal, condicion_fiscal, notas, origen, tags, origenes, primer_contacto_at, ultimo_contacto_at)
-      VALUES (${tipo}, ${b.nombre || null}, ${b.razon_social || null}, ${email}, ${wa}, ${cuit}, ${b.domicilio || null}, ${b.localidad || null}, ${b.provincia || null}, ${b.cod_postal || null}, ${b.condicion_fiscal || null}, ${b.notas || null}, 'admin_erp', ${tags}, ${origenes}, now(), now())
+      INSERT INTO clientes (tipo, nombre, razon_social, email, whatsapp, cuit, domicilio, localidad, provincia, cod_postal, condicion_fiscal, notas, descuento_pct, origen, tags, origenes, primer_contacto_at, ultimo_contacto_at)
+      VALUES (${tipo}, ${b.nombre || null}, ${b.razon_social || null}, ${email}, ${wa}, ${cuit}, ${b.domicilio || null}, ${b.localidad || null}, ${b.provincia || null}, ${b.cod_postal || null}, ${b.condicion_fiscal || null}, ${b.notas || null}, ${Number(b.descuento_pct) || 0}, 'admin_erp', ${tags}, ${origenes}, now(), now())
       RETURNING id`;
     return NextResponse.json({ ok: true, id: ins[0].id, accion: "insert" });
   } catch (e: any) {
@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
     // Filtro por estado (tipo) O por etiqueta (tags), igual que el admin.
     const rows = await sql`
       SELECT id, tipo, nombre, apellido, razon_social, empresa, email, whatsapp, cuit,
-             provincia, localidad, cod_postal, domicilio, condicion_fiscal, notas, email_opt_out,
+             provincia, localidad, cod_postal, domicilio, condicion_fiscal, notas, email_opt_out, descuento_pct,
              tags, origenes, total_presupuestos, total_pedidos, monto_total, ultimo_contacto_at
       FROM clientes
       WHERE (crm_eliminado IS NULL OR crm_eliminado = false)
