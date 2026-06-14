@@ -6,7 +6,7 @@ import ProductosClient from "./productos/ProductosClient";
 import CotizadorEmbed from "./cotizadores/CotizadorEmbed";
 
 export type WinKey = "clientes" | "ventas" | "productos" | "cot-bomba" | "cot-fv";
-type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean };
+type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean };
 
 const TITULOS: Record<WinKey, string> = {
   clientes: "👥 Clientes / CRM", ventas: "🧾 Ventas", productos: "📦 Productos",
@@ -27,6 +27,7 @@ export default function WindowManager({ children }: { children: React.ReactNode 
   const [wins, setWins] = useState<Win[]>([]);
   const zTop = useRef(10);
   const idSeq = useRef(1);
+  const deskRef = useRef<HTMLDivElement>(null);
 
   const focus = useCallback((id: number) => {
     zTop.current += 1; const z = zTop.current;
@@ -35,48 +36,80 @@ export default function WindowManager({ children }: { children: React.ReactNode 
 
   const open = useCallback((k: WinKey) => {
     setWins((ws) => {
-      const ex = ws.find((w) => w.key === k); // una ventana por tipo: si ya está, traer al frente
+      const ex = ws.find((w) => w.key === k);
       zTop.current += 1;
-      if (ex) return ws.map((w) => (w.id === ex.id ? { ...w, z: zTop.current } : w));
+      if (ex) return ws.map((w) => (w.id === ex.id ? { ...w, z: zTop.current, min: false } : w));
+      const d = deskRef.current;
+      const dw = d?.clientWidth || 1200, dh = d?.clientHeight || 700;
       const n = ws.length;
-      const id = idSeq.current++;
-      return [...ws, { id, key: k, title: TITULOS[k], x: 30 + n * 28, y: 20 + n * 24, w: 1000, h: 620, z: zTop.current, max: false }];
+      const w = Math.min(1000, dw - 40), h = Math.min(620, dh - 40);
+      return [...ws, { id: idSeq.current++, key: k, title: TITULOS[k], x: Math.min(20 + n * 26, Math.max(0, dw - w - 10)), y: Math.min(16 + n * 22, Math.max(0, dh - h - 10)), w, h, z: zTop.current, max: false, min: false }];
     });
   }, []);
 
   const close = (id: number) => setWins((ws) => ws.filter((w) => w.id !== id));
-  const toggleMax = (id: number) => setWins((ws) => ws.map((w) => (w.id === id ? { ...w, max: !w.max } : w)));
+  const setFlag = (id: number, f: "max" | "min") => setWins((ws) => ws.map((w) => (w.id === id ? { ...w, [f]: !w[f], ...(f === "min" && !w.min ? {} : {}) } : w)));
+  const restore = (id: number) => { setWins((ws) => ws.map((w) => (w.id === id ? { ...w, min: false } : w))); focus(id); };
 
   function startDrag(e: React.MouseEvent, id: number) {
     focus(id);
     const w = wins.find((x) => x.id === id); if (!w || w.max) return;
+    const d = deskRef.current; const dw = d?.clientWidth || 1200, dh = d?.clientHeight || 700;
     const ox = e.clientX - w.x, oy = e.clientY - w.y;
-    const move = (ev: MouseEvent) => setWins((ws) => ws.map((x) => (x.id === id ? { ...x, x: Math.max(0, ev.clientX - ox), y: Math.max(0, ev.clientY - oy) } : x)));
+    const move = (ev: MouseEvent) => setWins((ws) => ws.map((x) => {
+      if (x.id !== id) return x;
+      const nx = Math.max(0, Math.min(ev.clientX - ox, dw - 80));
+      const ny = Math.max(0, Math.min(ev.clientY - oy, dh - 40));
+      return { ...x, x: nx, y: ny };
+    }));
     const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
     document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
   }
 
+  const visibles = wins.filter((w) => !w.min);
+  const minimizadas = wins.filter((w) => w.min);
+
   return (
     <Ctx.Provider value={{ open }}>
-      {children}
-      <div className="relative">
-        {wins.map((w) => (
-          <div key={w.id} onMouseDown={() => focus(w.id)}
-            className="fixed bg-white rounded-xl shadow-2xl border border-gray-300 flex flex-col overflow-hidden"
-            style={w.max ? { left: 8, top: 96, right: 8, bottom: 8, zIndex: w.z } : { left: w.x, top: w.y + 88, width: w.w, height: w.h, zIndex: w.z }}>
-            <div onMouseDown={(e) => startDrag(e, w.id)} onDoubleClick={() => toggleMax(w.id)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border-b border-gray-200 cursor-move select-none">
-              <span className="font-semibold text-sm">{w.title}</span>
-              <div className="ml-auto flex gap-1">
-                <button onClick={() => toggleMax(w.id)} className="w-6 h-6 rounded hover:bg-gray-200 text-gray-500" title="Maximizar">▢</button>
-                <button onClick={() => close(w.id)} className="w-6 h-6 rounded hover:bg-red-100 text-red-500" title="Cerrar">✕</button>
+      <div className="h-screen flex flex-col">
+        {children}
+        <div ref={deskRef} className="relative flex-1 overflow-hidden bg-slate-700" style={{ backgroundImage: "radial-gradient(circle at 1px 1px, rgba(255,255,255,.06) 1px, transparent 0)", backgroundSize: "22px 22px" }}>
+          {wins.length === 0 && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-slate-300 select-none p-10 pointer-events-none">
+              <div className="text-5xl mb-3 opacity-80">🛰️</div>
+              <div className="text-lg font-semibold text-slate-100">FEBO-GESTION</div>
+              <div className="text-sm mt-1 text-slate-300">Abrí un módulo desde el menú de arriba — cada uno se abre en su ventana.</div>
+              <div className="text-xs mt-4 text-slate-400">Arrastrá del título · ▢ maximizar · ─ minimizar · ✕ cerrar (libera memoria)</div>
+            </div>
+          )}
+          {visibles.map((w) => (
+            <div key={w.id} onMouseDown={() => focus(w.id)}
+              className="absolute bg-white rounded-xl shadow-2xl border border-gray-300 flex flex-col overflow-hidden"
+              style={w.max ? { left: 6, top: 6, right: 6, bottom: 6, zIndex: w.z } : { left: w.x, top: w.y, width: w.w, height: w.h, zIndex: w.z }}>
+              <div onMouseDown={(e) => startDrag(e, w.id)} onDoubleClick={() => setFlag(w.id, "max")}
+                className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border-b border-gray-200 cursor-move select-none">
+                <span className="font-semibold text-sm">{w.title}</span>
+                <div className="ml-auto flex gap-1">
+                  <button onClick={() => setFlag(w.id, "min")} className="w-6 h-6 rounded hover:bg-gray-200 text-gray-500" title="Minimizar">─</button>
+                  <button onClick={() => setFlag(w.id, "max")} className="w-6 h-6 rounded hover:bg-gray-200 text-gray-500" title="Maximizar">▢</button>
+                  <button onClick={() => close(w.id)} className="w-6 h-6 rounded hover:bg-red-100 text-red-500" title="Cerrar">✕</button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-auto p-4">
+                <Suspense fallback={<div className="text-gray-400 text-sm">Cargando…</div>}><Body k={w.key} /></Suspense>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              <Suspense fallback={<div className="text-gray-400 text-sm">Cargando…</div>}><Body k={w.key} /></Suspense>
+          ))}
+          {minimizadas.length > 0 && (
+            <div className="absolute bottom-0 left-0 right-0 flex gap-2 px-2 py-1.5 bg-slate-800/70">
+              {minimizadas.map((w) => (
+                <button key={w.id} onClick={() => restore(w.id)} className="flex items-center gap-2 bg-white/90 rounded px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-white">
+                  {w.title}
+                </button>
+              ))}
             </div>
-          </div>
-        ))}
+          )}
+        </div>
       </div>
     </Ctx.Provider>
   );
