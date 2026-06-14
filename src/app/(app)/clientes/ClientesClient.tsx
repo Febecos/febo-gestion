@@ -270,9 +270,12 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
 
   if (loading) return <div className="text-gray-400 text-sm py-8 text-center">Cargando operaciones…</div>;
   const comps = data?.comprobantes || [];
+  const presupuestos = data?.presupuestos || [];
   const compras = data?.compras || [];
   const pagos = data?.pagos || [];
   const r = data?.resumen || {};
+  const COTI = "https://coti.febecos.com";
+  const tipoP = (t: string) => (t === "fv" ? ["FV", "#d97706"] : ["Rev", "#2563eb"]);
 
   // Agrupar comprobantes por operación (cabeza = presupuesto). Cada operación = una cadena.
   const ops = new Map<number, any[]>();
@@ -302,13 +305,41 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
         </div>
       </div>
 
-      {comps.length === 0 && compras.length === 0 ? (
+      {presupuestos.length === 0 && comps.length === 0 && compras.length === 0 ? (
         <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
           Este cliente todavía no tiene operaciones.<br />
-          <span className="text-xs">Creá un presupuesto desde el módulo Ventas con este cliente.</span>
+          <span className="text-xs">Creá un presupuesto en coti.febecos.com con su CUIT o email.</span>
         </div>
       ) : (
         <div className="space-y-4">
+          {presupuestos.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Presupuestos (coti)</div>
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                    <tr><th className="text-left px-3 py-2">Número</th><th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Detalle</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Estado</th><th className="text-right px-3 py-2">Precio</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {presupuestos.map((p: any) => {
+                      const tp = tipoP(p.tipo); const m = p.tipo === "fv" ? "USD" : "$";
+                      return (
+                        <tr key={p.id} className="border-t border-gray-100">
+                          <td className="px-3 py-2 font-semibold">{p.numero}</td>
+                          <td className="px-3 py-2"><span style={{ background: (tp[1] as string) + "1a", color: tp[1] as string }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{tp[0]}</span></td>
+                          <td className="px-3 py-2 text-gray-600">{p.bomba_codigo || p.bomba_descripcion || "—"}</td>
+                          <td className="px-3 py-2 text-gray-500">{p.created_at ? new Date(p.created_at).toLocaleDateString("es-AR") : "—"}</td>
+                          <td className="px-3 py-2 text-gray-500">{p.estado || "—"}</td>
+                          <td className="px-3 py-2 text-right font-semibold">{m} {Math.round(Number(p.precio_ofrecido) || 0).toLocaleString("es-AR")}</td>
+                          <td className="px-3 py-2 text-right">{p.public_token && <a href={`${COTI}/p/${p.numero}?t=${p.public_token}`} target="_blank" rel="noreferrer" title="Ver en coti / PDF" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
           {operaciones.length > 0 && (
             <div>
               <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Operaciones (FEBO-GESTION)</div>

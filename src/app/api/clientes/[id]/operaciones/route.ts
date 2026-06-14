@@ -10,6 +10,25 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const id = Number(params.id);
     if (!id) return NextResponse.json({ ok: false, error: "id inválido" }, { status: 400 });
 
+    // Datos del cliente para relacionar con presupuestos (no hay FK: se matchea por CUIT/email)
+    const cl = await sql`SELECT cuit, email FROM clientes WHERE id = ${id} LIMIT 1`;
+    const cuit = (cl[0]?.cuit || "").trim();
+    const email = (cl[0]?.email || "").trim().toLowerCase();
+
+    // Presupuestos REALES (tabla `presupuestos`, la de revendedores/coti) del cliente.
+    let presupuestos: any[] = [];
+    if (cuit || email) {
+      presupuestos = await sql`
+        SELECT id, numero, COALESCE(tipo,'bomba') AS tipo, estado,
+               bomba_codigo, bomba_descripcion, precio_ofrecido, precio_publico,
+               public_token, revendedor_nombre, created_at
+        FROM presupuestos
+        WHERE (${cuit} <> '' AND cliente_cuit = ${cuit})
+           OR (${email} <> '' AND lower(cliente_email) = ${email})
+        ORDER BY created_at DESC` as any[];
+    }
+
+    // Downstream ERP (factura/remito/pago) — fg_comprobantes (se llena al avanzar la operación)
     const comprobantes = await sql`
       SELECT id, tipo, estado, numero, ref_id, operacion_id, token, fecha, total, moneda, created_at
       FROM fg_comprobantes
@@ -41,16 +60,18 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
     const tipos = new Set((comprobantes as any[]).map((c) => c.tipo));
     const tieneCompra = tipos.has("factura") || tipos.has("pedido") || (compras as any[]).length > 0;
-    const estado_derivado = tieneCompra ? "compro" : tipos.has("presupuesto") ? "cotizo" : "sin_operaciones";
+    const tieneCotiza = (presupuestos as any[]).length > 0 || tipos.has("presupuesto");
+    const estado_derivado = tieneCompra ? "compro" : tieneCotiza ? "cotizo" : "sin_operaciones";
 
     return NextResponse.json({
       ok: true,
+      presupuestos,
       comprobantes,
       pagos,
       compras,
       resumen: {
         facturado, pagado, saldo: facturado - pagado, estado_derivado,
-        cantidad: (comprobantes as any[]).length + (compras as any[]).length,
+        cantidad: (presupuestos as any[]).length + (compras as any[]).length,
       },
     });
   } catch (e: any) {
