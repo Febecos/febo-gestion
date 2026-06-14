@@ -86,21 +86,6 @@ export default function WindowManager({ children }: { children: React.ReactNode 
       <div className="h-screen flex flex-col">
         {children}
         <div className="flex flex-1 overflow-hidden">
-        <aside className="w-16 shrink-0 bg-slate-900 flex flex-col items-center gap-1 py-3">
-          {([
-            { k: "clientes", icon: "👥", label: "Clientes" },
-            { k: "ventas", icon: "🧾", label: "Ventas" },
-            { k: "productos", icon: "📦", label: "Productos" },
-            { k: "cot-bomba", icon: "🔧", label: "Bomba" },
-            { k: "cot-fv", icon: "☀️", label: "FV" },
-          ] as { k: WinKey; icon: string; label: string }[]).map((b) => (
-            <button key={b.k} onClick={() => open(b.k)} title={b.label}
-              className="w-14 flex flex-col items-center gap-0.5 py-2 rounded-lg text-slate-300 hover:bg-slate-700 hover:text-white transition">
-              <span className="text-xl">{b.icon}</span>
-              <span className="text-[9px]">{b.label}</span>
-            </button>
-          ))}
-        </aside>
         <div ref={deskRef} className="relative flex-1 overflow-hidden bg-slate-700" style={{ backgroundImage: "radial-gradient(circle at 1px 1px, rgba(255,255,255,.06) 1px, transparent 0)", backgroundSize: "22px 22px" }}>
           {wins.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center text-slate-300 select-none p-10 pointer-events-none">
