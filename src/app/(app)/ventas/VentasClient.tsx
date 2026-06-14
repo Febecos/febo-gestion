@@ -23,11 +23,15 @@ const SECCIONES = [
 type Seccion = (typeof SECCIONES)[number]["k"];
 
 export default function VentasClient() {
+  const { setTitle } = useWindows();
   const [sec, setSec] = useState<Seccion>("presupuestos");
+  useEffect(() => {
+    const lbl = SECCIONES.find((s) => s.k === sec)?.label || "Presupuestos";
+    setTitle("ventas", `🧾 Ventas / ${lbl}`);
+  }, [sec, setTitle]);
   return (
     <div className="flex gap-4 h-full">
       <aside className="w-44 shrink-0 border-r border-gray-200 pr-2">
-        <div className="text-[10px] font-bold text-gray-400 uppercase px-2 mb-1">Ventas</div>
         {SECCIONES.map((s) => (
           <button key={s.k} onClick={() => setSec(s.k)}
             className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-left mb-0.5 ${sec === s.k ? "bg-febo-azul text-white font-semibold" : "text-gray-600 hover:bg-gray-100"}`}>
@@ -54,25 +58,39 @@ function Presupuestos() {
   const { open } = useWindows();
   const [rows, setRows] = useState<Presup[]>([]);
   const [tipo, setTipo] = useState(""); const [q, setQ] = useState("");
+  const [estado, setEstado] = useState(""); const [vendedor, setVendedor] = useState("");
+  const [estados, setEstados] = useState<string[]>([]); const [vendedores, setVendedores] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [editId, setEditId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try { const r = await fetch("/api/presupuestos?" + new URLSearchParams({ tipo, q })); const d = await r.json(); if (d.ok) setRows(d.presupuestos); }
-    finally { setLoading(false); }
-  }, [tipo, q]);
+    try {
+      const r = await fetch("/api/presupuestos?" + new URLSearchParams({ tipo, q, estado, vendedor }));
+      const d = await r.json();
+      if (d.ok) { setRows(d.presupuestos); if (d.estados) setEstados(d.estados); if (d.vendedores) setVendedores(d.vendedores); }
+    } finally { setLoading(false); }
+  }, [tipo, q, estado, vendedor]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
   const nombreCli = (r: Presup) => r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ") || "—";
+  const selCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm";
   return (
     <div>
-      <div className="flex flex-wrap gap-3 mb-4 items-center">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar número / cliente / CUIT / bomba…" className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[260px]" />
-        <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-          <option value="">Todos</option><option value="bomba">Revendedores (bombas)</option><option value="fv">Fotovoltaico</option>
+      <div className="flex flex-wrap gap-2 mb-4 items-center">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar número / cliente / CUIT / bomba…" className="border border-gray-300 rounded-lg px-3 py-2 text-sm min-w-[240px]" />
+        <select value={tipo} onChange={(e) => setTipo(e.target.value)} className={selCls}>
+          <option value="">Todo tipo</option><option value="bomba">Revendedores (bombas)</option><option value="fv">Fotovoltaico</option>
         </select>
-        <span className="text-sm text-gray-500">{rows.length} presupuestos</span>
+        <select value={vendedor} onChange={(e) => setVendedor(e.target.value)} className={selCls}>
+          <option value="">Todos los vendedores</option>
+          {vendedores.map((v) => <option key={v} value={v}>{v}</option>)}
+        </select>
+        <select value={estado} onChange={(e) => setEstado(e.target.value)} className={selCls}>
+          <option value="">Todos los estados</option>
+          {estados.map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
+        <span className="text-sm text-gray-500">{rows.length}</span>
         <a href={COTI} target="_blank" rel="noreferrer" className="ml-auto bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">＋ Nuevo en coti ↗</a>
       </div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

@@ -14,7 +14,7 @@ const TITULOS: Record<WinKey, string> = {
   "presup-edit": "✏️ Editar presupuesto",
 };
 
-const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void } | null>(null);
+const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void; setTitle: (k: WinKey, title: string) => void } | null>(null);
 export const useWindows = () => useContext(Ctx)!;
 
 function Body({ k, payload }: { k: WinKey; payload?: any }) {
@@ -59,6 +59,10 @@ export default function WindowManager({ children }: { children: React.ReactNode 
     });
   }, []);
 
+  const setTitle = useCallback((k: WinKey, title: string) => {
+    setWins((ws) => ws.map((w) => (w.key === k && w.title !== title ? { ...w, title } : w)));
+  }, []);
+
   const close = (id: number) => setWins((ws) => ws.filter((w) => w.id !== id));
   const setFlag = (id: number, f: "max" | "min") => setWins((ws) => ws.map((w) => (w.id === id ? { ...w, [f]: !w[f], ...(f === "min" && !w.min ? {} : {}) } : w)));
   const restore = (id: number) => { setWins((ws) => ws.map((w) => (w.id === id ? { ...w, min: false } : w))); focus(id); };
@@ -82,7 +86,7 @@ export default function WindowManager({ children }: { children: React.ReactNode 
   const minimizadas = wins.filter((w) => w.min);
 
   return (
-    <Ctx.Provider value={{ open }}>
+    <Ctx.Provider value={{ open, setTitle }}>
       <div className="h-screen flex flex-col">
         {children}
         <div className="flex flex-1 overflow-hidden">

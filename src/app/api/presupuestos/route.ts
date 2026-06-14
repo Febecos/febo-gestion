@@ -11,6 +11,7 @@ export async function GET(req: NextRequest) {
     const q = (sp.get("q") || "").trim().toLowerCase();
     const tipo = (sp.get("tipo") || "").trim();   // '', 'fv', 'bomba'
     const estado = (sp.get("estado") || "").trim();
+    const vendedor = (sp.get("vendedor") || "").trim();
     const limit = Math.min(500, Number(sp.get("limit")) || 200);
     const like = `%${q}%`;
 
@@ -34,6 +35,7 @@ export async function GET(req: NextRequest) {
       FROM presupuestos p
       WHERE (${tipo} = '' OR COALESCE(p.tipo,'bomba') = ${tipo})
         AND (${estado} = '' OR p.estado = ${estado})
+        AND (${vendedor} = '' OR p.revendedor_nombre = ${vendedor})
         AND (${q} = '' OR lower(
               coalesce(p.numero,'')||' '||coalesce(p.cliente_nombre,'')||' '||coalesce(p.cliente_apellido,'')||' '||
               coalesce(p.cliente_cuit,'')||' '||coalesce(p.cliente_email,'')||' '||coalesce(p.bomba_codigo,'')||' '||
@@ -42,7 +44,15 @@ export async function GET(req: NextRequest) {
       ORDER BY p.created_at DESC
       LIMIT ${limit}`;
 
-    return NextResponse.json({ ok: true, presupuestos: rows });
+    // Listas para los filtros (distintos, sin filtrar)
+    const estados = await sql`SELECT DISTINCT estado FROM presupuestos WHERE coalesce(estado,'') <> '' ORDER BY estado`;
+    const vendedores = await sql`SELECT revendedor_nombre, count(*)::int n FROM presupuestos WHERE coalesce(revendedor_nombre,'') <> '' GROUP BY revendedor_nombre ORDER BY n DESC`;
+
+    return NextResponse.json({
+      ok: true, presupuestos: rows,
+      estados: estados.map((e: any) => e.estado),
+      vendedores: vendedores.map((v: any) => v.revendedor_nombre),
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
