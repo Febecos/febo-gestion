@@ -177,13 +177,25 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
     const d = await r.json(); if (d.ok) onSaved(); else alert("Error: " + d.error);
   }
 
+  const [tab, setTab] = useState<"datos" | "operaciones">("datos");
   const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
   const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm";
   return (
     <div className="fixed inset-0 bg-black/45 z-50 overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-3xl mx-auto my-8 p-7 relative" onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-4 right-5 text-2xl text-gray-400">✕</button>
-        <h2 className="text-lg font-bold mb-4">{esNuevo ? "＋ Nuevo cliente" : "✏️ Editar cliente"}</h2>
+        <h2 className="text-lg font-bold mb-1">{esNuevo ? "＋ Nuevo cliente" : "✏️ " + (f.nombre || "Cliente")}</h2>
+        {!esNuevo && (
+          <div className="flex gap-1 mb-4 border-b border-gray-200 -mx-1">
+            {([["datos", "Datos"], ["operaciones", "Operaciones / Cuenta"]] as const).map(([k, l]) => (
+              <button key={k} onClick={() => setTab(k)}
+                className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-400 hover:text-gray-600"}`}>{l}</button>
+            ))}
+          </div>
+        )}
+        {!esNuevo && tab === "operaciones" ? (
+          <OperacionesTab clienteId={cliente!.id} />
+        ) : (
         <div className="grid grid-cols-2 gap-3">
           <label className="col-span-2 grid grid-cols-[1fr_auto] gap-2 items-end">
             <span className={lbl}>CUIT<input value={f.cuit} onChange={(e) => set("cuit", e.target.value)} className={inp + " w-full"} /></span>
@@ -218,6 +230,8 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
             </div>
           </div>
         </div>
+        )}
+        {(esNuevo || tab === "datos") && (
         <div className="flex justify-between items-center mt-6">
           {esNuevo ? <span /> : <button onClick={eliminar} className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold">🗑 Eliminar del CRM</button>}
           <div className="flex gap-2">
@@ -225,7 +239,76 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
             <button onClick={guardar} disabled={saving} className="bg-febo-azul text-white rounded-lg px-6 py-2 text-sm font-semibold disabled:opacity-50">{saving ? "Guardando…" : esNuevo ? "Crear" : "Guardar cambios"}</button>
           </div>
         </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+const TIPO_COMP: Record<string, { l: string; c: string }> = {
+  presupuesto: { l: "Presupuesto", c: "#64748b" }, pedido: { l: "Pedido", c: "#2563eb" },
+  factura: { l: "Factura", c: "#059669" }, remito: { l: "Remito", c: "#7c3aed" },
+};
+
+function OperacionesTab({ clienteId }: { clienteId: number }) {
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let vivo = true;
+    setLoading(true);
+    fetch(`/api/clientes/${clienteId}/operaciones`).then((r) => r.json()).then((d) => {
+      if (vivo) { setData(d.ok ? d : { comprobantes: [], pagos: [], resumen: {} }); setLoading(false); }
+    }).catch(() => vivo && setLoading(false));
+    return () => { vivo = false; };
+  }, [clienteId]);
+
+  if (loading) return <div className="text-gray-400 text-sm py-8 text-center">Cargando operaciones…</div>;
+  const comps = data?.comprobantes || [];
+  const r = data?.resumen || {};
+  const estadoChip = r.estado_derivado === "compro" ? ["✅ Cliente que compró", "#059669"]
+    : r.estado_derivado === "cotizo" ? ["📝 Cliente que cotizó", "#d97706"]
+    : ["📇 Sin operaciones", "#64748b"];
+
+  return (
+    <div>
+      <div className="flex flex-wrap gap-3 mb-4">
+        <span style={{ background: (estadoChip[1] as string) + "1a", color: estadoChip[1] as string }} className="rounded-lg px-3 py-1.5 text-sm font-semibold">{estadoChip[0]}</span>
+        <div className="ml-auto flex gap-4 text-sm">
+          <div className="text-right"><div className="text-[10px] text-gray-400 uppercase">Facturado</div><div className="font-bold">{fmtMonto(r.facturado)}</div></div>
+          <div className="text-right"><div className="text-[10px] text-gray-400 uppercase">Pagado</div><div className="font-bold text-emerald-600">{fmtMonto(r.pagado)}</div></div>
+          <div className="text-right"><div className="text-[10px] text-gray-400 uppercase">Saldo</div><div className={`font-bold ${r.saldo > 0 ? "text-red-600" : "text-gray-700"}`}>{fmtMonto(r.saldo)}</div></div>
+        </div>
+      </div>
+
+      {comps.length === 0 ? (
+        <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
+          Este cliente todavía no tiene operaciones.<br />
+          <span className="text-xs">Creá un presupuesto desde el módulo Ventas con este cliente.</span>
+        </div>
+      ) : (
+        <div className="border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+              <tr><th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Número</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Estado</th><th className="text-right px-3 py-2">Total</th></tr>
+            </thead>
+            <tbody>
+              {comps.map((c: any) => {
+                const t = TIPO_COMP[c.tipo] || { l: c.tipo, c: "#888" };
+                const fecha = c.fecha || c.created_at;
+                return (
+                  <tr key={c.id} className="border-t border-gray-100">
+                    <td className="px-3 py-2"><span style={{ background: t.c + "1a", color: t.c }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{t.l}</span></td>
+                    <td className="px-3 py-2 font-semibold">{c.numero || "—"}</td>
+                    <td className="px-3 py-2 text-gray-500">{fecha ? new Date(fecha).toLocaleDateString("es-AR") : "—"}</td>
+                    <td className="px-3 py-2 text-gray-500">{c.estado || "—"}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{fmtMonto(Number(c.total))}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
