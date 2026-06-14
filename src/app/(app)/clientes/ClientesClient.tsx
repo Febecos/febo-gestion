@@ -340,8 +340,7 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
                           <td className="px-3 py-2 text-gray-500">{p.estado || "—"}</td>
                           <td className="px-3 py-2 text-right font-semibold">{m} {Math.round(Number(p.precio_ofrecido) || 0).toLocaleString("es-AR")}</td>
                           <td className="px-3 py-2 text-right whitespace-nowrap">
-                            {p.public_token && <a href={`${COTI}/p/${p.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF" className="text-gray-400 hover:text-febo-azul mr-1">📄</a>}
-                            {p.public_token && p.revendedor_token && <a href={`${COTI}/p/${p.public_token}?rev=${p.revendedor_token}`} target="_blank" rel="noreferrer" title="Editar (interno, con token)" className="text-gray-400 hover:text-febo-azul">✏️</a>}
+                            {p.public_token && <a href={`${COTI}/p/${p.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (link público)" className="text-gray-400 hover:text-febo-azul">📄</a>}
                           </td>
                         </tr>
                       );

@@ -27,6 +27,7 @@ export default function VentasClient() {
   const [rows, setRows] = useState<Presup[]>([]);
   const [tipo, setTipo] = useState(""); const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
+  const [editId, setEditId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,8 +78,8 @@ export default function VentasClient() {
                   <td className="px-4 py-2 text-gray-600">{fmtF(r.created_at)}</td>
                   <td className="px-4 py-2 text-right font-semibold">{fmt(r.precio_ofrecido, moneda(r))}</td>
                   <td className="px-4 py-2 text-right whitespace-nowrap">
-                    {r.public_token && <a href={`${COTI}/p/${r.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
-                    {r.public_token && r.revendedor_token && <a href={`${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`} target="_blank" rel="noreferrer" title="Editar (vendedor interno, con token)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</a>}
+                    <button onClick={() => setEditId(r.id)} title="Editar (en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>
+                    {r.public_token && <a href={`${COTI}/p/${r.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (link público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                     {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id })} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
                   </td>
                 </tr>
@@ -87,7 +88,98 @@ export default function VentasClient() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-400 mt-3">El presupuesto se ve, edita, imprime y envía por email en <strong>coti.febecos.com</strong> (📄). La numeración <strong>PREV-AÑO-N</strong> es correlativa y compartida con todos los orígenes.</p>
+      <p className="text-xs text-gray-400 mt-3"><strong>✏️ Editar</strong> = solo desde gestión (interno). <strong>📄</strong> = link público de <strong>coti.febecos.com</strong> (solo lectura — lo que ve el cliente / se manda por email / PDF). Numeración <strong>PREV-AÑO-N</strong> correlativa compartida.</p>
+
+      {editId && <EditarPresupuesto id={editId} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); load(); }} />}
+    </div>
+  );
+}
+
+function EditarPresupuesto({ id, onClose, onSaved }: { id: number; onClose: () => void; onSaved: () => void }) {
+  const [p, setP] = useState<any>(null);
+  const [f, setF] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+  const [busq, setBusq] = useState(""); const [sug, setSug] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetch("/api/presupuestos/" + id).then((r) => r.json()).then((d) => {
+      if (d.ok) {
+        setP(d.presupuesto);
+        const x = d.presupuesto;
+        setF({
+          descuento_pct: x.descuento_pct ?? "", precio_ofrecido: x.precio_ofrecido ?? "",
+          tipo_precio: x.tipo_precio || "", estado: x.estado || "",
+          cliente_nombre: [x.cliente_nombre, x.cliente_apellido].filter(Boolean).join(" ") || "",
+          cliente_cuit: x.cliente_cuit || "", cliente_email: x.cliente_email || "",
+          cliente_telefono: x.cliente_telefono || "", cliente_razon_social: x.cliente_razon_social || "",
+        });
+      }
+    });
+  }, [id]);
+
+  useEffect(() => {
+    if (busq.length < 2) { setSug([]); return; }
+    const t = setTimeout(async () => {
+      const r = await fetch("/api/clientes?limit=6&q=" + encodeURIComponent(busq)); const d = await r.json();
+      if (d.ok) setSug(d.clientes);
+    }, 250); return () => clearTimeout(t);
+  }, [busq]);
+
+  const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
+  const tomarCliente = (c: any) => {
+    setF((s: any) => ({ ...s, cliente_nombre: c.nombre || "", cliente_cuit: c.cuit || "", cliente_email: c.email || "", cliente_telefono: c.whatsapp || "", cliente_razon_social: c.razon_social || "" }));
+    setBusq(""); setSug([]);
+  };
+
+  async function guardar() {
+    setSaving(true);
+    try {
+      const r = await fetch("/api/presupuestos/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+      const d = await r.json(); if (!d.ok) throw new Error(d.error);
+      onSaved();
+    } catch (e: any) { alert("Error: " + e.message); } finally { setSaving(false); }
+  }
+
+  const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm w-full";
+  const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
+  if (!p) return null;
+  return (
+    <div className="fixed inset-0 bg-black/45 z-50 overflow-y-auto" onClick={onClose}>
+      <div className="bg-white rounded-2xl max-w-2xl mx-auto my-8 p-7 relative" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-5 text-2xl text-gray-400">✕</button>
+        <h2 className="text-lg font-bold">✏️ Editar {p.numero}</h2>
+        <p className="text-xs text-gray-400 mb-4">{p.bomba_codigo || p.bomba_descripcion || ""} · edición interna (coti queda solo-lectura)</p>
+
+        <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Cliente</div>
+        <div className="relative mb-3">
+          <input value={busq} onChange={(e) => setBusq(e.target.value)} placeholder="Buscar cliente en CRM para asignar…" className={inp} />
+          {sug.length > 0 && (
+            <div className="absolute z-10 bg-white border border-gray-200 rounded-lg mt-1 w-full shadow-sm max-h-48 overflow-auto">
+              {sug.map((s) => <div key={s.id} onClick={() => tomarCliente(s)} className="px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer">{s.nombre} <span className="text-xs text-gray-400">{s.cuit || s.whatsapp || ""}</span></div>)}
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <label className={lbl}>NOMBRE / RAZÓN SOCIAL<input value={f.cliente_nombre} onChange={(e) => set("cliente_nombre", e.target.value)} className={inp} /></label>
+          <label className={lbl}>CUIT<input value={f.cliente_cuit} onChange={(e) => set("cliente_cuit", e.target.value)} className={inp} /></label>
+          <label className={lbl}>EMAIL<input value={f.cliente_email} onChange={(e) => set("cliente_email", e.target.value)} className={inp} /></label>
+          <label className={lbl}>TELÉFONO<input value={f.cliente_telefono} onChange={(e) => set("cliente_telefono", e.target.value)} className={inp} /></label>
+        </div>
+
+        <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Precio</div>
+        <div className="grid grid-cols-3 gap-3">
+          <label className={lbl}>DESCUENTO %<input type="number" value={f.descuento_pct} onChange={(e) => set("descuento_pct", e.target.value)} className={inp} /></label>
+          <label className={lbl}>PRECIO OFRECIDO<input type="number" value={f.precio_ofrecido} onChange={(e) => set("precio_ofrecido", e.target.value)} className={inp} /></label>
+          <label className={lbl}>ESTADO<select value={f.estado} onChange={(e) => set("estado", e.target.value)} className={inp}>
+            {["emitido", "enviada", "pedido", "pagado", "anulado", "borrador"].map((x) => <option key={x} value={x}>{x}</option>)}
+          </select></label>
+        </div>
+
+        <div className="flex justify-end gap-2 mt-6">
+          <button onClick={onClose} className="border border-gray-300 rounded-lg px-5 py-2 text-sm">Cancelar</button>
+          <button onClick={guardar} disabled={saving} className="bg-febo-azul text-white rounded-lg px-6 py-2 text-sm font-semibold disabled:opacity-50">{saving ? "Guardando…" : "Guardar cambios"}</button>
+        </div>
+      </div>
     </div>
   );
 }
