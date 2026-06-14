@@ -158,8 +158,16 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
     setSaving(true);
     try {
       if (esNuevo) {
-        const r = await fetch("/api/clientes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, tags }) });
-        const d = await r.json(); if (!d.ok) throw new Error(d.error);
+        let r = await fetch("/api/clientes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, tags }) });
+        let d = await r.json();
+        if (d.duplicado) {
+          const ex = d.existente || {};
+          const ok = confirm(`Ya existe un cliente con ese ${d.campo}:\n\n${ex.nombre || "(sin nombre)"} — ${ex.cuit || ex.email || ex.whatsapp || ""}\n\n¿Cargar igualmente como cliente nuevo?`);
+          if (!ok) { setSaving(false); return; }
+          r = await fetch("/api/clientes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...f, tags, forzar: true }) });
+          d = await r.json();
+        }
+        if (!d.ok) throw new Error(d.error);
       } else {
         const id = cliente!.id;
         const patch = async (field: string, value: any) => {

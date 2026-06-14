@@ -24,7 +24,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
                bomba_codigo, bomba_descripcion, precio_ofrecido, precio_publico,
                public_token, revendedor_token, revendedor_nombre, created_at
         FROM presupuestos
-        WHERE (${cuit} <> '' AND cliente_cuit = ${cuit})
+        WHERE cliente_id = ${id}
+           OR (${cuit} <> '' AND cliente_cuit = ${cuit})
            OR (${email} <> '' AND lower(cliente_email) = ${email})
            OR (${tel10} <> '' AND length(${tel10}) >= 8 AND right(regexp_replace(coalesce(cliente_telefono,''),'\D','','g'),10) = ${tel10})
         ORDER BY created_at DESC` as any[];

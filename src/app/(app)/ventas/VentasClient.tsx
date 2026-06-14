@@ -52,7 +52,7 @@ export default function VentasClient() {
 }
 
 // ---------- PRESUPUESTOS (tabla real, coti) ----------
-type Presup = { id: number; numero: string; tipo: string; estado: string; cliente_nombre: string; cliente_apellido: string; cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string; precio_ofrecido: number; revendedor_nombre: string; public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string };
+type Presup = { id: number; numero: string; tipo: string; estado: string; cliente_display: string; cliente_nombre: string; cliente_apellido: string; cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string; precio_ofrecido: number; revendedor_nombre: string; public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string };
 
 function Presupuestos() {
   const { open } = useWindows();
@@ -73,7 +73,7 @@ function Presupuestos() {
   }, [tipo, q, estado, vendedor]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
-  const nombreCli = (r: Presup) => r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ") || "—";
+  const nombreCli = (r: Presup) => r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ") || "—";
   const selCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm";
   return (
     <div>

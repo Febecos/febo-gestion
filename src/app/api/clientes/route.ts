@@ -14,32 +14,22 @@ export async function POST(req: NextRequest) {
     if (!cuit && !email && !wa)
       return NextResponse.json({ ok: false, error: "Falta CUIT, email o WhatsApp" }, { status: 400 });
 
-    // buscar existente: CUIT → email → whatsapp
-    let found: any[] = [];
-    if (cuit) found = await sql`SELECT id FROM clientes WHERE cuit = ${cuit} LIMIT 1`;
-    if (!found.length && email) found = await sql`SELECT id FROM clientes WHERE lower(email) = ${email} LIMIT 1`;
-    if (!found.length && wa) found = await sql`SELECT id FROM clientes WHERE whatsapp = ${wa} LIMIT 1`;
-
     const tipo = b.tipo || "contacto";
     const tags = Array.isArray(b.tags) ? b.tags : [];
     const origenes = ["admin_erp"];
 
-    if (found.length) {
-      const id = found[0].id;
-      await sql`
-        UPDATE clientes SET
-          tipo = COALESCE(${tipo}, tipo),
-          nombre = COALESCE(${b.nombre || null}, nombre),
-          razon_social = COALESCE(${b.razon_social || null}, razon_social),
-          email = COALESCE(${email}, email), whatsapp = COALESCE(${wa}, whatsapp), cuit = COALESCE(${cuit}, cuit),
-          domicilio = COALESCE(${b.domicilio || null}, domicilio), localidad = COALESCE(${b.localidad || null}, localidad),
-          provincia = COALESCE(${b.provincia || null}, provincia), cod_postal = COALESCE(${b.cod_postal || null}, cod_postal),
-          condicion_fiscal = COALESCE(${b.condicion_fiscal || null}, condicion_fiscal), notas = COALESCE(${b.notas || null}, notas),
-          tags = (SELECT ARRAY(SELECT DISTINCT unnest(COALESCE(tags,'{}') || ${tags}::text[]))),
-          ultimo_contacto_at = now(), updated_at = now()
-        WHERE id = ${id}`;
-      return NextResponse.json({ ok: true, id, accion: "update" });
+    // Aviso de duplicado: si ya existe por CUIT/email/whatsapp y NO se forzó,
+    // devolvemos los datos para que el front muestre el popup "ya existe, ¿seguir?".
+    if (!b.forzar) {
+      let dup: any[] = [], campo = "";
+      if (cuit) { dup = await sql`SELECT id, nombre, cuit, email, whatsapp FROM clientes WHERE cuit = ${cuit} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1`; campo = "CUIT"; }
+      if (!dup.length && email) { dup = await sql`SELECT id, nombre, cuit, email, whatsapp FROM clientes WHERE lower(email) = ${email} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1`; campo = "email"; }
+      if (!dup.length && wa) { dup = await sql`SELECT id, nombre, cuit, email, whatsapp FROM clientes WHERE whatsapp = ${wa} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1`; campo = "teléfono"; }
+      if (dup.length) {
+        return NextResponse.json({ ok: false, duplicado: true, campo, existente: dup[0] });
+      }
     }
+
     const ins = await sql`
       INSERT INTO clientes (tipo, nombre, razon_social, email, whatsapp, cuit, domicilio, localidad, provincia, cod_postal, condicion_fiscal, notas, origen, tags, origenes, primer_contacto_at, ultimo_contacto_at)
       VALUES (${tipo}, ${b.nombre || null}, ${b.razon_social || null}, ${email}, ${wa}, ${cuit}, ${b.domicilio || null}, ${b.localidad || null}, ${b.provincia || null}, ${b.cod_postal || null}, ${b.condicion_fiscal || null}, ${b.notas || null}, 'admin_erp', ${tags}, ${origenes}, now(), now())

@@ -23,16 +23,12 @@ export async function GET(req: NextRequest) {
         p.bomba_codigo, p.bomba_descripcion,
         p.precio_ofrecido, p.precio_publico, p.descuento_pct, p.tipo_precio,
         p.revendedor_nombre, p.revendedor_email, p.revendedor_token, p.public_token, p.created_at,
-        (
-          SELECT c.id FROM clientes c
-          WHERE (coalesce(p.cliente_cuit,'') <> '' AND c.cuit = p.cliente_cuit)
-             OR (coalesce(p.cliente_email,'') <> '' AND lower(c.email) = lower(p.cliente_email))
-             OR (coalesce(p.cliente_telefono,'') <> '' AND length(regexp_replace(coalesce(c.whatsapp,''),'\D','','g')) >= 8
-                 AND right(regexp_replace(c.whatsapp,'\D','','g'),10) = right(regexp_replace(p.cliente_telefono,'\D','','g'),10))
-          ORDER BY (c.cuit IS NOT NULL AND c.cuit = p.cliente_cuit) DESC, c.id ASC
-          LIMIT 1
-        ) AS cliente_id
+        p.cliente_id,
+        -- Nombre CANÓNICO: del CRM si está enlazado (fuente única); si no, la copia del presupuesto
+        COALESCE(NULLIF(c.razon_social,''), NULLIF(c.nombre,''), NULLIF(p.cliente_razon_social,''),
+                 NULLIF(trim(concat_ws(' ', p.cliente_nombre, p.cliente_apellido)),'')) AS cliente_display
       FROM presupuestos p
+      LEFT JOIN clientes c ON c.id = p.cliente_id
       WHERE (${tipo} = '' OR COALESCE(p.tipo,'bomba') = ${tipo})
         AND (${estado} = '' OR p.estado = ${estado})
         AND (${vendedor} = '' OR p.revendedor_nombre = ${vendedor})
