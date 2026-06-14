@@ -17,9 +17,9 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const tel10 = (cl[0]?.whatsapp || "").replace(/\D/g, "").slice(-10);
 
     // Presupuestos REALES (tabla `presupuestos`, la de revendedores/coti) del cliente.
-    let presupuestos: any[] = [];
-    if (cuit || email || tel10.length >= 8) {
-      presupuestos = await sql`
+    // Siempre corre: el match por cliente_id vale aunque el cliente no tenga cuit/email/tel
+    // (ej. "Consumidor Final"). Los demás criterios suman presupuestos no enlazados por ID.
+    const presupuestos = await sql`
         SELECT id, numero, COALESCE(tipo,'bomba') AS tipo, estado,
                bomba_codigo, bomba_descripcion, precio_ofrecido, precio_publico,
                public_token, revendedor_token, revendedor_nombre, created_at
@@ -29,7 +29,6 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
            OR (${email} <> '' AND lower(cliente_email) = ${email})
            OR (${tel10} <> '' AND length(${tel10}) >= 8 AND right(regexp_replace(coalesce(cliente_telefono,''),'\D','','g'),10) = ${tel10})
         ORDER BY created_at DESC` as any[];
-    }
 
     // Downstream ERP (factura/remito/pago) — fg_comprobantes (se llena al avanzar la operación)
     const comprobantes = await sql`
