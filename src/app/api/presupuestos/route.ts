@@ -22,11 +22,16 @@ export async function GET(req: NextRequest) {
         p.bomba_codigo, p.bomba_descripcion,
         p.precio_ofrecido, p.precio_publico, p.descuento_pct, p.tipo_precio,
         p.revendedor_nombre, p.revendedor_email, p.revendedor_token, p.public_token, p.created_at,
-        c.id AS cliente_id
+        (
+          SELECT c.id FROM clientes c
+          WHERE (coalesce(p.cliente_cuit,'') <> '' AND c.cuit = p.cliente_cuit)
+             OR (coalesce(p.cliente_email,'') <> '' AND lower(c.email) = lower(p.cliente_email))
+             OR (coalesce(p.cliente_telefono,'') <> '' AND length(regexp_replace(coalesce(c.whatsapp,''),'\D','','g')) >= 8
+                 AND right(regexp_replace(c.whatsapp,'\D','','g'),10) = right(regexp_replace(p.cliente_telefono,'\D','','g'),10))
+          ORDER BY (c.cuit IS NOT NULL AND c.cuit = p.cliente_cuit) DESC, c.id ASC
+          LIMIT 1
+        ) AS cliente_id
       FROM presupuestos p
-      LEFT JOIN clientes c
-        ON (p.cliente_cuit IS NOT NULL AND p.cliente_cuit <> '' AND c.cuit = p.cliente_cuit)
-        OR (p.cliente_email IS NOT NULL AND p.cliente_email <> '' AND lower(c.email) = lower(p.cliente_email))
       WHERE (${tipo} = '' OR COALESCE(p.tipo,'bomba') = ${tipo})
         AND (${estado} = '' OR p.estado = ${estado})
         AND (${q} = '' OR lower(

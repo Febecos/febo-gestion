@@ -10,14 +10,15 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const id = Number(params.id);
     if (!id) return NextResponse.json({ ok: false, error: "id inválido" }, { status: 400 });
 
-    // Datos del cliente para relacionar con presupuestos (no hay FK: se matchea por CUIT/email)
-    const cl = await sql`SELECT cuit, email FROM clientes WHERE id = ${id} LIMIT 1`;
+    // Datos del cliente para relacionar con presupuestos (no hay FK: se matchea por CUIT/email/teléfono)
+    const cl = await sql`SELECT cuit, email, whatsapp FROM clientes WHERE id = ${id} LIMIT 1`;
     const cuit = (cl[0]?.cuit || "").trim();
     const email = (cl[0]?.email || "").trim().toLowerCase();
+    const tel10 = (cl[0]?.whatsapp || "").replace(/\D/g, "").slice(-10);
 
     // Presupuestos REALES (tabla `presupuestos`, la de revendedores/coti) del cliente.
     let presupuestos: any[] = [];
-    if (cuit || email) {
+    if (cuit || email || tel10.length >= 8) {
       presupuestos = await sql`
         SELECT id, numero, COALESCE(tipo,'bomba') AS tipo, estado,
                bomba_codigo, bomba_descripcion, precio_ofrecido, precio_publico,
@@ -25,6 +26,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         FROM presupuestos
         WHERE (${cuit} <> '' AND cliente_cuit = ${cuit})
            OR (${email} <> '' AND lower(cliente_email) = ${email})
+           OR (${tel10} <> '' AND length(${tel10}) >= 8 AND right(regexp_replace(coalesce(cliente_telefono,''),'\D','','g'),10) = ${tel10})
         ORDER BY created_at DESC` as any[];
     }
 
