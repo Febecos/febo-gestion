@@ -9,6 +9,24 @@ const ALLOWED = new Set([
   "email_opt_out", "tags", "origenes",
 ]);
 
+// GET /api/clientes/:id  → un cliente completo (para abrir su ficha desde otros módulos)
+export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+  try {
+    const id = Number(params.id);
+    if (!id) return NextResponse.json({ ok: false, error: "id requerido" }, { status: 400 });
+    const sql = getDb();
+    const r = await sql`
+      SELECT id, tipo, nombre, apellido, razon_social, empresa, email, whatsapp, cuit,
+             provincia, localidad, cod_postal, domicilio, condicion_fiscal, notas, email_opt_out,
+             tags, origenes
+      FROM clientes WHERE id = ${id} LIMIT 1`;
+    if (!r.length) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
+    return NextResponse.json({ ok: true, cliente: r[0] });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+  }
+}
+
 // PATCH /api/clientes/:id  Body: { field, value }  (un campo por llamada)
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   try {

@@ -6,18 +6,18 @@ import ProductosClient from "./productos/ProductosClient";
 import CotizadorEmbed from "./cotizadores/CotizadorEmbed";
 
 export type WinKey = "clientes" | "ventas" | "productos" | "cot-bomba" | "cot-fv";
-type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean };
+type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean; payload?: any };
 
 const TITULOS: Record<WinKey, string> = {
-  clientes: "👥 Clientes / CRM", ventas: "🧾 Ventas", productos: "📦 Productos",
+  clientes: "👥 Clientes / CRM", ventas: "🧾 Ventas / Presupuestos", productos: "📦 Productos",
   "cot-bomba": "🔧 Cotizador de bombas", "cot-fv": "☀️ Cotizador fotovoltaico",
 };
 
-const Ctx = createContext<{ open: (k: WinKey) => void } | null>(null);
+const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void } | null>(null);
 export const useWindows = () => useContext(Ctx)!;
 
-function Body({ k }: { k: WinKey }) {
-  if (k === "clientes") return <ClientesClient />;
+function Body({ k, payload }: { k: WinKey; payload?: any }) {
+  if (k === "clientes") return <ClientesClient openClienteId={payload?.clienteId} />;
   if (k === "ventas") return <VentasClient />;
   if (k === "productos") return <ProductosClient />;
   return <CotizadorEmbed tipoProp={k === "cot-fv" ? "fv" : "bomba"} />;
@@ -34,16 +34,16 @@ export default function WindowManager({ children }: { children: React.ReactNode 
     setWins((ws) => ws.map((w) => (w.id === id ? { ...w, z } : w)));
   }, []);
 
-  const open = useCallback((k: WinKey) => {
+  const open = useCallback((k: WinKey, payload?: any) => {
     setWins((ws) => {
       const ex = ws.find((w) => w.key === k);
       zTop.current += 1;
-      if (ex) return ws.map((w) => (w.id === ex.id ? { ...w, z: zTop.current, min: false } : w));
+      if (ex) return ws.map((w) => (w.id === ex.id ? { ...w, z: zTop.current, min: false, payload: payload ?? w.payload } : w));
       const d = deskRef.current;
       const dw = d?.clientWidth || 1200, dh = d?.clientHeight || 700;
       const n = ws.length;
       const w = Math.min(1000, dw - 40), h = Math.min(620, dh - 40);
-      return [...ws, { id: idSeq.current++, key: k, title: TITULOS[k], x: Math.min(20 + n * 26, Math.max(0, dw - w - 10)), y: Math.min(16 + n * 22, Math.max(0, dh - h - 10)), w, h, z: zTop.current, max: true, min: false }];
+      return [...ws, { id: idSeq.current++, key: k, title: TITULOS[k], x: Math.min(20 + n * 26, Math.max(0, dw - w - 10)), y: Math.min(16 + n * 22, Math.max(0, dh - h - 10)), w, h, z: zTop.current, max: true, min: false, payload }];
     });
   }, []);
 
@@ -112,7 +112,7 @@ export default function WindowManager({ children }: { children: React.ReactNode 
                 </div>
               </div>
               <div className={`flex-1 min-h-0 ${w.key.startsWith("cot-") ? "overflow-hidden" : "overflow-auto p-4"}`}>
-                <Suspense fallback={<div className="text-gray-400 text-sm p-4">Cargando…</div>}><Body k={w.key} /></Suspense>
+                <Suspense fallback={<div className="text-gray-400 text-sm p-4">Cargando…</div>}><Body k={w.key} payload={w.payload} /></Suspense>
               </div>
             </div>
           ))}

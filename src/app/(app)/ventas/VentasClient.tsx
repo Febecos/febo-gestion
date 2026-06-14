@@ -1,8 +1,10 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useWindows } from "../WindowManager";
 
 // Lee la tabla REAL `presupuestos` (la misma de revendedores/coti). La vista/edición/PDF
 // del presupuesto vive en coti.febecos.com (ya armada). Acá listamos y enlazamos.
+// URL pública: /p/{public_token} (el slug ES el token). Edición interna: + ?rev={revendedor_token}.
 const COTI = "https://coti.febecos.com";
 
 type Presup = {
@@ -10,7 +12,7 @@ type Presup = {
   cliente_nombre: string; cliente_apellido: string; cliente_cuit: string; cliente_email: string;
   cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string;
   precio_ofrecido: number; precio_publico: number; revendedor_nombre: string;
-  public_token: string; cliente_id: number | null; created_at: string;
+  public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string;
 };
 
 const fmt = (v: number, m = "$") => `${m} ` + Math.round(Number(v) || 0).toLocaleString("es-AR");
@@ -21,6 +23,7 @@ const TIPO_COL: Record<string, { l: string; c: string }> = {
 const EST_COL: Record<string, string> = { emitido: "#64748b", enviada: "#2563eb", pedido: "#7c3aed", pagado: "#059669", anulado: "#e53935", borrador: "#94a3b8" };
 
 export default function VentasClient() {
+  const { open } = useWindows();
   const [rows, setRows] = useState<Presup[]>([]);
   const [tipo, setTipo] = useState(""); const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
@@ -74,8 +77,9 @@ export default function VentasClient() {
                   <td className="px-4 py-2 text-gray-600">{fmtF(r.created_at)}</td>
                   <td className="px-4 py-2 text-right font-semibold">{fmt(r.precio_ofrecido, moneda(r))}</td>
                   <td className="px-4 py-2 text-right whitespace-nowrap">
-                    {r.public_token && <a href={`${COTI}/p/${r.numero}?t=${r.public_token}`} target="_blank" rel="noreferrer" title="Ver en coti / PDF" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
-                    {r.cliente_id && <a href={`/?cliente=${r.cliente_id}`} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</a>}
+                    {r.public_token && <a href={`${COTI}/p/${r.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
+                    {r.public_token && r.revendedor_token && <a href={`${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`} target="_blank" rel="noreferrer" title="Editar (vendedor interno, con token)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</a>}
+                    {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id })} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
                   </td>
                 </tr>
               );

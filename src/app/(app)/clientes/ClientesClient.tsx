@@ -26,7 +26,7 @@ const COLORES: Record<string, string> = {
 const fmtMonto = (v: number) => (v ? "$ " + Math.round(v).toLocaleString("es-AR") : "—");
 const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas"] as const;
 
-export default function ClientesClient() {
+export default function ClientesClient({ openClienteId }: { openClienteId?: number } = {}) {
   const [rows, setRows] = useState<Cliente[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState(""); const [tipo, setTipo] = useState("");
@@ -44,6 +44,14 @@ export default function ClientesClient() {
     } finally { setLoading(false); }
   }, [q, tipo, page]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
+
+  // Abrir la ficha de un cliente puntual cuando se entra desde otro módulo (Ventas → 👤)
+  useEffect(() => {
+    if (!openClienteId) return;
+    fetch(`/api/clientes/${openClienteId}`).then((r) => r.json()).then((d) => {
+      if (d.ok) setEdit(d.cliente);
+    }).catch(() => {});
+  }, [openClienteId]);
 
   async function exportarCSV() {
     const r = await fetch("/api/clientes?limit=99999"); const d = await r.json();
@@ -331,7 +339,10 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
                           <td className="px-3 py-2 text-gray-500">{p.created_at ? new Date(p.created_at).toLocaleDateString("es-AR") : "—"}</td>
                           <td className="px-3 py-2 text-gray-500">{p.estado || "—"}</td>
                           <td className="px-3 py-2 text-right font-semibold">{m} {Math.round(Number(p.precio_ofrecido) || 0).toLocaleString("es-AR")}</td>
-                          <td className="px-3 py-2 text-right">{p.public_token && <a href={`${COTI}/p/${p.numero}?t=${p.public_token}`} target="_blank" rel="noreferrer" title="Ver en coti / PDF" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
+                          <td className="px-3 py-2 text-right whitespace-nowrap">
+                            {p.public_token && <a href={`${COTI}/p/${p.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF" className="text-gray-400 hover:text-febo-azul mr-1">📄</a>}
+                            {p.public_token && p.revendedor_token && <a href={`${COTI}/p/${p.public_token}?rev=${p.revendedor_token}`} target="_blank" rel="noreferrer" title="Editar (interno, con token)" className="text-gray-400 hover:text-febo-azul">✏️</a>}
+                          </td>
                         </tr>
                       );
                     })}

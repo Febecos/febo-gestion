@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       presupuestos = await sql`
         SELECT id, numero, COALESCE(tipo,'bomba') AS tipo, estado,
                bomba_codigo, bomba_descripcion, precio_ofrecido, precio_publico,
-               public_token, revendedor_nombre, created_at
+               public_token, revendedor_token, revendedor_nombre, created_at
         FROM presupuestos
         WHERE (${cuit} <> '' AND cliente_cuit = ${cuit})
            OR (${email} <> '' AND lower(cliente_email) = ${email})
