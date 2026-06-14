@@ -27,7 +27,6 @@ export default function VentasClient() {
   const [rows, setRows] = useState<Presup[]>([]);
   const [tipo, setTipo] = useState(""); const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
-  const [editId, setEditId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,8 +77,8 @@ export default function VentasClient() {
                   <td className="px-4 py-2 text-gray-600">{fmtF(r.created_at)}</td>
                   <td className="px-4 py-2 text-right font-semibold">{fmt(r.precio_ofrecido, moneda(r))}</td>
                   <td className="px-4 py-2 text-right whitespace-nowrap">
-                    <button onClick={() => setEditId(r.id)} title="Editar (en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>
-                    {r.public_token && <a href={`${COTI}/p/${r.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (link público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
+                    {r.public_token && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}` })} title="Editar el presupuesto (interno, dentro de gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
+                    {r.public_token && <a href={`${COTI}/p/${r.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (link público, solo lectura)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                     {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id })} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
                   </td>
                 </tr>
@@ -88,9 +87,7 @@ export default function VentasClient() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-400 mt-3"><strong>✏️ Editar</strong> = solo desde gestión (interno). <strong>📄</strong> = link público de <strong>coti.febecos.com</strong> (solo lectura — lo que ve el cliente / se manda por email / PDF). Numeración <strong>PREV-AÑO-N</strong> correlativa compartida.</p>
-
-      {editId && <EditarPresupuesto id={editId} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); load(); }} />}
+      <p className="text-xs text-gray-400 mt-3"><strong>✏️ Editar</strong> = abre el editor de revendedores con tu token interno, embebido acá (el cliente nunca ve esto). <strong>📄</strong> = link público de <strong>coti.febecos.com</strong> (solo lectura — lo que ve el cliente / email / PDF). Numeración <strong>PREV-AÑO-N</strong> correlativa.</p>
     </div>
   );
 }

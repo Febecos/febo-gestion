@@ -5,12 +5,13 @@ import VentasClient from "./ventas/VentasClient";
 import ProductosClient from "./productos/ProductosClient";
 import CotizadorEmbed from "./cotizadores/CotizadorEmbed";
 
-export type WinKey = "clientes" | "ventas" | "productos" | "cot-bomba" | "cot-fv";
+export type WinKey = "clientes" | "ventas" | "productos" | "cot-bomba" | "cot-fv" | "presup-edit";
 type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean; payload?: any };
 
 const TITULOS: Record<WinKey, string> = {
   clientes: "👥 Clientes / CRM", ventas: "🧾 Ventas / Presupuestos", productos: "📦 Productos",
   "cot-bomba": "🔧 Cotizador de bombas", "cot-fv": "☀️ Cotizador fotovoltaico",
+  "presup-edit": "✏️ Editar presupuesto",
 };
 
 const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void } | null>(null);
@@ -20,6 +21,17 @@ function Body({ k, payload }: { k: WinKey; payload?: any }) {
   if (k === "clientes") return <ClientesClient openClienteId={payload?.clienteId} />;
   if (k === "ventas") return <VentasClient />;
   if (k === "productos") return <ProductosClient />;
+  if (k === "presup-edit") return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-100 text-[11px] text-gray-400 shrink-0">
+        <span className="bg-emerald-100 text-emerald-700 rounded px-2 py-0.5 font-semibold">edición interna (token)</span>
+        {payload?.url && <a href={payload.url} target="_blank" rel="noreferrer" className="ml-auto text-febo-azul">abrir en pestaña ↗</a>}
+      </div>
+      {payload?.url
+        ? <iframe src={payload.url} className="flex-1 w-full border-0" title="Editar presupuesto" />
+        : <div className="text-gray-400 text-sm p-4">Sin presupuesto</div>}
+    </div>
+  );
   return <CotizadorEmbed tipoProp={k === "cot-fv" ? "fv" : "bomba"} />;
 }
 
@@ -104,14 +116,14 @@ export default function WindowManager({ children }: { children: React.ReactNode 
               style={w.max ? { left: 6, top: 6, right: 6, bottom: 6, zIndex: w.z } : { left: w.x, top: w.y, width: w.w, height: w.h, zIndex: w.z }}>
               <div onMouseDown={(e) => startDrag(e, w.id)} onDoubleClick={() => setFlag(w.id, "max")}
                 className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 border-b border-gray-200 cursor-move select-none">
-                <span className="font-semibold text-sm">{w.title}</span>
+                <span className="font-semibold text-sm">{w.payload?.title || w.title}</span>
                 <div className="ml-auto flex gap-1">
                   <button onClick={() => setFlag(w.id, "min")} className="w-6 h-6 rounded hover:bg-gray-200 text-gray-500" title="Minimizar">─</button>
                   <button onClick={() => setFlag(w.id, "max")} className="w-6 h-6 rounded hover:bg-gray-200 text-gray-500" title="Maximizar">▢</button>
                   <button onClick={() => close(w.id)} className="w-6 h-6 rounded hover:bg-red-100 text-red-500" title="Cerrar">✕</button>
                 </div>
               </div>
-              <div className={`flex-1 min-h-0 ${w.key.startsWith("cot-") ? "overflow-hidden" : "overflow-auto p-4"}`}>
+              <div className={`flex-1 min-h-0 ${w.key.startsWith("cot-") || w.key === "presup-edit" ? "overflow-hidden" : "overflow-auto p-4"}`}>
                 <Suspense fallback={<div className="text-gray-400 text-sm p-4">Cargando…</div>}><Body k={w.key} payload={w.payload} /></Suspense>
               </div>
             </div>
