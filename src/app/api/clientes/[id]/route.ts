@@ -39,6 +39,12 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
       await pool.query(`UPDATE clientes SET "${field}" = $1, updated_at = now() WHERE id = $2`, [value, id]);
+      // PROPAGAR identidad a los presupuestos enlazados (CRM = fuente única → coti/PDF se actualizan).
+      const MAP: Record<string, string> = { nombre: "cliente_nombre", razon_social: "cliente_razon_social", cuit: "cliente_cuit", email: "cliente_email", whatsapp: "cliente_telefono" };
+      if (MAP[field]) {
+        await pool.query(`UPDATE presupuestos SET ${MAP[field]} = $1 WHERE cliente_id = $2`, [value, id]);
+        if (field === "nombre") await pool.query(`UPDATE presupuestos SET cliente_apellido = NULL WHERE cliente_id = $1`, [id]);
+      }
     } finally { await pool.end(); }
     return NextResponse.json({ ok: true });
   } catch (e: any) {
