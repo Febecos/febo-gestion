@@ -15,6 +15,7 @@ export default function VentasClient() {
   const [loading, setLoading] = useState(true);
   const [nuevo, setNuevo] = useState(false);
   const [ver, setVer] = useState<number | null>(null);
+  const [cotiz, setCotiz] = useState<{ url: string; titulo: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -35,7 +36,11 @@ export default function VentasClient() {
         <select value={tipo} onChange={(e) => setTipo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
           <option value="">Todos</option><option value="presupuesto">Presupuestos</option><option value="pedido">Pedidos</option><option value="factura">Facturas</option><option value="remito">Remitos</option>
         </select>
-        <button onClick={() => setNuevo(true)} className="ml-auto bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">＋ Nuevo presupuesto</button>
+        <div className="ml-auto flex gap-2">
+          <button onClick={() => setCotiz({ url: "https://revendedores.febecos.com/portal", titulo: "🔧 Cotizador de bombas (revendedores)" })} className="bg-febo-violeta text-white rounded-lg px-3 py-2 text-sm font-semibold">🔧 Cotizar bomba</button>
+          <button onClick={() => setCotiz({ url: "https://fv.febecos.com", titulo: "☀️ Cotizador fotovoltaico" })} className="bg-amber-500 text-white rounded-lg px-3 py-2 text-sm font-semibold">☀️ Cotizar FV</button>
+          <button onClick={() => setNuevo(true)} className="bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">＋ Nuevo presupuesto</button>
+        </div>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -62,6 +67,19 @@ export default function VentasClient() {
 
       {nuevo && <NuevoPresupuesto onClose={() => setNuevo(false)} onSaved={() => { setNuevo(false); load(); }} />}
       {ver && <VerComprobante id={ver} onClose={() => setVer(null)} onChanged={() => { load(); }} />}
+      {cotiz && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex flex-col p-3" onClick={() => setCotiz(null)}>
+          <div className="bg-white rounded-xl flex flex-col flex-1 overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-200">
+              <span className="font-semibold text-sm">{cotiz.titulo}</span>
+              <a href={cotiz.url} target="_blank" rel="noreferrer" className="text-xs text-febo-azul">abrir en pestaña ↗</a>
+              <button onClick={() => setCotiz(null)} className="ml-auto text-2xl text-gray-400">✕</button>
+            </div>
+            <iframe src={cotiz.url} className="flex-1 w-full" title={cotiz.titulo} />
+            <div className="px-4 py-1.5 text-[11px] text-gray-400 border-t border-gray-100">Si la página queda en blanco, usá «abrir en pestaña». El presupuesto que generes ahí queda guardado y lo ves en esta lista.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
