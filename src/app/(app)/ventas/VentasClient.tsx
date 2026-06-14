@@ -27,6 +27,16 @@ export default function VentasClient() {
   }, [tipo, q]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
+  async function abrirCotizador(cual: "bombas" | "fv") {
+    try {
+      const r = await fetch("/api/cotizadores"); const d = await r.json();
+      if (!d.ok) throw new Error(d.error);
+      const url = cual === "bombas" ? d.bombas : d.fv;
+      const titulo = (cual === "bombas" ? "🔧 Cotizador de bombas" : "☀️ Cotizador fotovoltaico") + (d.tiene_token ? " (tu perfil)" : " (público — sin token)");
+      setCotiz({ url, titulo });
+    } catch (e: any) { alert("No se pudo abrir el cotizador: " + e.message); }
+  }
+
   const chip = (txt: string, col: string) => <span style={{ background: col + "22", color: col }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{txt}</span>;
 
   return (
@@ -37,8 +47,8 @@ export default function VentasClient() {
           <option value="">Todos</option><option value="presupuesto">Presupuestos</option><option value="pedido">Pedidos</option><option value="factura">Facturas</option><option value="remito">Remitos</option>
         </select>
         <div className="ml-auto flex gap-2">
-          <button onClick={() => setCotiz({ url: "https://revendedores.febecos.com/portal", titulo: "🔧 Cotizador de bombas (revendedores)" })} className="bg-febo-violeta text-white rounded-lg px-3 py-2 text-sm font-semibold">🔧 Cotizar bomba</button>
-          <button onClick={() => setCotiz({ url: "https://fv.febecos.com", titulo: "☀️ Cotizador fotovoltaico" })} className="bg-amber-500 text-white rounded-lg px-3 py-2 text-sm font-semibold">☀️ Cotizar FV</button>
+          <button onClick={() => abrirCotizador("bombas")} className="bg-febo-violeta text-white rounded-lg px-3 py-2 text-sm font-semibold">🔧 Cotizar bomba</button>
+          <button onClick={() => abrirCotizador("fv")} className="bg-amber-500 text-white rounded-lg px-3 py-2 text-sm font-semibold">☀️ Cotizar FV</button>
           <button onClick={() => setNuevo(true)} className="bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">＋ Nuevo presupuesto</button>
         </div>
       </div>
