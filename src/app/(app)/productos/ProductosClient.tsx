@@ -62,7 +62,12 @@ export default function ProductosClient() {
                   <td className="px-3 py-2 text-gray-500 text-xs">{p.categoria}</td>
                   <td className="px-3 py-2 text-gray-600 text-xs">{p.fabricante || p.marca || "—"}</td>
                   <td className="px-3 py-2 text-gray-600 text-xs">{p.proveedor || "—"}</td>
-                  <td className="px-3 py-2 text-center">{p.en_stock ? <span className="text-emerald-600" title={p.disponibilidad}>●</span> : <span className="text-gray-300" title={p.disponibilidad || "sin fecha"}>○</span>}</td>
+                  <td className="px-3 py-2 text-center">{
+                    p.proveedor === "LV Energy" || (p.disponibilidad || "").toLowerCase().includes("consultar")
+                      ? <span className="text-amber-500 text-[11px] font-semibold" title="Stock a confirmar con el proveedor">a confirmar</span>
+                      : p.en_stock ? <span className="text-emerald-600" title={p.disponibilidad}>●</span>
+                      : <span className="text-gray-300" title={p.disponibilidad || "sin fecha"}>○</span>
+                  }</td>
                   <td className="px-3 py-2 text-right text-gray-500 text-xs">{p.origen === "fv" ? fmtU(p.costo_usd) : "—"}</td>
                   <td className="px-3 py-2 text-right text-gray-500 text-xs">{p.costo_ars ? fmt(p.costo_ars) : "—"}</td>
                   <td className="px-3 py-2 text-right font-semibold">{p.sin_precio ? <span className="text-amber-500 text-xs">s/precio</span> : fmt(p.precio_venta)}</td>
