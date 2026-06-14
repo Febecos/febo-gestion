@@ -23,12 +23,22 @@ export async function GET(req: NextRequest) {
         p.bomba_codigo, p.bomba_descripcion,
         p.precio_ofrecido, p.precio_publico, p.descuento_pct, p.tipo_precio,
         p.revendedor_nombre, p.revendedor_email, p.revendedor_token, p.public_token, p.created_at,
-        p.cliente_id,
-        -- Nombre CANÓNICO: del CRM si está enlazado (fuente única); si no, la copia del presupuesto
+        c.id AS cliente_id,
+        -- Nombre CANÓNICO: del CRM (enlazado o resuelto por cuit/email/tel); si no, la copia
         COALESCE(NULLIF(c.razon_social,''), NULLIF(c.nombre,''), NULLIF(p.cliente_razon_social,''),
                  NULLIF(trim(concat_ws(' ', p.cliente_nombre, p.cliente_apellido)),'')) AS cliente_display
       FROM presupuestos p
-      LEFT JOIN clientes c ON c.id = p.cliente_id
+      LEFT JOIN LATERAL (
+        SELECT cc.id, cc.nombre, cc.razon_social FROM clientes cc
+        WHERE (cc.crm_eliminado IS NULL OR cc.crm_eliminado = false) AND (
+              cc.id = p.cliente_id
+           OR (coalesce(p.cliente_cuit,'') <> '' AND cc.cuit = p.cliente_cuit)
+           OR (coalesce(p.cliente_email,'') <> '' AND lower(cc.email) = lower(p.cliente_email))
+           OR (coalesce(p.cliente_telefono,'') <> '' AND length(regexp_replace(coalesce(cc.whatsapp,''),'\D','','g')) >= 8
+               AND right(regexp_replace(cc.whatsapp,'\D','','g'),10) = right(regexp_replace(p.cliente_telefono,'\D','','g'),10)))
+        ORDER BY (cc.id = p.cliente_id) DESC, (cc.cuit = p.cliente_cuit) DESC NULLS LAST, cc.id ASC
+        LIMIT 1
+      ) c ON true
       WHERE (${tipo} = '' OR COALESCE(p.tipo,'bomba') = ${tipo})
         AND (${estado} = '' OR p.estado = ${estado})
         AND (${vendedor} = '' OR p.revendedor_nombre = ${vendedor})
