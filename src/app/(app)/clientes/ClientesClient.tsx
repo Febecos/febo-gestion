@@ -127,6 +127,7 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
     notas: cliente?.notas || "",
   }));
   const [tags, setTags] = useState<string[]>(cliente?.tags || []);
+  const [optOut, setOptOut] = useState<boolean>(!!cliente?.email_opt_out);
   const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
   const toggleTag = (t: string) => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
@@ -164,6 +165,7 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
         }
         const tagsOrig = JSON.stringify((cliente!.tags || []).slice().sort());
         if (JSON.stringify(tags.slice().sort()) !== tagsOrig) await patch("tags", tags);
+        if (optOut !== !!cliente!.email_opt_out) await patch("email_opt_out", optOut);
       }
       onSaved();
     } catch (e: any) { alert("Error: " + e.message); } finally { setSaving(false); }
@@ -229,6 +231,10 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
               ))}
             </div>
           </div>
+          <label className="col-span-2 flex items-center gap-2 text-sm text-gray-700 mt-1">
+            <input type="checkbox" checked={optOut} onChange={(e) => setOptOut(e.target.checked)} />
+            Email opt-out (no enviar marketing)
+          </label>
         </div>
         )}
         {(esNuevo || tab === "datos") && (
@@ -264,6 +270,7 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
 
   if (loading) return <div className="text-gray-400 text-sm py-8 text-center">Cargando operaciones…</div>;
   const comps = data?.comprobantes || [];
+  const compras = data?.compras || [];
   const r = data?.resumen || {};
   const estadoChip = r.estado_derivado === "compro" ? ["✅ Cliente que compró", "#059669"]
     : r.estado_derivado === "cotizo" ? ["📝 Cliente que cotizó", "#d97706"]
@@ -280,33 +287,62 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
         </div>
       </div>
 
-      {comps.length === 0 ? (
+      {comps.length === 0 && compras.length === 0 ? (
         <div className="text-center py-10 text-gray-400 text-sm border border-dashed border-gray-200 rounded-xl">
           Este cliente todavía no tiene operaciones.<br />
           <span className="text-xs">Creá un presupuesto desde el módulo Ventas con este cliente.</span>
         </div>
       ) : (
-        <div className="border border-gray-200 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-              <tr><th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Número</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Estado</th><th className="text-right px-3 py-2">Total</th></tr>
-            </thead>
-            <tbody>
-              {comps.map((c: any) => {
-                const t = TIPO_COMP[c.tipo] || { l: c.tipo, c: "#888" };
-                const fecha = c.fecha || c.created_at;
-                return (
-                  <tr key={c.id} className="border-t border-gray-100">
-                    <td className="px-3 py-2"><span style={{ background: t.c + "1a", color: t.c }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{t.l}</span></td>
-                    <td className="px-3 py-2 font-semibold">{c.numero || "—"}</td>
-                    <td className="px-3 py-2 text-gray-500">{fecha ? new Date(fecha).toLocaleDateString("es-AR") : "—"}</td>
-                    <td className="px-3 py-2 text-gray-500">{c.estado || "—"}</td>
-                    <td className="px-3 py-2 text-right font-semibold">{fmtMonto(Number(c.total))}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {comps.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Comprobantes (FEBO-GESTION)</div>
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                    <tr><th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Número</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Estado</th><th className="text-right px-3 py-2">Total</th></tr>
+                  </thead>
+                  <tbody>
+                    {comps.map((c: any) => {
+                      const t = TIPO_COMP[c.tipo] || { l: c.tipo, c: "#888" };
+                      const fecha = c.fecha || c.created_at;
+                      return (
+                        <tr key={c.id} className="border-t border-gray-100">
+                          <td className="px-3 py-2"><span style={{ background: t.c + "1a", color: t.c }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{t.l}</span></td>
+                          <td className="px-3 py-2 font-semibold">{c.numero || "—"}</td>
+                          <td className="px-3 py-2 text-gray-500">{fecha ? new Date(fecha).toLocaleDateString("es-AR") : "—"}</td>
+                          <td className="px-3 py-2 text-gray-500">{c.estado || "—"}</td>
+                          <td className="px-3 py-2 text-right font-semibold">{fmtMonto(Number(c.total))}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+          {compras.length > 0 && (
+            <div>
+              <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Compras / Facturas externas (Tango)</div>
+              <div className="border border-gray-200 rounded-xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
+                    <tr><th className="text-left px-3 py-2">Factura</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Descripción</th><th className="text-right px-3 py-2">Monto</th></tr>
+                  </thead>
+                  <tbody>
+                    {compras.map((c: any) => (
+                      <tr key={c.id} className="border-t border-gray-100">
+                        <td className="px-3 py-2 font-semibold">{c.nro_factura || "—"} {c.tiene_archivo && <span title="tiene PDF">📎</span>}</td>
+                        <td className="px-3 py-2 text-gray-500">{c.fecha ? new Date(c.fecha).toLocaleDateString("es-AR") : "—"}</td>
+                        <td className="px-3 py-2 text-gray-600">{c.descripcion || "—"}</td>
+                        <td className="px-3 py-2 text-right font-semibold">{fmtMonto(Number(c.monto))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

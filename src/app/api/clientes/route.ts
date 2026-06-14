@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
     // Filtro por estado (tipo) O por etiqueta (tags), igual que el admin.
     const rows = await sql`
       SELECT id, tipo, nombre, apellido, razon_social, empresa, email, whatsapp, cuit,
-             provincia, localidad, cod_postal, domicilio, condicion_fiscal, notas,
+             provincia, localidad, cod_postal, domicilio, condicion_fiscal, notas, email_opt_out,
              tags, origenes, total_presupuestos, total_pedidos, monto_total, ultimo_contacto_at
       FROM clientes
       WHERE (crm_eliminado IS NULL OR crm_eliminado = false)
