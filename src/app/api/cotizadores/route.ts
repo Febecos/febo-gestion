@@ -16,19 +16,21 @@ export async function GET(req: NextRequest) {
 
     const sql = getDb();
     const rows = await sql`
-      SELECT token_acceso FROM solicitudes_revendedor
+      SELECT token_acceso, tipo_usuario FROM solicitudes_revendedor
       WHERE lower(email) = ${email.toLowerCase()} AND token_acceso_activo = true AND token_acceso IS NOT NULL
       LIMIT 1`;
     const tk = rows[0]?.token_acceso || null;
+    const esInterno = rows[0]?.tipo_usuario === "interno";
     if (!tk) {
-      // sin token → URLs públicas (versión sin perfil)
-      return NextResponse.json({ ok: true, tiene_token: false, bombas: "https://revendedores.febecos.com/portal", fv: "https://fv.febecos.com/cotizar" });
+      return NextResponse.json({ ok: true, tiene_token: false, interno: false, bombas: "https://revendedores.febecos.com/portal", fv: "https://fv.febecos.com/cotizar" });
     }
     const e = encodeURIComponent(tk);
+    // INTERNO: vista interna del FV (/cotizar SIN #rev → Cliente Final / Revendedor + buscador).
+    // EXTERNO: #rev=token → su lista mayorista. El portal de bombas detecta interno por el token.
     return NextResponse.json({
-      ok: true, tiene_token: true,
+      ok: true, tiene_token: true, interno: esInterno,
       bombas: `https://revendedores.febecos.com/portal?token=${e}`,
-      fv: `https://fv.febecos.com/cotizar#rev=${e}`,
+      fv: esInterno ? `https://fv.febecos.com/cotizar` : `https://fv.febecos.com/cotizar#rev=${e}`,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
