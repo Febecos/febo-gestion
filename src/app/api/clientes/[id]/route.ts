@@ -53,6 +53,26 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     if (!id) return NextResponse.json({ ok: false, error: "id requerido" }, { status: 400 });
     const motivo = req.nextUrl.searchParams.get("motivo") || null;
     const sql = getDb();
+
+    // No se puede eliminar un cliente con operaciones enlazadas (presupuestos/comprobantes/compras).
+    const cl = await sql`SELECT cuit, email, whatsapp FROM clientes WHERE id = ${id} LIMIT 1`;
+    const cuit = (cl[0]?.cuit || "").trim();
+    const email = (cl[0]?.email || "").trim().toLowerCase();
+    const tel10 = (cl[0]?.whatsapp || "").replace(/\D/g, "").slice(-10);
+    const presu = await sql`
+      SELECT count(*)::int n FROM presupuestos
+      WHERE (${cuit} <> '' AND cliente_cuit = ${cuit})
+         OR (${email} <> '' AND lower(cliente_email) = ${email})
+         OR (${tel10} <> '' AND length(${tel10}) >= 8 AND right(regexp_replace(coalesce(cliente_telefono,''),'\D','','g'),10) = ${tel10})`;
+    let comprob = [{ n: 0 }] as any, compras = [{ n: 0 }] as any;
+    try { comprob = await sql`SELECT count(*)::int n FROM fg_comprobantes WHERE cliente_id = ${id}`; } catch {}
+    try { compras = await sql`SELECT count(*)::int n FROM compras_clientes WHERE cliente_id = ${id}`; } catch {}
+    const nP = presu[0].n, nC = comprob[0].n, nX = compras[0].n;
+    if (nP + nC + nX > 0) {
+      const partes = [nP && `${nP} presupuesto(s)`, nC && `${nC} comprobante(s)`, nX && `${nX} compra(s)`].filter(Boolean).join(", ");
+      return NextResponse.json({ ok: false, error: `No se puede eliminar: el cliente tiene ${partes} enlazado(s).` }, { status: 409 });
+    }
+
     await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS crm_eliminado BOOLEAN DEFAULT false`;
     await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS crm_eliminado_at TIMESTAMPTZ`;
     await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS crm_eliminado_motivo TEXT`;
