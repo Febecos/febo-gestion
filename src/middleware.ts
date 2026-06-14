@@ -3,7 +3,9 @@ import { jwtVerify } from "jose";
 
 // Protege TODO salvo /login y /api/auth/*. Valida el JWT (cookie fg_token) firmado
 // con ADMIN_JWT_SECRET — el mismo del admin del selector (login compartido).
-const PUBLIC = ["/login", "/api/auth/login", "/api/auth/verify"];
+// /p/[token] y /api/public/* son públicos: el token aleatorio del comprobante ES
+// la credencial (sin token no se accede). El resto exige sesión.
+const PUBLIC = ["/login", "/api/auth/login", "/api/auth/verify", "/p/", "/api/public/"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

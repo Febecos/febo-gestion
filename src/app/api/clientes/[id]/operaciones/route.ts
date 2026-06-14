@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     if (!id) return NextResponse.json({ ok: false, error: "id inválido" }, { status: 400 });
 
     const comprobantes = await sql`
-      SELECT id, tipo, estado, numero, ref_id, operacion_id, fecha, total, moneda, created_at
+      SELECT id, tipo, estado, numero, ref_id, operacion_id, token, fecha, total, moneda, created_at
       FROM fg_comprobantes
       WHERE cliente_id = ${id}
       ORDER BY created_at ASC`;

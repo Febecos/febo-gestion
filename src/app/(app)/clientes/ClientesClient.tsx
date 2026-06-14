@@ -336,6 +336,7 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
                               <span className="text-xs text-gray-400">{c.estado}</span>
                               <span className="text-xs text-gray-400">{fecha ? new Date(fecha).toLocaleDateString("es-AR") : ""}</span>
                               <span className="ml-auto text-gray-600">{fmtMonto(Number(c.total))}</span>
+                              {c.token && <a href={`/p/${c.token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir" className="text-gray-400 hover:text-febo-azul ml-1">📄</a>}
                             </div>
                           );
                         })}

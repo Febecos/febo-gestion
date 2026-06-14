@@ -76,6 +76,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
          SELECT $1, producto_codigo, descripcion, cantidad, precio_unitario, descuento_pct, total, orden FROM fg_items WHERE comprobante_id=$2`,
         [nuevo.id, id]
       );
+      await client.query(`UPDATE fg_comprobantes SET token = gen_random_uuid()::text WHERE id=$1 AND token IS NULL`, [nuevo.id]);
       await client.query(`UPDATE fg_comprobantes SET estado=$1, updated_at=now() WHERE id=$2`, [regla.estado_origen, id]);
       await client.query("COMMIT");
       return NextResponse.json({ ok: true, nuevo_id: nuevo.id, numero, tipo: regla.tipo });

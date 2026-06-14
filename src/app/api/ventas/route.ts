@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
         );
       }
       // Comprobante creado directo (presupuesto) = cabeza de su propia operación.
-      await client.query(`UPDATE fg_comprobantes SET operacion_id = id WHERE id = $1 AND operacion_id IS NULL`, [comp.id]);
+      await client.query(`UPDATE fg_comprobantes SET operacion_id = id, token = COALESCE(token, gen_random_uuid()::text) WHERE id = $1`, [comp.id]);
       await client.query("COMMIT");
       return NextResponse.json({ ok: true, id: comp.id, numero: comp.numero });
     } catch (e) { await client.query("ROLLBACK"); throw e; }

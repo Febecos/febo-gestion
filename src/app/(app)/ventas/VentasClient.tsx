@@ -190,6 +190,8 @@ function VerComprobante({ id, onClose, onChanged }: { id: number; onClose: () =>
           <div className="text-right text-lg font-bold">Total: {fmt(c.total)}</div>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
+          {c.token && <a href={`/p/${c.token}`} target="_blank" rel="noreferrer" className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">📄 Ver / Imprimir</a>}
+          {c.token && <a href={`/p/${c.token}?print=1`} target="_blank" rel="noreferrer" className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">🖨</a>}
           {c.tipo === "presupuesto" && c.estado !== "confirmado" && <button onClick={confirmar} disabled={busy} className="bg-febo-violeta text-white rounded-lg px-5 py-2 text-sm font-semibold disabled:opacity-50">✓ Confirmar → pedido</button>}
           {c.tipo === "pedido" && <button onClick={facturar} disabled={busy} className="bg-febo-verde text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">🧾 Facturar</button>}
           {(c.tipo === "pedido" || c.tipo === "factura") && <button onClick={remitir} disabled={busy} className="bg-febo-cyan text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">🚚 Remitir</button>}
