@@ -153,17 +153,27 @@ function VerComprobante({ id, onClose, onChanged }: { id: number; onClose: () =>
   const load = useCallback(async () => { const r = await fetch("/api/ventas/" + id); const d = await r.json(); if (d.ok) setData(d); }, [id]);
   useEffect(() => { load(); }, [load]);
 
-  async function confirmar() {
-    if (!confirm("¿Confirmar el presupuesto y generar el pedido?")) return;
+  async function accion(acc: string, extra: any = {}) {
     setBusy(true);
-    try { const r = await fetch("/api/ventas/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "confirmar" }) });
+    try { const r = await fetch("/api/ventas/" + id, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: acc, ...extra }) });
       const d = await r.json(); if (!d.ok) throw new Error(d.error);
-      alert("Pedido generado: " + d.numero); onChanged(); load();
+      if (d.numero) alert((d.tipo || "Comprobante") + " generado: " + d.numero);
+      onChanged(); load();
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
+  }
+  function confirmar() { if (confirm("¿Confirmar el presupuesto y generar el pedido?")) accion("confirmar"); }
+  function facturar() { if (confirm("¿Generar la factura (proforma) de este pedido?")) accion("facturar"); }
+  function remitir() { if (confirm("¿Generar el remito?")) accion("remitir"); }
+  function pagar() {
+    const m = prompt("Monto del pago:"); if (m === null) return;
+    const monto = Number((m || "").replace(/[^\d.,]/g, "").replace(",", ".")); if (!monto) { alert("Monto inválido"); return; }
+    const medio = prompt("Medio de pago (efectivo / transferencia / cheque…):", "transferencia") || null;
+    accion("pagar", { monto, medio });
   }
 
   if (!data) return null;
   const c = data.comprobante;
+  const pagado = (data.pagos || []).reduce((a: number, p: any) => a + (Number(p.monto) || 0), 0);
   return (
     <div className="fixed inset-0 bg-black/45 z-50 overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-2xl mx-auto my-8 p-7" onClick={(e) => e.stopPropagation()}>
@@ -175,9 +185,15 @@ function VerComprobante({ id, onClose, onChanged }: { id: number; onClose: () =>
           <thead className="text-[10px] text-gray-400 uppercase border-b"><tr><th className="text-left py-1">Descripción</th><th className="text-right">Cant</th><th className="text-right">P.unit</th><th className="text-right">Total</th></tr></thead>
           <tbody>{data.items.map((it: any) => <tr key={it.id} className="border-b border-gray-50"><td className="py-1">{it.descripcion}</td><td className="text-right">{it.cantidad}</td><td className="text-right">{fmt(it.precio_unitario)}</td><td className="text-right font-semibold">{fmt(it.total)}</td></tr>)}</tbody>
         </table>
-        <div className="text-right text-lg font-bold mb-4">Total: {fmt(c.total)}</div>
-        <div className="flex justify-end gap-2">
-          {c.tipo === "presupuesto" && c.estado !== "confirmado" && <button onClick={confirmar} disabled={busy} className="bg-febo-violeta text-white rounded-lg px-5 py-2 text-sm font-semibold disabled:opacity-50">✓ Confirmar → generar pedido</button>}
+        <div className="flex justify-between items-end mb-4">
+          <div className="text-sm text-gray-500">{pagado > 0 && <>Pagado: <span className="font-semibold text-emerald-600">{fmt(pagado)}</span> · Saldo: <span className={`font-semibold ${c.total - pagado > 0 ? "text-red-600" : "text-gray-600"}`}>{fmt(c.total - pagado)}</span></>}</div>
+          <div className="text-right text-lg font-bold">Total: {fmt(c.total)}</div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          {c.tipo === "presupuesto" && c.estado !== "confirmado" && <button onClick={confirmar} disabled={busy} className="bg-febo-violeta text-white rounded-lg px-5 py-2 text-sm font-semibold disabled:opacity-50">✓ Confirmar → pedido</button>}
+          {c.tipo === "pedido" && <button onClick={facturar} disabled={busy} className="bg-febo-verde text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">🧾 Facturar</button>}
+          {(c.tipo === "pedido" || c.tipo === "factura") && <button onClick={remitir} disabled={busy} className="bg-febo-cyan text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">🚚 Remitir</button>}
+          {c.tipo !== "presupuesto" && c.tipo !== "remito" && <button onClick={pagar} disabled={busy} className="bg-emerald-600 text-white rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50">💵 Registrar pago</button>}
           <button onClick={onClose} className="border border-gray-300 rounded-lg px-5 py-2 text-sm">Cerrar</button>
         </div>
       </div>

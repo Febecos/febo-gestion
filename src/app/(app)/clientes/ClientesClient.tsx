@@ -251,9 +251,9 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
   );
 }
 
-const TIPO_COMP: Record<string, { l: string; c: string }> = {
-  presupuesto: { l: "Presupuesto", c: "#64748b" }, pedido: { l: "Pedido", c: "#2563eb" },
-  factura: { l: "Factura", c: "#059669" }, remito: { l: "Remito", c: "#7c3aed" },
+const TIPO_COMP: Record<string, { l: string; c: string; o: number }> = {
+  presupuesto: { l: "Presupuesto", c: "#64748b", o: 0 }, pedido: { l: "Pedido", c: "#2563eb", o: 1 },
+  factura: { l: "Factura", c: "#059669", o: 2 }, remito: { l: "Remito", c: "#7c3aed", o: 3 },
 };
 
 function OperacionesTab({ clienteId }: { clienteId: number }) {
@@ -271,7 +271,22 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
   if (loading) return <div className="text-gray-400 text-sm py-8 text-center">Cargando operaciones…</div>;
   const comps = data?.comprobantes || [];
   const compras = data?.compras || [];
+  const pagos = data?.pagos || [];
   const r = data?.resumen || {};
+
+  // Agrupar comprobantes por operación (cabeza = presupuesto). Cada operación = una cadena.
+  const ops = new Map<number, any[]>();
+  for (const c of comps) {
+    const k = c.operacion_id || c.id;
+    if (!ops.has(k)) ops.set(k, []);
+    ops.get(k)!.push(c);
+  }
+  const operaciones = Array.from(ops.entries()).map(([opId, list]) => {
+    const ordenada = [...list].sort((a, b) => (TIPO_COMP[a.tipo]?.o ?? 9) - (TIPO_COMP[b.tipo]?.o ?? 9));
+    const cabeza = ordenada.find((c) => c.tipo === "presupuesto") || ordenada[0];
+    const pagosOp = pagos.filter((p: any) => ordenada.some((c) => c.id === p.comprobante_id));
+    return { opId, cabeza, docs: ordenada, pagos: pagosOp };
+  }).sort((a, b) => b.opId - a.opId);
   const estadoChip = r.estado_derivado === "compro" ? ["✅ Cliente que compró", "#059669"]
     : r.estado_derivado === "cotizo" ? ["📝 Cliente que cotizó", "#d97706"]
     : ["📇 Sin operaciones", "#64748b"];
@@ -294,30 +309,49 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
         </div>
       ) : (
         <div className="space-y-4">
-          {comps.length > 0 && (
+          {operaciones.length > 0 && (
             <div>
-              <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Comprobantes (FEBO-GESTION)</div>
-              <div className="border border-gray-200 rounded-xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-                    <tr><th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Número</th><th className="text-left px-3 py-2">Fecha</th><th className="text-left px-3 py-2">Estado</th><th className="text-right px-3 py-2">Total</th></tr>
-                  </thead>
-                  <tbody>
-                    {comps.map((c: any) => {
-                      const t = TIPO_COMP[c.tipo] || { l: c.tipo, c: "#888" };
-                      const fecha = c.fecha || c.created_at;
-                      return (
-                        <tr key={c.id} className="border-t border-gray-100">
-                          <td className="px-3 py-2"><span style={{ background: t.c + "1a", color: t.c }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{t.l}</span></td>
-                          <td className="px-3 py-2 font-semibold">{c.numero || "—"}</td>
-                          <td className="px-3 py-2 text-gray-500">{fecha ? new Date(fecha).toLocaleDateString("es-AR") : "—"}</td>
-                          <td className="px-3 py-2 text-gray-500">{c.estado || "—"}</td>
-                          <td className="px-3 py-2 text-right font-semibold">{fmtMonto(Number(c.total))}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="text-[11px] font-semibold text-gray-500 uppercase mb-1.5">Operaciones (FEBO-GESTION)</div>
+              <div className="space-y-3">
+                {operaciones.map((op) => {
+                  const tc = TIPO_COMP[op.cabeza.tipo] || { l: op.cabeza.tipo, c: "#888", o: 9 };
+                  const fcab = op.cabeza.fecha || op.cabeza.created_at;
+                  return (
+                    <div key={op.opId} className="border border-gray-200 rounded-xl overflow-hidden">
+                      <div className="flex items-center gap-2 bg-gray-50 px-3 py-2 border-b border-gray-100">
+                        <span className="font-bold text-sm">Operación #{op.opId}</span>
+                        <span className="text-xs text-gray-400">{op.cabeza.numero}</span>
+                        <span className="text-xs text-gray-400 ml-1">{fcab ? new Date(fcab).toLocaleDateString("es-AR") : ""}</span>
+                        <span className="ml-auto font-bold text-sm">{fmtMonto(Number(op.cabeza.total))}</span>
+                      </div>
+                      <div className="divide-y divide-gray-50">
+                        {op.docs.map((c: any, i: number) => {
+                          const t = TIPO_COMP[c.tipo] || { l: c.tipo, c: "#888", o: 9 };
+                          const fecha = c.fecha || c.created_at;
+                          return (
+                            <div key={c.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                              <span className="text-gray-300">{i === 0 ? "" : "└─"}</span>
+                              <span style={{ background: t.c + "1a", color: t.c }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{t.l}</span>
+                              <span className="font-semibold">{c.numero || "—"}</span>
+                              <span className="text-xs text-gray-400">{c.estado}</span>
+                              <span className="text-xs text-gray-400">{fecha ? new Date(fecha).toLocaleDateString("es-AR") : ""}</span>
+                              <span className="ml-auto text-gray-600">{fmtMonto(Number(c.total))}</span>
+                            </div>
+                          );
+                        })}
+                        {op.pagos.map((p: any) => (
+                          <div key={"p" + p.id} className="flex items-center gap-2 px-3 py-1.5 text-sm bg-emerald-50/40">
+                            <span className="text-gray-300">└─</span>
+                            <span className="bg-emerald-100 text-emerald-700 rounded px-2 py-0.5 text-[11px] font-semibold">💵 Pago</span>
+                            <span className="text-xs text-gray-500">{p.medio || ""}</span>
+                            <span className="text-xs text-gray-400">{p.fecha ? new Date(p.fecha).toLocaleDateString("es-AR") : ""}</span>
+                            <span className="ml-auto font-semibold text-emerald-700">{fmtMonto(Number(p.monto))}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

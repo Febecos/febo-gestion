@@ -64,6 +64,8 @@ export async function POST(req: NextRequest) {
           [comp.id, it.producto_codigo || null, it.descripcion || "", Number(it.cantidad) || 0, Number(it.precio_unitario) || 0, Number(it.descuento_pct) || 0, calcItem(it), i]
         );
       }
+      // Comprobante creado directo (presupuesto) = cabeza de su propia operación.
+      await client.query(`UPDATE fg_comprobantes SET operacion_id = id WHERE id = $1 AND operacion_id IS NULL`, [comp.id]);
       await client.query("COMMIT");
       return NextResponse.json({ ok: true, id: comp.id, numero: comp.numero });
     } catch (e) { await client.query("ROLLBACK"); throw e; }
