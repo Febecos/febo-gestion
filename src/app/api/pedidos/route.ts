@@ -8,7 +8,7 @@ export async function GET(_req: NextRequest) {
     const sql = getDb();
 
     const bombas = await sql`
-      SELECT id, revendedor_nombre, bomba_codigo, bomba_descripcion,
+      SELECT id, numero, revendedor_nombre, bomba_codigo, bomba_descripcion,
              precio_final, estado, tipo_comprador, created_at
       FROM pedidos ORDER BY created_at DESC LIMIT 300` as any[];
 
@@ -21,7 +21,7 @@ export async function GET(_req: NextRequest) {
 
     const lista = [
       ...bombas.map((p) => ({
-        origen: "bomba", ref: p.id, numero: null,
+        origen: "bomba", ref: p.id, numero: p.numero || null,
         cliente: p.revendedor_nombre || "—",
         detalle: p.bomba_codigo || p.bomba_descripcion || "—",
         total: Number(p.precio_final) || 0, moneda: "$",
