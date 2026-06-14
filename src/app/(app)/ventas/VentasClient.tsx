@@ -32,8 +32,9 @@ export default function VentasClient() {
       const r = await fetch("/api/cotizadores"); const d = await r.json();
       if (!d.ok) throw new Error(d.error);
       const url = cual === "bombas" ? d.bombas : d.fv;
-      const titulo = (cual === "bombas" ? "🔧 Cotizador de bombas" : "☀️ Cotizador fotovoltaico") + (d.tiene_token ? " (tu perfil)" : " (público — sin token)");
-      setCotiz({ url, titulo });
+      // Se abre en PESTAÑA nueva: los cotizadores tienen su propia sesión/login (OTP),
+      // que no funciona embebida en iframe (cookies cross-domain). En pestaña usás tu sesión.
+      window.open(url, "_blank", "noopener");
     } catch (e: any) { alert("No se pudo abrir el cotizador: " + e.message); }
   }
 
