@@ -1,14 +1,13 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useRouter } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 
 const MODULOS = [
   { href: "/clientes", label: "Clientes", icon: "👥" },
   { href: "/ventas", label: "Ventas", icon: "🧾" },
   { href: "/productos", label: "Productos", icon: "📦" },
-  { href: "/cotizadores?t=bomba", label: "Cotizar bomba", icon: "🔧", match: "/cotizadores" },
-  { href: "/cotizadores?t=fv", label: "Cotizar FV", icon: "☀️", match: "/cotizadores" },
+  { href: "/cotizadores?t=bomba", label: "Cotizar bomba", icon: "🔧", match: "/cotizadores", t: "bomba" },
+  { href: "/cotizadores?t=fv", label: "Cotizar FV", icon: "☀️", match: "/cotizadores", t: "fv" },
   { href: "/compras", label: "Compras", icon: "🛒", soon: true },
   { href: "/tesoreria", label: "Tesorería", icon: "💰", soon: true },
   { href: "/reportes", label: "Reportes", icon: "📊", soon: true },
@@ -16,6 +15,8 @@ const MODULOS = [
 
 export default function TopNav() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const tActual = searchParams.get("t");
   const router = useRouter();
   async function salir() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }
 
@@ -29,7 +30,8 @@ export default function TopNav() {
       </div>
       <nav className="flex gap-1 px-3 py-2 overflow-x-auto">
         {MODULOS.map((m) => {
-          const act = pathname.startsWith((m.match || m.href).split("?")[0]);
+          const base = (m.match || m.href).split("?")[0];
+          const act = m.t ? (pathname.startsWith(base) && tActual === m.t) : (pathname.startsWith(base) && pathname !== "/cotizadores");
           return m.soon ? (
             <div key={m.href} className="flex flex-col items-center justify-center min-w-[78px] px-2 py-2 rounded-lg text-gray-300 cursor-default">
               <span className="text-2xl">{m.icon}</span>
