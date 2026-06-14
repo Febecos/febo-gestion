@@ -61,9 +61,21 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const facturado = facturadoFg + facturadoExt;
     const pagado = (pagos as any[]).reduce((a, p) => a + num(p.monto), 0);
 
+    // Totales por MONEDA (bombas = ARS, FV = USD) y separando presupuestos vs pedidos.
+    // "Pedido" = presupuesto con estado pedido/convertido (se convirtió en pedido).
+    const esPedido = (p: any) => ["pedido", "convertido"].includes((p.estado || "").toLowerCase());
+    const ps = presupuestos as any[];
+    const sum = (arr: any[], pred: (p: any) => boolean) => arr.filter(pred).reduce((a, p) => a + num(p.precio_ofrecido), 0);
+    const coti_ars = sum(ps, (p) => p.tipo !== "fv");
+    const coti_usd = sum(ps, (p) => p.tipo === "fv");
+    const ped_ars = sum(ps, (p) => p.tipo !== "fv" && esPedido(p));
+    const ped_usd = sum(ps, (p) => p.tipo === "fv" && esPedido(p));
+    const presup_count = ps.length;
+    const pedidos_count = ps.filter(esPedido).length;
+
     const tipos = new Set((comprobantes as any[]).map((c) => c.tipo));
-    const tieneCompra = tipos.has("factura") || tipos.has("pedido") || (compras as any[]).length > 0;
-    const tieneCotiza = (presupuestos as any[]).length > 0 || tipos.has("presupuesto");
+    const tieneCompra = tipos.has("factura") || (compras as any[]).length > 0 || pedidos_count > 0;
+    const tieneCotiza = presup_count > 0 || tipos.has("presupuesto");
     const estado_derivado = tieneCompra ? "compro" : tieneCotiza ? "cotizo" : "sin_operaciones";
 
     return NextResponse.json({
@@ -75,6 +87,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       resumen: {
         facturado, pagado, saldo: facturado - pagado, estado_derivado,
         cantidad: (presupuestos as any[]).length + (compras as any[]).length,
+        coti_ars, coti_usd, ped_ars, ped_usd, presup_count, pedidos_count,
       },
     });
   } catch (e: any) {

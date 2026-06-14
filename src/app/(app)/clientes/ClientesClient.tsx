@@ -313,12 +313,23 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <span style={{ background: (estadoChip[1] as string) + "1a", color: estadoChip[1] as string }} className="rounded-lg px-3 py-1.5 text-sm font-semibold">{estadoChip[0]}</span>
-        <div className="ml-auto flex gap-4 text-sm">
-          <div className="text-right"><div className="text-[10px] text-gray-400 uppercase">Facturado</div><div className="font-bold">{fmtMonto(r.facturado)}</div></div>
-          <div className="text-right"><div className="text-[10px] text-gray-400 uppercase">Pagado</div><div className="font-bold text-emerald-600">{fmtMonto(r.pagado)}</div></div>
-          <div className="text-right"><div className="text-[10px] text-gray-400 uppercase">Saldo</div><div className={`font-bold ${r.saldo > 0 ? "text-red-600" : "text-gray-700"}`}>{fmtMonto(r.saldo)}</div></div>
+        <div className="ml-auto grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-1 text-sm">
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase">Presupuestos ({r.presup_count || 0})</div>
+            <div className="font-bold">{r.coti_ars ? "$ " + Math.round(r.coti_ars).toLocaleString("es-AR") : "—"}</div>
+            {r.coti_usd ? <div className="font-bold text-amber-600 text-xs">USD {Math.round(r.coti_usd).toLocaleString("es-AR")}</div> : null}
+          </div>
+          <div className="text-right">
+            <div className="text-[10px] text-gray-400 uppercase">Pedidos ({r.pedidos_count || 0})</div>
+            <div className="font-bold text-violet-700">{r.ped_ars ? "$ " + Math.round(r.ped_ars).toLocaleString("es-AR") : "—"}</div>
+            {r.ped_usd ? <div className="font-bold text-amber-600 text-xs">USD {Math.round(r.ped_usd).toLocaleString("es-AR")}</div> : null}
+          </div>
+          {(r.facturado > 0 || r.pagado > 0) && <>
+            <div className="text-right"><div className="text-[10px] text-gray-400 uppercase">Facturado</div><div className="font-bold">{fmtMonto(r.facturado)}</div></div>
+            <div className="text-right"><div className="text-[10px] text-gray-400 uppercase">Saldo</div><div className={`font-bold ${r.saldo > 0 ? "text-red-600" : "text-gray-700"}`}>{fmtMonto(r.saldo)}</div></div>
+          </>}
         </div>
       </div>
 
