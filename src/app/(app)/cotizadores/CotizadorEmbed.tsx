@@ -2,9 +2,9 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
-export default function CotizadorEmbed() {
+export default function CotizadorEmbed({ tipoProp }: { tipoProp?: "fv" | "bomba" }) {
   const sp = useSearchParams();
-  const tipo = sp.get("t") === "fv" ? "fv" : "bomba";
+  const tipo = tipoProp || (sp.get("t") === "fv" ? "fv" : "bomba");
   const [url, setUrl] = useState<string>("");
   const [interno, setInterno] = useState(false);
   const [error, setError] = useState("");
