@@ -6,7 +6,8 @@ type Cliente = {
   cuit: string; provincia: string; localidad: string; razon_social?: string;
   domicilio?: string; cod_postal?: string; condicion_fiscal?: string; notas?: string;
   tags: string[]; origenes: string[]; email_opt_out?: boolean; descuento_pct?: number;
-  total_pedidos: number; monto_total: number; ultimo_contacto_at: string;
+  n_presup?: number; n_pedidos?: number; monto_ars?: number; monto_usd?: number;
+  ultimo_contacto_at: string;
 };
 
 const ESTADOS = [
@@ -33,6 +34,7 @@ export default function ClientesClient({ openClienteId }: { openClienteId?: numb
   const [page, setPage] = useState(1); const [loading, setLoading] = useState(true);
   const [edit, setEdit] = useState<Cliente | null>(null);
   const [nuevo, setNuevo] = useState(false);
+  const [verMontos, setVerMontos] = useState(false);
   const limit = 50;
 
   const load = useCallback(async () => {
@@ -78,6 +80,9 @@ export default function ClientesClient({ openClienteId }: { openClienteId?: numb
           {ESTADOS.concat(TAGS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
         <span className="text-sm text-gray-500">{total.toLocaleString("es-AR")} contactos</span>
+        <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
+          <input type="checkbox" checked={verMontos} onChange={(e) => setVerMontos(e.target.checked)} /> 💲 Ver montos
+        </label>
         <div className="ml-auto flex gap-2">
           <button onClick={() => setNuevo(true)} className="bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">＋ Nuevo cliente</button>
           <button onClick={exportarCSV} className="bg-febo-azul text-white rounded-lg px-3 py-2 text-sm font-semibold">⬇ CSV</button>
@@ -87,11 +92,16 @@ export default function ClientesClient({ openClienteId }: { openClienteId?: numb
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase">
-            <tr><th className="text-left px-4 py-3">Nombre</th><th className="text-left px-4 py-3">Email</th><th className="text-left px-4 py-3">WhatsApp</th><th className="text-left px-4 py-3">Tipo</th><th className="text-left px-4 py-3">Provincia</th><th className="text-center px-4 py-3">Pedidos</th><th className="text-right px-4 py-3">Monto total</th><th></th></tr>
+            <tr>
+              <th className="text-left px-4 py-3">Nombre</th><th className="text-left px-4 py-3">Email</th><th className="text-left px-4 py-3">WhatsApp</th><th className="text-left px-4 py-3">Tipo</th><th className="text-left px-4 py-3">Provincia</th>
+              <th className="text-center px-4 py-3">Presup.</th><th className="text-center px-4 py-3">Pedidos</th>
+              {verMontos && <><th className="text-right px-4 py-3">Monto $</th><th className="text-right px-4 py-3">Monto USD</th></>}
+              <th></th>
+            </tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={8} className="text-center py-8 text-gray-400">Cargando…</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={8} className="text-center py-8 text-gray-400">Sin resultados</td></tr>
+            {loading ? <tr><td colSpan={verMontos ? 10 : 8} className="text-center py-8 text-gray-400">Cargando…</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={verMontos ? 10 : 8} className="text-center py-8 text-gray-400">Sin resultados</td></tr>
             : rows.map((r) => {
               const extra = (r.tags || []).filter((t) => t !== r.tipo && !(r.tipo === "cliente_final" && t === "cliente"));
               return (
@@ -101,8 +111,12 @@ export default function ClientesClient({ openClienteId }: { openClienteId?: numb
                   <td className="px-4 py-2 text-gray-600">{r.whatsapp || "—"}</td>
                   <td className="px-4 py-2">{badge(r.tipo || "—")}{extra.length > 0 && <span className="ml-1 text-[10px] text-indigo-500 font-bold">+{extra.length}</span>}</td>
                   <td className="px-4 py-2 text-gray-600">{r.provincia || "—"}</td>
-                  <td className="px-4 py-2 text-center">{r.total_pedidos || 0}</td>
-                  <td className="px-4 py-2 text-right font-semibold">{fmtMonto(r.monto_total)}</td>
+                  <td className="px-4 py-2 text-center">{r.n_presup || 0}</td>
+                  <td className="px-4 py-2 text-center font-semibold text-violet-700">{r.n_pedidos || 0}</td>
+                  {verMontos && <>
+                    <td className="px-4 py-2 text-right font-semibold">{r.monto_ars ? "$ " + Math.round(r.monto_ars).toLocaleString("es-AR") : "—"}</td>
+                    <td className="px-4 py-2 text-right font-semibold text-amber-600">{r.monto_usd ? "USD " + Math.round(r.monto_usd).toLocaleString("es-AR") : "—"}</td>
+                  </>}
                   <td className="px-4 py-2 text-right text-gray-400">✏️</td>
                 </tr>
               );

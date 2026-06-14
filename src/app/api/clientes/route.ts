@@ -55,14 +55,27 @@ export async function GET(req: NextRequest) {
 
     // Filtro por estado (tipo) O por etiqueta (tags), igual que el admin.
     const rows = await sql`
-      SELECT id, tipo, nombre, apellido, razon_social, empresa, email, whatsapp, cuit,
-             provincia, localidad, cod_postal, domicilio, condicion_fiscal, notas, email_opt_out, descuento_pct,
-             tags, origenes, total_presupuestos, total_pedidos, monto_total, ultimo_contacto_at
-      FROM clientes
-      WHERE (crm_eliminado IS NULL OR crm_eliminado = false)
-        AND (${q} = '' OR lower(coalesce(nombre,'')||' '||coalesce(email,'')||' '||coalesce(whatsapp,'')||' '||coalesce(cuit,'')) LIKE ${like})
-        AND (${tipo} = '' OR tipo = ${tipo} OR ${tipo} = ANY(tags))
-      ORDER BY ultimo_contacto_at DESC NULLS LAST
+      SELECT c.id, c.tipo, c.nombre, c.apellido, c.razon_social, c.empresa, c.email, c.whatsapp, c.cuit,
+             c.provincia, c.localidad, c.cod_postal, c.domicilio, c.condicion_fiscal, c.notas, c.email_opt_out, c.descuento_pct,
+             c.tags, c.origenes, c.ultimo_contacto_at,
+             agg.n_presup, agg.n_pedidos, agg.monto_ars, agg.monto_usd
+      FROM clientes c
+      LEFT JOIN LATERAL (
+        SELECT count(*)::int AS n_presup,
+               count(*) FILTER (WHERE lower(coalesce(p.estado,'')) IN ('pedido','convertido'))::int AS n_pedidos,
+               COALESCE(sum(p.precio_ofrecido) FILTER (WHERE COALESCE(p.tipo,'bomba') <> 'fv'), 0) AS monto_ars,
+               COALESCE(sum(p.precio_ofrecido) FILTER (WHERE p.tipo = 'fv'), 0) AS monto_usd
+        FROM presupuestos p
+        WHERE p.cliente_id = c.id
+           OR (coalesce(c.cuit,'') <> '' AND p.cliente_cuit = c.cuit)
+           OR (coalesce(c.email,'') <> '' AND lower(p.cliente_email) = lower(c.email))
+           OR (coalesce(c.whatsapp,'') <> '' AND length(regexp_replace(c.whatsapp,'\D','','g')) >= 8
+               AND right(regexp_replace(coalesce(p.cliente_telefono,''),'\D','','g'),10) = right(regexp_replace(c.whatsapp,'\D','','g'),10))
+      ) agg ON true
+      WHERE (c.crm_eliminado IS NULL OR c.crm_eliminado = false)
+        AND (${q} = '' OR lower(coalesce(c.nombre,'')||' '||coalesce(c.email,'')||' '||coalesce(c.whatsapp,'')||' '||coalesce(c.cuit,'')) LIKE ${like})
+        AND (${tipo} = '' OR c.tipo = ${tipo} OR ${tipo} = ANY(c.tags))
+      ORDER BY c.ultimo_contacto_at DESC NULLS LAST
       LIMIT ${limit} OFFSET ${offset}`;
 
     const totalRows = await sql`
