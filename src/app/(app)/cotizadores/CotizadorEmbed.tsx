@@ -18,23 +18,20 @@ export default function CotizadorEmbed({ tipoProp }: { tipoProp?: "fv" | "bomba"
     }).catch((e) => setError(e.message));
   }, [tipo]);
 
-  const titulo = tipo === "fv" ? "☀️ Cotizador fotovoltaico" : "🔧 Cotizador de bombas";
-
+  // Ocupa todo el alto de la ventana; el iframe scrollea (una sola barra).
   return (
-    <div className="flex flex-col h-[calc(100vh-130px)]">
-      <div className="flex items-center gap-3 mb-2">
-        <h1 className="text-lg font-bold">{titulo}</h1>
-        {interno && <span className="text-[11px] bg-emerald-100 text-emerald-700 rounded px-2 py-0.5 font-semibold">tu perfil interno</span>}
-        {url && <a href={url} target="_blank" rel="noreferrer" className="text-xs text-febo-azul ml-auto">abrir en pestaña ↗</a>}
+    <div className="flex flex-col h-full">
+      <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-100 text-[11px] text-gray-400 shrink-0">
+        {interno && <span className="bg-emerald-100 text-emerald-700 rounded px-2 py-0.5 font-semibold">tu perfil interno</span>}
+        {url && <a href={url} target="_blank" rel="noreferrer" className="ml-auto text-febo-azul">abrir en pestaña ↗</a>}
       </div>
       {error ? (
-        <div className="text-red-600 text-sm">Error: {error}</div>
+        <div className="text-red-600 text-sm p-4">Error: {error}</div>
       ) : !url ? (
-        <div className="text-gray-400 text-sm">Cargando cotizador…</div>
+        <div className="text-gray-400 text-sm p-4">Cargando cotizador…</div>
       ) : (
-        <iframe src={url} className="flex-1 w-full rounded-xl border border-gray-200 bg-white" title={titulo} />
+        <iframe src={url} className="flex-1 w-full border-0" title={tipo === "fv" ? "Cotizador FV" : "Cotizador bombas"} />
       )}
-      <div className="text-[11px] text-gray-400 mt-1">Si te pide login, ingresá con tu email (el mismo del admin). El presupuesto que generes queda guardado y lo vas a ver en Ventas.</div>
     </div>
   );
 }

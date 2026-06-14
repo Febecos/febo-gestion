@@ -95,8 +95,8 @@ export default function WindowManager({ children }: { children: React.ReactNode 
                   <button onClick={() => close(w.id)} className="w-6 h-6 rounded hover:bg-red-100 text-red-500" title="Cerrar">✕</button>
                 </div>
               </div>
-              <div className="flex-1 overflow-auto p-4">
-                <Suspense fallback={<div className="text-gray-400 text-sm">Cargando…</div>}><Body k={w.key} /></Suspense>
+              <div className={`flex-1 min-h-0 ${w.key.startsWith("cot-") ? "overflow-hidden" : "overflow-auto p-4"}`}>
+                <Suspense fallback={<div className="text-gray-400 text-sm p-4">Cargando…</div>}><Body k={w.key} /></Suspense>
               </div>
             </div>
           ))}
