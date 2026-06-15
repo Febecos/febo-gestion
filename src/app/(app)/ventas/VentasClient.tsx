@@ -90,12 +90,6 @@ function Presupuestos() {
     if (!hash) alert("⚠️ No se pudo abrir en modo interno (revisá FV_BRIDGE_SECRET). Abro en modo lectura.");
     window.open(`https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, "_blank");
   }
-  // Crear un presupuesto FV NUEVO con la sesión interna (cotizador con todos los botones).
-  async function nuevoFvInterno() {
-    const hash = await tokenInterno();
-    if (!hash) { alert("⚠️ No se pudo abrir el cotizador interno (revisá FV_BRIDGE_SECRET)."); return; }
-    window.open(`https://fv.febecos.com/cotizar${hash}`, "_blank");
-  }
   const nombreCli = (r: Presup) => r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ") || "—";
   const selCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm";
   return (
@@ -114,8 +108,6 @@ function Presupuestos() {
           {estados.map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
         <span className="text-sm text-gray-500">{rows.length}</span>
-        <button onClick={nuevoFvInterno} className="ml-auto bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">☀️ Nuevo FV (interno)</button>
-        <a href={COTI} target="_blank" rel="noreferrer" className="bg-gray-100 text-gray-600 rounded-lg px-3 py-2 text-sm font-semibold">＋ coti (externo) ↗</a>
       </div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">

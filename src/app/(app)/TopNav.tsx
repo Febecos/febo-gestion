@@ -18,6 +18,14 @@ export default function TopNav() {
   const { open } = useWindows();
   async function salir() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }
 
+  // "Cotizar FV" abre el cotizador FV en modo INTERNO (puente con sesión efímera).
+  async function abrirCotizarFv() {
+    let hash = "";
+    try { const r = await fetch("/api/fv-session"); const d = await r.json(); if (d.ok && d.token) hash = "#admin_jwt=" + d.token; } catch {}
+    if (!hash) { alert("⚠️ No se pudo abrir el cotizador FV interno (revisá FV_BRIDGE_SECRET)."); return; }
+    window.open("https://fv.febecos.com/cotizar" + hash, "_blank");
+  }
+
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-[5]">
       <div className="flex items-center gap-3 px-5 py-2 border-b border-gray-100">
@@ -28,7 +36,7 @@ export default function TopNav() {
       </div>
       <nav className="flex gap-1 px-3 py-2 overflow-x-auto">
         {MODULOS.map((m) => (
-          <button key={m.key} onClick={() => open(m.key)}
+          <button key={m.key} onClick={() => (m.key === "cot-fv" ? abrirCotizarFv() : open(m.key))}
             className="flex flex-col items-center justify-center min-w-[80px] px-2 py-2 rounded-lg text-gray-600 hover:bg-febo-azul/10 hover:text-febo-azul transition">
             <span className="text-2xl">{m.icon}</span>
             <span className="text-[11px] mt-0.5 font-semibold whitespace-nowrap">{m.label}</span>
