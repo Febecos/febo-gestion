@@ -191,6 +191,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [nota, setNota] = useState("");
   const [provPanel, setProvPanel] = useState(false);
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
+  const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "" });
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); } }), [refId]);
   useEffect(() => { load(); }, [load]);
   if (!ped) return null;
@@ -269,6 +270,51 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               </tfoot>
             </table>
           </div>
+
+          {/* Comprobante de pago + verificar monto */}
+          {(() => {
+            const archivos = ped.comprobante_archivo || [];
+            const pagos = ped.pagos_recibidos || [];
+            const tcV = Number(vf.tc) || dolar || 0;
+            const montoN = Number(vf.monto) || 0, redN = Number(vf.redondeo) || 0;
+            const montoUSD = vf.moneda === "ars" ? (tcV ? montoN / tcV : 0) : montoN;
+            const redUSD = vf.moneda === "ars" ? (tcV ? redN / tcV : 0) : redN;
+            const efUSD = montoUSD + redUSD;
+            const yaPagado = pagos.reduce((a: number, p: any) => a + (Number(p.monto_usd) || 0), 0);
+            const totUSD = Number(tot.total) || 0;
+            const restante = +(totUSD - yaPagado).toFixed(2);
+            const diff = +(efUSD - restante).toFixed(2);
+            const okPago = Math.abs(diff) <= 0.02;
+            const toB64 = (f: File) => new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.readAsDataURL(f); });
+            const subir = async (files: FileList | null) => {
+              if (!files?.length) return; const arr: any[] = [];
+              for (const f of Array.from(files)) arr.push({ nombre: f.name, tipo: f.type, b64: await toB64(f) });
+              await accion({ accion: "comprobante", archivos: [...archivos, ...arr] });
+            };
+            const guardarPago = () => {
+              if (!montoN) { alert("Ingresá el monto recibido"); return; }
+              accion({ accion: "verificar", pago: { monto: montoN, moneda: vf.moneda, tc: tcV, redondeo: redN, monto_usd: +efUSD.toFixed(2), diff_usd: diff, ok: okPago, fecha: new Date().toISOString() } });
+              setVf({ ...vf, monto: "", redondeo: "" });
+            };
+            return (
+              <div className="border border-gray-200 rounded-lg p-3">
+                <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📄 Comprobante de pago {ped.comprobante_recibido && <span className="text-emerald-600">· recibido</span>}</div>
+                {archivos.length > 0 && <div className="flex flex-wrap gap-2 mb-2">{archivos.map((a: any, i: number) => <a key={i} href={`data:${a.tipo};base64,${a.b64}`} download={a.nombre} className="text-xs text-febo-azul underline">⬇ {a.nombre}</a>)}</div>}
+                <input type="file" multiple onChange={(e) => subir(e.target.files)} className="text-xs mb-3" />
+                <div className="text-[11px] font-bold text-gray-500 uppercase mb-1">💵 Verificar monto recibido</div>
+                <div className="text-xs text-gray-500 mb-1">Total: <b>USD {totUSD.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b>{dolar ? ` · $ ${Math.round(totUSD * dolar).toLocaleString("es-AR")}` : ""}{yaPagado > 0 && ` · ya pagado USD ${yaPagado.toFixed(2)} · restante USD ${restante.toFixed(2)}`}</div>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <label className="text-xs text-gray-500">TC <input type="number" value={vf.tc} onChange={(e) => setVf({ ...vf, tc: e.target.value })} placeholder={String(dolar || "")} className="border border-gray-300 rounded px-2 py-1 text-sm w-20 ml-1" /></label>
+                  <select value={vf.moneda} onChange={(e) => setVf({ ...vf, moneda: e.target.value })} className="border border-gray-300 rounded px-2 py-1 text-sm"><option value="usd">USD</option><option value="ars">$ ARS</option></select>
+                  <input type="number" value={vf.monto} onChange={(e) => setVf({ ...vf, monto: e.target.value })} placeholder="monto recibido" className="border border-gray-300 rounded px-2 py-1 text-sm w-32" />
+                  <input type="number" value={vf.redondeo} onChange={(e) => setVf({ ...vf, redondeo: e.target.value })} placeholder="redondeo" title="ajuste por diferencia de redondeo" className="border border-gray-300 rounded px-2 py-1 text-sm w-24" />
+                  {montoN > 0 && <span className={`text-xs font-semibold ${okPago ? "text-emerald-600" : "text-amber-600"}`}>{okPago ? "✔ cubre el total" : `dif USD ${diff.toFixed(2)}`}</span>}
+                  <button disabled={busy} onClick={guardarPago} className="px-3 py-1.5 rounded-lg bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-700">💾 Guardar pago</button>
+                </div>
+                {pagos.length > 0 && <div className="mt-2 text-xs text-gray-600">{pagos.map((p: any, i: number) => <div key={i}>• {new Date(p.fecha).toLocaleDateString("es-AR")}: {p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} (USD {Number(p.monto_usd).toFixed(2)}) {p.ok ? "✔" : ""}</div>)}</div>}
+              </div>
+            );
+          })()}
 
           {/* Pedido a proveedor */}
           {provPanel && (() => {

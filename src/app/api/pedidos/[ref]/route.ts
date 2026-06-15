@@ -9,7 +9,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
     let dolar = 0;
     try { const c = await sql`SELECT data FROM fv_config WHERE id=1`; dolar = Number((c[0] as any)?.data?.dolar) || 0; } catch {}
 
-    const fv = await sql`SELECT numero, estado, public_token, payload, recibido FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
+    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
     if (fv.length) {
       const p = fv[0];
       // nombre canónico del cliente desde el presupuesto/CRM
@@ -22,6 +22,8 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
       return NextResponse.json({ ok: true, pedido: {
         origen: "fv", numero: p.numero, estado: p.estado || "pendiente_confirmacion",
         public_token: p.public_token, payload: p.payload || {}, dolar, fecha: p.recibido, cliente_id,
+        comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
+        verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
       }});
     }
 
@@ -52,9 +54,27 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
 
     if (b.accion === "estado") {
       if (!ESTADOS_FV.includes(b.estado)) return NextResponse.json({ ok: false, error: "estado inválido" }, { status: 400 });
-      if (esFv) await sql`UPDATE fv_pedidos SET estado=${b.estado} WHERE numero=${ref}`;
-      else await sql`UPDATE pedidos SET estado=${b.estado} WHERE id::text=${ref} OR numero=${ref}`;
+      if (esFv) {
+        if (b.estado === "aprobado") await sql`UPDATE fv_pedidos SET estado='aprobado', aprobado_at=now() WHERE numero=${ref}`;
+        else if (b.estado === "pagado") await sql`UPDATE fv_pedidos SET estado='pagado', pagado_at=now() WHERE numero=${ref}`;
+        else if (b.estado === "enviado") await sql`UPDATE fv_pedidos SET estado='enviado', enviado_at=now() WHERE numero=${ref}`;
+        else if (b.estado === "cancelado") await sql`UPDATE fv_pedidos SET estado='cancelado', cancelado_at=now() WHERE numero=${ref}`;
+        else await sql`UPDATE fv_pedidos SET estado=${b.estado} WHERE numero=${ref}`;
+      } else await sql`UPDATE pedidos SET estado=${b.estado} WHERE id::text=${ref} OR numero=${ref}`;
       return NextResponse.json({ ok: true, estado: b.estado });
+    }
+    if (b.accion === "comprobante") {
+      // b.archivos = [{nombre, tipo, b64}]
+      if (esFv) await sql`UPDATE fv_pedidos SET comprobante_archivo=${JSON.stringify(b.archivos || [])}::jsonb, comprobante_recibido=true WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
+    }
+    if (b.accion === "verificar") {
+      // b.pago = { monto, moneda, tc, redondeo, monto_usd, diff_usd, ok, fecha }
+      if (esFv) await sql`UPDATE fv_pedidos
+        SET pagos_recibidos = coalesce(pagos_recibidos,'[]'::jsonb) || ${JSON.stringify([b.pago])}::jsonb,
+            verificacion_pago = ${JSON.stringify(b.pago)}::jsonb
+        WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
     }
     if (b.accion === "nota") {
       if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{notas_internas}', to_jsonb(${b.nota || ""}::text)) WHERE numero=${ref}`;
