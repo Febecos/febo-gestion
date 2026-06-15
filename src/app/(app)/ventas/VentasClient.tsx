@@ -189,11 +189,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [pesos, setPesos] = useState(false);
   const [busy, setBusy] = useState(false);
   const [nota, setNota] = useState("");
-  const [provPanel, setProvPanel] = useState(false);
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
   const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "" });
   const [emailCli, setEmailCli] = useState(""); const [editEmail, setEditEmail] = useState(false);
+  const [tab, setTab] = useState<"detalle" | "prov" | "pago">("detalle");
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || ""); } }), [refId]);
   useEffect(() => { load(); }, [load]);
   if (!ped) return null;
@@ -214,8 +214,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   };
 
   return (
-    <div className="fixed inset-0 z-[120] bg-black/50 flex items-start justify-center overflow-auto py-6" onClick={onClose}>
-      <div className="bg-white rounded-xl w-[860px] max-w-[96vw] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[120] bg-black/50 flex items-stretch justify-center p-2 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-[1180px] h-full flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="bg-febo-azul text-white rounded-t-xl px-5 py-3 flex items-center justify-between">
           <div>
@@ -229,7 +229,16 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           <button onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">✕</button>
         </div>
 
-        <div className="p-5 space-y-4">
+        {/* Solapas */}
+        <div className="flex gap-1 px-4 pt-2 border-b border-gray-200 bg-gray-50 text-sm shrink-0">
+          {([["detalle", "📋 Detalle"], ["prov", "🏭 Proveedor / Stock"], ["pago", "💵 Pago / Factura"]] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 font-semibold border-b-2 -mb-px ${tab === k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-500 hover:text-gray-700"}`}>{l}</button>
+          ))}
+        </div>
+
+        <div className="flex-1 overflow-auto p-5 space-y-4">
+          {/* === SOLAPA DETALLE === */}
+          {tab === "detalle" && (<>
           {/* Contacto */}
           <div>
             <div className="text-[11px] font-bold text-gray-400 uppercase mb-1 bg-gray-50 px-2 py-1 rounded">Contacto del cliente</div>
@@ -283,8 +292,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             </table>
           </div>
 
+          </>)}
+
+          {/* === SOLAPA PROVEEDOR / STOCK === */}
           {/* Confirmación de proveedor / stock (compuerta antes de aprobar) */}
-          {(() => {
+          {tab === "prov" && (() => {
             const conf = ped.proveedor_confirmado;
             const proformas = ped.proforma_archivo || [];
             const toB64 = (f: File) => new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.readAsDataURL(f); });
@@ -317,8 +329,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             );
           })()}
 
-          {/* Comprobante de pago + verificar monto */}
-          {(() => {
+          {/* === SOLAPA PAGO / FACTURA === Comprobante de pago + verificar monto */}
+          {tab === "pago" && (() => {
             const archivos = ped.comprobante_archivo || [];
             const pagos = ped.pagos_recibidos || [];
             const tcV = Number(vf.tc) || dolar || 0;
@@ -363,7 +375,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           })()}
 
           {/* Pedido a proveedor — checkboxes por ítem, parcial, anti-doble envío */}
-          {provPanel && (() => {
+          {tab === "prov" && (() => {
             const grupos: Record<string, any[]> = {};
             items.forEach((it: any, idx: number) => { const k = it.proveedor || "Sin proveedor"; (grupos[k] = grupos[k] || []).push({ ...it, _idx: idx }); });
             const enviados = ped.pedidos_proveedor || [];
@@ -403,7 +415,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     <div key={prov} className="bg-white border border-gray-200 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-2">
                         <div className="font-semibold text-sm">{chip(prov, "#7c3aed")} <span className="text-gray-500 text-xs ml-1">{its.length} ítem(s)</span>{yaEnv && <span className="text-emerald-600 text-xs ml-2">✅ enviado</span>}</div>
-                        <button disabled={busy} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{yaEnv ? "📤 Re-enviar" : "📤 Generar Excel y Enviar"}</button>
+                        <button disabled={busy} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{yaEnv ? "📤 Re-enviar" : (prov === "Multiradio" ? "📤 Generar Excel y Enviar" : "📤 Enviar pedido")}</button>
                       </div>
                       <table className="w-full text-xs mb-2">
                         <tbody>
@@ -428,21 +440,20 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             );
           })()}
 
-          {/* Nota interna */}
-          <div>
+          {/* Nota interna (solapa Detalle) */}
+          {tab === "detalle" && <div>
             <div className="text-[11px] font-bold text-gray-400 uppercase mb-1">Nota interna</div>
             <div className="flex gap-2">
               <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Observación interna…" className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
               <button disabled={busy} onClick={() => accion({ accion: "nota", nota })} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">💾 Nota</button>
             </div>
-          </div>
+          </div>}
         </div>
 
         {/* Footer acciones */}
         <div className="border-t border-gray-200 p-3 flex flex-wrap gap-2 justify-end bg-gray-50 rounded-b-xl">
           <button onClick={() => setPesos(!pesos)} disabled={!dolar} title={dolar ? `TC $${dolar}` : "sin TC"} className="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-white">🔁 {enP ? "Ver USD" : "Ver $ ARS"}</button>
           <a href={`/pedido-prep/${encodeURIComponent(refId)}?print=1`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-semibold hover:bg-white">🖨 Imprimir pedido</a>
-          <button onClick={() => setProvPanel(!provPanel)} className="px-3 py-2 rounded-lg border border-violet-300 text-violet-700 text-sm font-semibold hover:bg-violet-50">🏭 Proveedor</button>
           {ped.factura_numero
             ? <a href={`${COTI}/p/${ped.factura_token}`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 {ped.factura_numero}</a>
             : <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Confirmá el stock antes de facturar"} onClick={() => accion({ accion: "facturar" }, "¿Generar la factura?")} className={`px-3 py-2 rounded-lg text-sm font-semibold ${ped.proveedor_confirmado ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar</button>}
