@@ -18,12 +18,13 @@ export default function TopNav() {
   const { open } = useWindows();
   async function salir() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }
 
-  // "Cotizar FV" abre el cotizador FV en modo INTERNO (puente con sesión efímera).
+  // "Cotizar FV" abre el cotizador FV en modo INTERNO, EMBEBIDO en una ventana de gestión
+  // (como Cotizar bomba). Pasa la sesión efímera del puente en el hash.
   async function abrirCotizarFv() {
     let hash = "";
     try { const r = await fetch("/api/fv-session"); const d = await r.json(); if (d.ok && d.token) hash = "#admin_jwt=" + d.token; } catch {}
     if (!hash) { alert("⚠️ No se pudo abrir el cotizador FV interno (revisá FV_BRIDGE_SECRET)."); return; }
-    window.open("https://fv.febecos.com/cotizar" + hash, "_blank");
+    open("presup-edit", { url: "https://fv.febecos.com/cotizar" + hash, title: "☀️ Cotizar FV (interno)" });
   }
 
   return (

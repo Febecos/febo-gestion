@@ -85,10 +85,10 @@ function Presupuestos() {
     try { const r = await fetch("/api/fv-session"); const d = await r.json(); if (d.ok && d.token) return "#admin_jwt=" + d.token; } catch {}
     return "";
   }
-  async function abrirFvInterno(token: string) {
+  async function abrirFvInterno(token: string, numero: string) {
     const hash = await tokenInterno();
-    if (!hash) alert("⚠️ No se pudo abrir en modo interno (revisá FV_BRIDGE_SECRET). Abro en modo lectura.");
-    window.open(`https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, "_blank");
+    if (!hash) { alert("⚠️ No se pudo abrir en modo interno (revisá FV_BRIDGE_SECRET)."); return; }
+    open("presup-edit", { url: `https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, title: `☀️ ${numero}` });
   }
   const nombreCli = (r: Presup) => r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ") || "—";
   const selCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm";
@@ -136,7 +136,7 @@ function Presupuestos() {
                     ? <span title="Con pedido generado: no se edita" className="text-gray-300 mr-2">🔒</span>
                     : <>
                       {r.public_token && r.tipo !== "fv" && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}` })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
-                      {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token)} title="Editar/Operar FV (modo interno)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
+                      {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token, r.numero)} title="Editar/Operar FV (modo interno)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                     </>}
                   {r.public_token && <a href={linkPresup(r.tipo, r.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                   {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id })} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
