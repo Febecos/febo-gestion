@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { movCtaCte, delMov, delMovPrefijo } from "@/lib/ctacte";
 import { resolveProveedor } from "@/lib/proveedores";
-import { numeroDesdeTalonario } from "@/lib/talonarios";
+import { numeroDesdeTalonario, letraFacturaPara } from "@/lib/talonarios";
+import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 
 async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
   const pn = payload?.presupuesto_numero;
@@ -54,12 +55,18 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${presupNum} LIMIT 1` as any[];
         cliente_id = pr[0]?.cliente_id ?? null;
       }
+      // Datos fiscales completos del cliente (para facturar según AFIP)
+      let cliente: any = null;
+      if (cliente_id) {
+        const cl = await sql`SELECT id, tipo, nombre, razon_social, empresa, email, whatsapp, cuit, domicilio, localidad, provincia, cod_postal, condicion_fiscal FROM clientes WHERE id=${cliente_id} LIMIT 1` as any[];
+        cliente = cl[0] || null;
+      }
       const provSent = await sql`SELECT proveedor, items, total_costo_usd, email_destinatario, gsa_numero, estado, created_at FROM pedidos_proveedores WHERE fv_numero=${ref} ORDER BY created_at`.catch(() => []) as any[];
       const payloadEnriq = p.payload || {};
       payloadEnriq.items = await enrichEmisor(sql, payloadEnriq.items || []);
       return NextResponse.json({ ok: true, pedido: {
         origen: "fv", numero: p.numero, estado: p.estado || "pendiente_confirmacion",
-        public_token: p.public_token, payload: payloadEnriq, dolar, fecha: p.recibido, cliente_id,
+        public_token: p.public_token, payload: payloadEnriq, dolar, fecha: p.recibido, cliente_id, cliente,
         pedidos_proveedor: provSent,
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
@@ -251,12 +258,27 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       let cliente_id: number | null = null;
       if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; cliente_id = pr[0]?.cliente_id ?? null; }
 
+      // ── Validación AFIP: la letra de factura depende de la condición fiscal del cliente ──
+      let condicion: string | null = null;
+      if (cliente_id) { const cl = await sql`SELECT condicion_fiscal FROM clientes WHERE id=${cliente_id} LIMIT 1` as any[]; condicion = cl[0]?.condicion_fiscal || null; }
+      const letraReq = letraFacturaPara(condicion);
+      if (!letraReq) return NextResponse.json({ ok: false, error: "El cliente no tiene condición fiscal cargada: no se puede emitir factura. Cargala en la ficha del cliente." }, { status: 409 });
+
       // Numeración: si se eligió talonario → serie/número Táctica (FA B 0001-00000123).
-      // Si no, intenta el talonario de factura por defecto. Fallback: counter FA-NNNN (compat).
+      // Si no, toma el talonario por defecto DE LA LETRA QUE CORRESPONDE. Fallback: FA-NNNN.
       let talId = Number(b.talonario_id) || 0;
-      if (!talId) {
-        const def = await sql`SELECT id FROM fg_talonarios WHERE activo=true AND bloqueado=false AND tipo_codigo IN ('FAA','FAB','FAC','FAM','FAI','FBI','FAE','FEA','FEB','FEC','FEE') ORDER BY defecto DESC, orden, id LIMIT 1`.catch(() => []) as any[];
-        talId = def[0]?.id || 0;
+      const facturaTals = await sql`SELECT id, tipo_codigo, defecto FROM fg_talonarios WHERE activo=true AND bloqueado=false AND tipo_codigo IN ('FAA','FAB','FAC','FAM','FAI','FBI','FAE','FEA','FEB','FEC','FEE') ORDER BY defecto DESC, orden, id`.catch(() => []) as any[];
+      const letraDe = (tc: string) => tipoPorCodigo(tc)?.letra || "";
+      if (talId) {
+        // Verificar que el talonario elegido sea de la letra correcta
+        const t = facturaTals.find((x) => x.id === talId);
+        if (t && letraDe(t.tipo_codigo) !== letraReq) {
+          return NextResponse.json({ ok: false, error: `Para este cliente (${condicion}) corresponde Factura ${letraReq}, pero el talonario elegido es ${letraDe(t.tipo_codigo)}.` }, { status: 409 });
+        }
+      } else {
+        const cand = facturaTals.find((x) => letraDe(x.tipo_codigo) === letraReq);
+        if (!cand) return NextResponse.json({ ok: false, error: `No hay talonario de Factura ${letraReq} cargado (lo requiere la condición del cliente). Cargalo en Configuración → Talonarios.` }, { status: 409 });
+        talId = cand.id;
       }
       let facturaNum: string;
       let letraFac: string | null = null;

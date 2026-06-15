@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useWindows } from "../WindowManager";
+import { letraFacturaPara } from "@/lib/talonarios";
+import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 
 // Presupuestos = tabla real `presupuestos` (revendedores/coti). Pedidos = `pedidos`+`fv_pedidos`.
 // Factura/Remito = fg_comprobantes. Pagos = fg_pagos. Proveedor = pedidos_proveedores.
@@ -210,6 +212,16 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const costoTot = items.reduce((a: number, it: any) => a + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1), 0);
   const badge = PED_BADGE[ped.estado] || [ped.estado, "#888"];
   const cancelado = ped.estado === "cancelado";
+  // ── Datos fiscales del cliente + letra de factura AFIP ──
+  const cli = ped.cliente || {};
+  const condCli = cli.condicion_fiscal || rev.condicion_fiscal || "";
+  const cuitCli = cli.cuit || rev.cuit || "";
+  const domCli = [cli.domicilio || rev.domicilio, cli.localidad || rev.localidad, cli.provincia || rev.provincia].filter(Boolean).join(", ");
+  const letraReq = letraFacturaPara(condCli);
+  const talsLetra = tals.filter((t) => (tipoPorCodigo(t.tipo_codigo)?.letra || "") === letraReq);
+  const talDefLetra = talsLetra.find((t) => t.defecto) || talsLetra[0];
+  const talEfectivo = talsLetra.some((t) => String(t.id) === talSel) ? talSel : (talDefLetra ? String(talDefLetra.id) : "");
+  const puedeFacturar = !cancelado && !!ped.proveedor_confirmado && !!letraReq && talsLetra.length > 0;
 
   const accion = async (body: any, msg?: string) => {
     if (msg && !confirm(msg)) return;
@@ -271,10 +283,14 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   <div className="text-gray-800">{emailCli} <button onClick={() => setEditEmail(true)} className="text-xs text-febo-azul ml-1">editar</button></div>
                 )}
               </div>
-              {rev.localidad && <Cell l="Localidad" v={rev.localidad} />}
-              {rev.cuit && <Cell l="CUIT/CUIL" v={rev.cuit} />}
+              {(cli.razon_social) && <Cell l="Razón social" v={cli.razon_social} />}
+              {(cli.localidad || rev.localidad) && <Cell l="Localidad" v={cli.localidad || rev.localidad} />}
+              <Cell l="CUIT/CUIL" v={cuitCli || <span className="text-red-500">falta</span>} />
+              <Cell l="Condición fiscal" v={condCli ? <span>{condCli} {letraReq && <span className="ml-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 rounded">Factura {letraReq}</span>}</span> : <span className="text-red-500 font-semibold">⚠️ sin condición — no se puede facturar</span>} />
+              {domCli && <Cell l="Domicilio" v={domCli} />}
               <Cell l="Nota del revendedor" v={pl.notas || "—"} />
             </div>
+            {!cli.id && <div className="text-[11px] text-amber-600 mt-1 px-2">⚠️ Este pedido no está vinculado a un cliente del CRM (sin ficha). Los datos fiscales pueden faltar. <button onClick={() => alert('Vinculá el cliente desde el presupuesto/CRM para traer CUIT y condición fiscal.')} className="underline">¿por qué?</button></div>}
           </div>
 
           {/* Items */}
@@ -555,10 +571,13 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           {ped.factura_numero
             ? <a href={`${COTI}/p/${ped.factura_token}`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 {ped.factura_numero}</a>
             : <div className="flex items-center gap-1">
-                {tals.length > 0 && <select value={talSel} onChange={(e) => setTalSel(e.target.value)} disabled={cancelado || !ped.proveedor_confirmado} title="Talonario" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white disabled:opacity-50">
-                  {tals.map((t) => <option key={t.id} value={t.id}>{t.tipo_nombre} · {String(t.sucursal || "0001")}-{String(t.proximo_numero).padStart(8, "0")}{t.defecto ? " ★" : ""}</option>)}
+                {puedeFacturar && talsLetra.length > 0 && <select value={talEfectivo} onChange={(e) => setTalSel(e.target.value)} title="Talonario" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white">
+                  {talsLetra.map((t) => <option key={t.id} value={t.id}>{t.tipo_nombre} · {String(t.sucursal || "0001")}-{String(t.proximo_numero).padStart(8, "0")}{t.defecto ? " ★" : ""}</option>)}
                 </select>}
-                <button disabled={busy || cancelado || !ped.proveedor_confirmado} title={cancelado ? "Pedido cancelado" : ped.proveedor_confirmado ? "" : "Confirmá el stock antes de facturar"} onClick={() => accion({ accion: "facturar", talonario_id: talSel ? Number(talSel) : undefined }, "¿Generar la factura?")} className={`px-3 py-2 rounded-lg text-sm font-semibold ${!cancelado && ped.proveedor_confirmado ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar</button>
+                <button disabled={busy || !puedeFacturar}
+                  title={cancelado ? "Pedido cancelado" : !ped.proveedor_confirmado ? "Confirmá el stock con el proveedor antes de facturar" : !letraReq ? "El cliente no tiene condición fiscal: cargala en Detalle/ficha del cliente" : talsLetra.length === 0 ? `No hay talonario de Factura ${letraReq} cargado (Configuración → Talonarios)` : `Emitir Factura ${letraReq}`}
+                  onClick={() => accion({ accion: "facturar", talonario_id: talEfectivo ? Number(talEfectivo) : undefined }, `¿Generar la Factura ${letraReq}?`)}
+                  className={`px-3 py-2 rounded-lg text-sm font-semibold ${puedeFacturar ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar{letraReq ? " " + letraReq : ""}</button>
               </div>}
           {ped.estado === "pendiente_confirmacion" && <>
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>

@@ -5,6 +5,25 @@ import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 // Devuelve null si el talonario no existe o está bloqueado.
 const PREFIJO: Record<string, string> = { factura: "FA", nc: "NC", nd: "ND", operativo: "" };
 
+// Letra de factura según AFIP, siendo el EMISOR Responsable Inscripto.
+//   Cliente Responsable Inscripto                         → A
+//   Monotributo / Exento / Consumidor Final / No categ.   → B
+//   Exterior / Exportación                                → E
+//   Sin condición fiscal                                  → null (no se puede facturar)
+export function letraFacturaPara(condicion: string | null | undefined): "A" | "B" | "E" | null {
+  const c = String(condicion || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  if (!c) return null;
+  if (c.includes("exterior") || c.includes("exportac")) return "E";
+  if (c.includes("monotrib")) return "B";
+  if (c.includes("inscripto") && c.includes("responsable")) return "A";
+  if (c === "ri") return "A";
+  if (c.includes("exento")) return "B";
+  if (c.includes("consumidor") || c.includes("final")) return "B";
+  if (c.includes("no categoriz") || c.includes("no inscripto") || c.includes("sujeto no")) return "B";
+  if (c.includes("inscripto")) return "A";
+  return null;
+}
+
 export async function numeroDesdeTalonario(sql: any, id: number): Promise<{
   numero: string; emitido: number; letra: string; tipo_codigo: string; electronica: boolean; talonario_id: number;
 } | null> {
