@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
         AND (${q} = '' OR lower(coalesce(codigo,'')||' '||coalesce(descripcion,'')||' '||coalesce(marca,'')||' '||coalesce(fabricante,'')) LIKE ${like})
         AND (${categoria} = '' OR categoria = ${categoria})
         AND (${proveedor} = '' OR proveedor = ${proveedor})
-        AND (${stock} = '' OR disponibilidad ILIKE '%stock%')
+        AND (${stock} = '' OR (disponibilidad ILIKE '%stock%' AND disponibilidad NOT ILIKE '%sin stock%' AND disponibilidad NOT ILIKE '%confirm%' AND disponibilidad NOT ILIKE '%consult%' AND proveedor IS DISTINCT FROM 'LV Energy'))
       ORDER BY categoria, descripcion LIMIT ${limit}`;
 
     const productos = rows.map((p: any) => {
@@ -58,8 +58,10 @@ export async function GET(req: NextRequest) {
       } else if (p.precio) {
         precio_venta = Number(p.precio);
       }
-      const en_stock = (p.disponibilidad || "").toLowerCase().includes("stock");
-      return { ...p, costo_ars, precio_venta, en_stock };
+      const dl = (p.disponibilidad || "").toLowerCase().trim();
+      const a_confirmar = p.proveedor === "LV Energy" || dl === "" || dl.includes("confirm") || dl.includes("consult");
+      const en_stock = !a_confirmar && dl.includes("stock") && !dl.includes("sin stock");
+      return { ...p, costo_ars, precio_venta, en_stock, a_confirmar };
     });
 
     const cats = await sql`SELECT categoria, COUNT(*)::int n FROM fg_productos WHERE activo = true GROUP BY categoria ORDER BY categoria`;

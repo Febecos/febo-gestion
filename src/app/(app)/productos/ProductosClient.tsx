@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 
-type Prod = { id: number; codigo: string; descripcion: string; descripcion_alt: string; categoria: string; origen: string; marca: string; fabricante: string; proveedor: string; precio: number; costo_usd: number; costo_ars: number; precio_venta: number; iva_pct: number; disponibilidad: string; sin_precio: boolean; en_stock: boolean; stock: number };
+type Prod = { id: number; codigo: string; descripcion: string; descripcion_alt: string; categoria: string; origen: string; marca: string; fabricante: string; proveedor: string; precio: number; costo_usd: number; costo_ars: number; precio_venta: number; iva_pct: number; disponibilidad: string; sin_precio: boolean; en_stock: boolean; a_confirmar: boolean; stock: number };
 
 const fmt = (v: number) => (v ? "$ " + Math.round(Number(v)).toLocaleString("es-AR") : "—");
 const fmtU = (v: number) => (v ? "US$ " + Number(v).toLocaleString("es-AR") : "—");
@@ -63,10 +63,10 @@ export default function ProductosClient() {
                   <td className="px-3 py-2 text-gray-600 text-xs">{p.fabricante || p.marca || "—"}</td>
                   <td className="px-3 py-2 text-gray-600 text-xs">{p.proveedor || "—"}</td>
                   <td className="px-3 py-2 text-center">{
-                    p.proveedor === "LV Energy" || (p.disponibilidad || "").toLowerCase().includes("consultar")
-                      ? <span className="text-amber-500 text-[11px] font-semibold" title="Stock a confirmar con el proveedor">a confirmar</span>
+                    p.a_confirmar
+                      ? <span className="text-amber-500 text-[11px] font-semibold" title="Stock a confirmar">a confirmar</span>
                       : p.en_stock ? <span className="text-emerald-600" title={p.disponibilidad}>●</span>
-                      : <span className="text-gray-300" title={p.disponibilidad || "sin fecha"}>○</span>
+                      : <span className="text-gray-300" title={p.disponibilidad || "sin stock"}>○</span>
                   }</td>
                   <td className="px-3 py-2 text-right text-gray-500 text-xs">{p.origen === "fv" ? fmtU(p.costo_usd) : "—"}</td>
                   <td className="px-3 py-2 text-right text-gray-500 text-xs">{p.costo_ars ? fmt(p.costo_ars) : "—"}</td>
