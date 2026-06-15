@@ -5,8 +5,8 @@ import { NextResponse } from "next/server";
 // Server↔server: usa INTERNAL_SERVICE_SECRET, que NUNCA llega al navegador.
 export async function GET() {
   try {
-    const secret = process.env.INTERNAL_SERVICE_SECRET;
-    if (!secret) return NextResponse.json({ ok: false, error: "INTERNAL_SERVICE_SECRET no configurado en gestión" }, { status: 500 });
+    const secret = process.env.FV_BRIDGE_SECRET || process.env.INTERNAL_SERVICE_SECRET;
+    if (!secret) return NextResponse.json({ ok: false, error: "FV_BRIDGE_SECRET no configurado en gestión" }, { status: 500 });
     const r = await fetch("https://fv.febecos.com/api/internal-session", {
       headers: { Authorization: "Bearer " + secret },
       cache: "no-store",

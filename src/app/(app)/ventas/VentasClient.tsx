@@ -82,7 +82,11 @@ function Presupuestos() {
   // un token efímero (server↔server) y lo pasa en el hash que fv lee como sesión admin.
   async function abrirFvInterno(token: string) {
     let hash = "";
-    try { const r = await fetch("/api/fv-session"); const d = await r.json(); if (d.ok && d.token) hash = "#admin_jwt=" + d.token; } catch {}
+    try {
+      const r = await fetch("/api/fv-session"); const d = await r.json();
+      if (d.ok && d.token) hash = "#admin_jwt=" + d.token;
+      else alert("⚠️ No se pudo abrir en modo interno: " + (d.error || "sin sesión") + "\nVerificá que FV_BRIDGE_SECRET sea igual en gestión y fv. Abro en modo lectura.");
+    } catch (e: any) { alert("⚠️ Error de sesión interna: " + e.message + ". Abro en modo lectura."); }
     window.open(`https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, "_blank");
   }
   const nombreCli = (r: Presup) => r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ") || "—";
