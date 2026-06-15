@@ -23,7 +23,6 @@ export default function CotizadorEmbed({ tipoProp }: { tipoProp?: "fv" | "bomba"
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-100 text-[11px] text-gray-400 shrink-0">
         {interno && <span className="bg-emerald-100 text-emerald-700 rounded px-2 py-0.5 font-semibold">tu perfil interno</span>}
-        {url && <a href={url} target="_blank" rel="noreferrer" className="ml-auto text-febo-azul">abrir en pestaña ↗</a>}
       </div>
       {error ? (
         <div className="text-red-600 text-sm p-4">Error: {error}</div>

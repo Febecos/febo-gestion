@@ -25,7 +25,6 @@ function Body({ k, payload }: { k: WinKey; payload?: any }) {
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-100 text-[11px] text-gray-400 shrink-0">
         <span className="bg-emerald-100 text-emerald-700 rounded px-2 py-0.5 font-semibold">edición interna (token)</span>
-        {payload?.url && <a href={payload.url} target="_blank" rel="noreferrer" className="ml-auto text-febo-azul">abrir en pestaña ↗</a>}
       </div>
       {payload?.url
         ? <iframe src={payload.url} className="flex-1 w-full border-0" title="Editar presupuesto" />
