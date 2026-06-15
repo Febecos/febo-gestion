@@ -191,8 +191,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [nota, setNota] = useState("");
   const [provPanel, setProvPanel] = useState(false);
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
+  const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
   const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "" });
-  const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); } }), [refId]);
+  const [emailCli, setEmailCli] = useState(""); const [editEmail, setEditEmail] = useState(false);
+  const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || ""); } }), [refId]);
   useEffect(() => { load(); }, [load]);
   if (!ped) return null;
   const pl = ped.payload || {}; const items = pl.items || []; const tot = pl.totales || {};
@@ -236,7 +238,17 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               <Cell l="Nombre" v={rev.nombre || "—"} />
               {rev.empresa && <Cell l="Empresa" v={rev.empresa} />}
               <Cell l="WhatsApp" v={rev.whatsapp || rev.wa || "—"} />
-              <Cell l="Email" v={rev.email || "—"} />
+              <div>
+                <div className="text-[10px] uppercase text-gray-400">Email {!emailCli && <span className="text-red-500">· falta (necesario p/ avisar al cliente)</span>}</div>
+                {editEmail || !emailCli ? (
+                  <div className="flex gap-1 items-center">
+                    <input value={emailCli} onChange={(e) => setEmailCli(e.target.value)} placeholder="cliente@mail.com" className="border border-gray-300 rounded px-2 py-0.5 text-sm w-44" />
+                    <button disabled={busy} onClick={async () => { await accion({ accion: "email_cliente", email: emailCli }); setEditEmail(false); }} className="text-xs text-emerald-600 font-semibold">guardar</button>
+                  </div>
+                ) : (
+                  <div className="text-gray-800">{emailCli} <button onClick={() => setEditEmail(true)} className="text-xs text-febo-azul ml-1">editar</button></div>
+                )}
+              </div>
               {rev.localidad && <Cell l="Localidad" v={rev.localidad} />}
               {rev.cuit && <Cell l="CUIT/CUIL" v={rev.cuit} />}
               <Cell l="Nota del revendedor" v={pl.notas || "—"} />
@@ -349,37 +361,67 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             );
           })()}
 
-          {/* Pedido a proveedor */}
+          {/* Pedido a proveedor — checkboxes por ítem, parcial, anti-doble envío */}
           {provPanel && (() => {
             const grupos: Record<string, any[]> = {};
-            items.forEach((it: any) => { const k = it.proveedor || "Sin proveedor"; (grupos[k] = grupos[k] || []).push(it); });
+            items.forEach((it: any, idx: number) => { const k = it.proveedor || "Sin proveedor"; (grupos[k] = grupos[k] || []).push({ ...it, _idx: idx }); });
+            const enviados = ped.pedidos_proveedor || [];
+            const sel = (prov: string, idx: number) => provSel[prov]?.[idx] !== false; // default checked
+            const toggle = (prov: string, idx: number) => setProvSel({ ...provSel, [prov]: { ...(provSel[prov] || {}), [idx]: !sel(prov, idx) } });
             const enviarProv = async (prov: string, its: any[]) => {
               const info = provData[prov] || { email: "", mensaje: "" };
               if (!info.email) { alert("Ingresá el email del proveedor " + prov); return; }
-              if (!confirm(`¿Enviar pedido a ${prov} (${its.length} ítems) a ${info.email}?`)) return;
+              const elegidos = its.filter((it) => sel(prov, it._idx));
+              if (!elegidos.length) { alert("Marcá al menos un ítem para pedir."); return; }
+              const yaEnv = enviados.find((e: any) => e.proveedor === prov);
+              const msg = yaEnv
+                ? `⚠️ Ya enviaste un pedido a ${prov} el ${new Date(yaEnv.created_at).toLocaleString("es-AR")}. ¿Enviar OTRO con ${elegidos.length} ítem(s)?`
+                : `¿Enviar pedido a ${prov} (${elegidos.length} ítem/s) a ${info.email}?`;
+              if (!confirm(msg)) return;
               setBusy(true);
               try {
-                const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "proveedor", proveedor: prov, email_destinatario: info.email, mensaje: info.mensaje, items: its.map((it) => ({ codigo: it.codigo, descripcion: it.descripcion, cantidad: it.cantidad, costo_usd: it.costo_usd })) }) });
+                const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "proveedor", proveedor: prov, email_destinatario: info.email, mensaje: info.mensaje, items: elegidos.map((it) => ({ codigo: it.codigo, descripcion: it.descripcion, cantidad: it.cantidad, costo_usd: it.costo_usd })) }) });
                 const d = await r.json(); if (!d.ok) throw new Error(d.error);
                 alert(`✅ Pedido enviado a ${prov}` + (d.gsa_numero ? ` (GSA ${d.gsa_numero})` : ""));
+                await load();
               } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
             };
             return (
               <div className="border border-violet-200 bg-violet-50/40 rounded-lg p-3">
-                <div className="text-[11px] font-bold text-violet-700 uppercase mb-2">🏭 Pedido a proveedor (un email por proveedor, con Excel)</div>
+                <div className="text-[11px] font-bold text-violet-700 uppercase mb-2">🏭 Pedido a proveedor — marcá los ítems a pedir (podés pedir parcial)</div>
+                {enviados.length > 0 && (
+                  <div className="mb-3 text-xs bg-emerald-50 border border-emerald-200 rounded p-2">
+                    <b className="text-emerald-700">Ya enviado:</b>
+                    {enviados.map((e: any, i: number) => <div key={i} className="text-gray-600">✅ {e.proveedor} · {new Date(e.created_at).toLocaleString("es-AR")} · {(e.items?.length || 0)} ítem(s) · {e.email_destinatario}{e.gsa_numero ? ` · GSA ${e.gsa_numero}` : ""}</div>)}
+                  </div>
+                )}
                 <div className="space-y-3">
-                  {Object.entries(grupos).map(([prov, its]) => (
+                  {Object.entries(grupos).map(([prov, its]) => {
+                    const yaEnv = enviados.find((e: any) => e.proveedor === prov);
+                    return (
                     <div key={prov} className="bg-white border border-gray-200 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="font-semibold text-sm">{chip(prov, "#7c3aed")} <span className="text-gray-500 text-xs ml-1">{its.length} ítem(s)</span></div>
-                        <button disabled={busy} onClick={() => enviarProv(prov, its)} className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700">📤 Enviar a {prov}</button>
+                        <div className="font-semibold text-sm">{chip(prov, "#7c3aed")} <span className="text-gray-500 text-xs ml-1">{its.length} ítem(s)</span>{yaEnv && <span className="text-emerald-600 text-xs ml-2">✅ enviado</span>}</div>
+                        <button disabled={busy} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{yaEnv ? "📤 Re-enviar" : "📤 Generar Excel y Enviar"}</button>
                       </div>
+                      <table className="w-full text-xs mb-2">
+                        <tbody>
+                          {its.map((it) => (
+                            <tr key={it._idx} className="border-t border-gray-100">
+                              <td className="py-1 w-6"><input type="checkbox" checked={sel(prov, it._idx)} onChange={() => toggle(prov, it._idx)} /></td>
+                              <td className="py-1 font-semibold text-febo-azul w-40">{it.codigo}</td>
+                              <td className="py-1 text-gray-600">{(it.descripcion || "").slice(0, 50)}</td>
+                              <td className="py-1 text-center w-10 font-bold">{it.cantidad}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                       <div className="grid grid-cols-2 gap-2">
                         <input placeholder="email del proveedor *" value={(provData[prov]?.email) || ""} onChange={(e) => setProvData({ ...provData, [prov]: { ...(provData[prov] || { mensaje: "" }), email: e.target.value } })} className="border border-gray-300 rounded px-2 py-1 text-sm" />
                         <input placeholder="mensaje (opcional)" value={(provData[prov]?.mensaje) || ""} onChange={(e) => setProvData({ ...provData, [prov]: { ...(provData[prov] || { email: "" }), mensaje: e.target.value } })} className="border border-gray-300 rounded px-2 py-1 text-sm" />
                       </div>
                     </div>
-                  ))}
+                  );})}
                 </div>
               </div>
             );

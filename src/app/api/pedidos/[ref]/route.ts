@@ -28,9 +28,11 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${presupNum} LIMIT 1` as any[];
         cliente_id = pr[0]?.cliente_id ?? null;
       }
+      const provSent = await sql`SELECT proveedor, items, total_costo_usd, email_destinatario, gsa_numero, estado, created_at FROM pedidos_proveedores WHERE fv_numero=${ref} ORDER BY created_at`.catch(() => []) as any[];
       return NextResponse.json({ ok: true, pedido: {
         origen: "fv", numero: p.numero, estado: p.estado || "pendiente_confirmacion",
         public_token: p.public_token, payload: p.payload || {}, dolar, fecha: p.recibido, cliente_id,
+        pedidos_proveedor: provSent,
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
         proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
@@ -100,6 +102,11 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         SET pagos_recibidos = coalesce(pagos_recibidos,'[]'::jsonb) || ${JSON.stringify([b.pago])}::jsonb,
             verificacion_pago = ${JSON.stringify(b.pago)}::jsonb
         WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
+    }
+    if (b.accion === "email_cliente") {
+      const email = String(b.email || "").trim();
+      if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(jsonb_set(coalesce(payload,'{}'::jsonb), '{revendedor}', coalesce(payload->'revendedor','{}'::jsonb)), '{revendedor,email}', to_jsonb(${email}::text)) WHERE numero=${ref}`;
       return NextResponse.json({ ok: true });
     }
     if (b.accion === "nota") {
