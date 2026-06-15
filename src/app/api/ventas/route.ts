@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
     const like = `%${q}%`;
     const rows = await sql`
       SELECT id, tipo, estado, numero, cliente_id, cliente_nombre, cliente_cuit,
-             ref_id, fecha, total, moneda, created_at
+             ref_id, fecha, total, moneda, token, created_at
       FROM fg_comprobantes
       WHERE (${tipo} = '' OR tipo = ${tipo})
         AND (${estado} = '' OR estado = ${estado})

@@ -80,7 +80,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
             <div className="brand">FEBECOS<small>Energía solar · Bombas · Fotovoltaico</small></div>
           </div>
           <div className="doctype">
-            <div className="t">{titulo}</div>
+            <div className="t">{titulo}{c.letra ? <span style={{ display: "inline-block", marginLeft: 8, border: "2px solid #0b3d6b", borderRadius: 6, padding: "0 10px", fontWeight: 800 }}>{c.letra}</span> : null}</div>
             <div className="n">{c.numero || ""}</div>
             <div className="f">Fecha: {fmtF(c.fecha)}</div>
             {c.estado && <div className="f">Estado: {c.estado}</div>}
@@ -93,7 +93,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
             <div className="v">
               <strong>{cli?.razon_social || cli?.nombre || c.cliente_nombre || "—"}</strong><br />
               {cli?.cuit || c.cliente_cuit ? <>CUIT: {cli?.cuit || c.cliente_cuit}<br /></> : null}
-              {cli?.condicion_fiscal ? <>{COND[cli.condicion_fiscal] || cli.condicion_fiscal}<br /></> : null}
+              {c.condicion_iva_receptor ? <>Condición IVA: {c.condicion_iva_receptor}<br /></> : (cli?.condicion_fiscal ? <>{COND[cli.condicion_fiscal] || cli.condicion_fiscal}<br /></> : null)}
               {cli?.domicilio ? <>{cli.domicilio}<br /></> : null}
               {[cli?.localidad, cli?.provincia, cli?.cod_postal].filter(Boolean).join(", ")}
             </div>
@@ -141,6 +141,12 @@ export default function ComprobantePublico({ params }: { params: { token: string
           c.afip_cae
             ? <div className="cae">CAE: {c.afip_cae}{c.afip_validada ? " · Comprobante autorizado por AFIP" : ""}</div>
             : <div className="proforma">FACTURA PROFORMA — sin validez fiscal hasta su autorización en AFIP.</div>
+        )}
+
+        {Array.isArray(c.leyendas) && c.leyendas.length > 0 && (
+          <div style={{ marginTop: 12, fontSize: 12, color: "#374151", borderTop: "1px solid #e5e7eb", paddingTop: 8 }}>
+            {c.leyendas.map((l: string, i: number) => <div key={i}>• {l}</div>)}
+          </div>
         )}
 
         {c.condiciones_pago && <div style={{ marginTop: 16, fontSize: 12, color: "#6b7280" }}>Condiciones: {c.condiciones_pago}</div>}
