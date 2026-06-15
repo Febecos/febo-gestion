@@ -18,7 +18,6 @@ const EST_COL: Record<string, string> = { emitido: "#64748b", enviada: "#2563eb"
 const SECCIONES = [
   { k: "presupuestos", icon: "📝", label: "Presupuestos" },
   { k: "pedidos", icon: "📦", label: "Pedidos" },
-  { k: "operaciones", icon: "🔄", label: "Operaciones" },
   { k: "facturas", icon: "🧾", label: "Facturas" },
   { k: "remitos", icon: "🚚", label: "Remitos" },
   { k: "pagos", icon: "💵", label: "Pagos" },
@@ -47,7 +46,6 @@ export default function VentasClient() {
       <div className="flex-1 min-w-0">
         {sec === "presupuestos" && <Presupuestos />}
         {sec === "pedidos" && <Pedidos />}
-        {sec === "operaciones" && <Operaciones />}
         {sec === "facturas" && <Comprobantes tipo="factura" titulo="Facturas" />}
         {sec === "remitos" && <Comprobantes tipo="remito" titulo="Remitos" />}
         {sec === "pagos" && <Pagos />}
@@ -621,71 +619,6 @@ function PedidosProveedor() {
         </tr>
       ))}
     </Tabla>
-  );
-}
-
-// ---------- OPERACIONES (cockpit del circuito interno) ----------
-const FLUJO_OP: { estado: string; label: string; col: string }[] = [
-  { estado: "pedido_proveedor", label: "Pedido a proveedor", col: "#64748b" },
-  { estado: "reservado_proveedor", label: "Reservado x proveedor", col: "#2563eb" },
-  { estado: "confirmado_cliente", label: "Confirmado al cliente", col: "#7c3aed" },
-  { estado: "pagado_cliente", label: "Pagado x cliente", col: "#0891b2" },
-  { estado: "pagado_proveedor", label: "Pagado al proveedor", col: "#d97706" },
-  { estado: "facturado", label: "Facturado", col: "#059669" },
-];
-
-// Circuito derivado (solo lectura). Se calcula en vivo desde el pedido real.
-const CIRCUITO = ["pedido_proveedor", "reservado_proveedor", "confirmado_cliente", "pagado_cliente", "pagado_proveedor", "facturado"];
-function Operaciones() {
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [sel, setSel] = useState<string | null>(null);
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { const r = await fetch("/api/operaciones"); const d = await r.json(); if (d.ok) setRows(d.operaciones); }
-    finally { setLoading(false); }
-  }, []);
-  useEffect(() => { load(); }, [load]);
-
-  const idx = (e: string) => CIRCUITO.indexOf(e);
-  return (
-    <div>
-      <div className="text-sm text-gray-500 mb-3">{rows.length} operaciones · circuito: pedido → reservado → confirmado → pagado cliente → pagado proveedor → facturado. <span className="text-gray-400">Vista de solo lectura — hacé clic en una fila para operar el pedido.</span></div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
-            <th className="text-left px-4 py-3">Pedido</th><th className="text-left px-4 py-3">Origen</th><th className="text-left px-4 py-3">Cliente</th>
-            <th className="text-left px-4 py-3">Vendedor</th>
-            <th className="text-left px-4 py-3">Estado</th><th className="text-right px-4 py-3">Total</th>
-          </tr></thead>
-          <tbody>
-            {loading ? <tr><td colSpan={6} className="text-center py-8 text-gray-400">Cargando…</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={6} className="text-center py-8 text-gray-400">Sin operaciones</td></tr>
-            : rows.map((op, i) => {
-              const fl = FLUJO_OP.find((f) => f.estado === op.estado);
-              const anulado = op.estado === "anulado";
-              return (
-                <tr key={i} className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer" onClick={() => setSel(op.ref)}>
-                  <td className="px-4 py-2 font-semibold">{op.numero}</td>
-                  <td className="px-4 py-2">{chip(op.origen === "fv" ? "FV" : "Bomba", op.origen === "fv" ? "#d97706" : "#2563eb")}</td>
-                  <td className="px-4 py-2">{op.cliente_nombre || "—"}</td>
-                  <td className="px-4 py-2 text-gray-500">{op.vendedor || "—"}</td>
-                  <td className="px-4 py-2">
-                    {anulado ? chip("anulado", "#e53935") : <>
-                      {chip(fl?.label || op.estado, fl?.col || "#888")}
-                      <span className="ml-2 text-[10px] text-gray-400">{idx(op.estado) + 1}/{CIRCUITO.length}</span>
-                      {op.factura_numero && <span className="ml-2 text-[11px] font-semibold text-emerald-600">{op.factura_numero}</span>}
-                    </>}
-                  </td>
-                  <td className="px-4 py-2 text-right font-semibold">{fmt(op.total, op.moneda === "USD" ? "USD" : "$")}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {sel && <PedidoModal refId={sel} onClose={() => setSel(null)} onChanged={load} />}
-    </div>
   );
 }
 
