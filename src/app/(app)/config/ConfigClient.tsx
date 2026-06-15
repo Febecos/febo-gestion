@@ -45,7 +45,7 @@ function MonitorArca() {
   return (
     <div className="max-w-2xl">
       <h2 className="text-lg font-bold text-febo-azul mb-1">📋 Monitor de normativa ARCA</h2>
-      <div className="text-sm text-gray-500 mb-4">Una vez por mes, Claude revisa la normativa ARCA de <b>facturación</b> y, si hay cambios relevantes, te avisa por email a <b>guille.aol@gmail.com</b>. Está pensado para tener al día la facturación electrónica.</div>
+      <div className="text-sm text-gray-500 mb-4">Una vez por mes te llega un recordatorio por email a <b>guille.aol@gmail.com</b> con los enlaces oficiales de ARCA para revisar novedades de <b>facturación</b> (y, si se detectan, los últimos titulares). Pensado para tener al día la facturación electrónica.</div>
       <div className="bg-white rounded-xl border border-gray-200 p-5">
         <div className="flex items-center justify-between">
           <div>
