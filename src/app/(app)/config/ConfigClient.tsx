@@ -9,6 +9,7 @@ const chip = (txt: string, color: string) => (
 const SECCIONES = [
   { k: "empresa", icon: "🏢", label: "Datos de la empresa (AFIP)" },
   { k: "talonarios", icon: "🔢", label: "Talonarios / Numeración" },
+  { k: "arca", icon: "📋", label: "Monitor normativa ARCA" },
 ] as const;
 type Sec = (typeof SECCIONES)[number]["k"];
 
@@ -27,7 +28,38 @@ export default function ConfigClient() {
           </button>
         ))}
       </aside>
-      <div className="flex-1 min-w-0 overflow-auto">{sec === "empresa" ? <Empresa /> : <Talonarios />}</div>
+      <div className="flex-1 min-w-0 overflow-auto">{sec === "empresa" ? <Empresa /> : sec === "arca" ? <MonitorArca /> : <Talonarios />}</div>
+    </div>
+  );
+}
+
+function MonitorArca() {
+  const [activo, setActivo] = useState<boolean | null>(null);
+  const [info, setInfo] = useState<any>({}); const [busy, setBusy] = useState(false);
+  useEffect(() => { fetch("/api/arca-monitor").then((r) => r.json()).then((d) => { if (d.ok) { setActivo(!!d.activo); setInfo(d); } }); }, []);
+  const toggle = async () => {
+    setBusy(true);
+    const r = await fetch("/api/arca-monitor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ activo: !activo }) });
+    const d = await r.json(); if (d.ok) setActivo(d.activo); setBusy(false);
+  };
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-lg font-bold text-febo-azul mb-1">📋 Monitor de normativa ARCA</h2>
+      <div className="text-sm text-gray-500 mb-4">Una vez por mes, Claude revisa la normativa ARCA de <b>facturación</b> y, si hay cambios relevantes, te avisa por email a <b>guille.aol@gmail.com</b>. Está pensado para tener al día la facturación electrónica.</div>
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-semibold">{activo === null ? "…" : activo ? "✅ Monitor ACTIVO" : "⏸️ Monitor desactivado"}</div>
+            <div className="text-xs text-gray-500 mt-0.5">{activo ? "Corre el día 1 de cada mes." : "No se ejecuta hasta que lo actives."}</div>
+          </div>
+          <button onClick={toggle} disabled={busy || activo === null}
+            className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${activo ? "bg-gray-500 hover:bg-gray-600" : "bg-emerald-500 hover:bg-emerald-600"} disabled:opacity-50`}>
+            {busy ? "…" : activo ? "Desactivar" : "Activar monitor"}
+          </button>
+        </div>
+        {info.last_run && <div className="text-xs text-gray-500 mt-3 border-t border-gray-100 pt-3">Última revisión: {new Date(info.last_run).toLocaleString("es-AR")}{info.last_summary ? " · " + String(info.last_summary).slice(0, 200) : ""}</div>}
+      </div>
+      <div className="text-[11px] text-gray-400 mt-3">⚠️ Orientativo: validá siempre con tu contador antes de aplicar cambios a la facturación.</div>
     </div>
   );
 }
