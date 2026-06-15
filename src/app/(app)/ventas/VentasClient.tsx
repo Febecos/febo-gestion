@@ -569,7 +569,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           <button onClick={() => setPesos(!pesos)} disabled={!dolar} title={dolar ? `TC $${dolar}` : "sin TC"} className="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-white">🔁 {enP ? "Ver USD" : "Ver $ ARS"}</button>
           <a href={`/pedido-prep/${encodeURIComponent(refId)}?print=1`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-semibold hover:bg-white">🖨 Imprimir pedido</a>
           {ped.factura_numero
-            ? <a href={`/p/${ped.factura_token}`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 Ver {ped.factura_numero}</a>
+            ? <a href={`/p/${ped.factura_token}?admin=1`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 Ver {ped.factura_numero}</a>
             : <div className="flex items-center gap-1">
                 {puedeFacturar && talsLetra.length > 0 && <select value={talEfectivo} onChange={(e) => setTalSel(e.target.value)} title="Talonario" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white">
                   {talsLetra.map((t) => <option key={t.id} value={t.id}>{t.tipo_nombre} · {String(t.sucursal || "0001")}-{String(t.proximo_numero).padStart(8, "0")}{t.defecto ? " ★" : ""}</option>)}
@@ -608,7 +608,7 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
           <td className="px-4 py-2">{chip(c.estado || "—", EST_COL[c.estado] || "#888")}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(c.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold">{fmt(c.total)}</td>
-          <td className="px-4 py-2 text-right">{c.token && <a href={`/p/${c.token}`} target="_blank" rel="noreferrer" className="text-febo-azul hover:underline text-xs font-semibold">🧾 Ver</a>}</td>
+          <td className="px-4 py-2 text-right">{c.token && <a href={`/p/${c.token}?admin=1`} target="_blank" rel="noreferrer" className="text-febo-azul hover:underline text-xs font-semibold">🧾 Ver</a>}</td>
         </tr>
       ))}
     </Tabla>

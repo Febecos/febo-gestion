@@ -12,6 +12,17 @@ const COND: Record<string, string> = {
 export default function ComprobantePublico({ params }: { params: { token: string } }) {
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState("");
+  const [admin, setAdmin] = useState(false);
+  const [sending, setSending] = useState(false);
+  useEffect(() => { setAdmin(new URLSearchParams(window.location.search).get("admin") === "1"); }, []);
+  const enviarEmail = async () => {
+    setSending(true);
+    try {
+      const r = await fetch("/api/comprobante-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: params.token }) });
+      const j = await r.json();
+      alert(j.ok ? "✅ Enviado a " + (j.email || "el cliente") : "No se pudo enviar: " + (j.error || "error"));
+    } catch (e: any) { alert("Error: " + e.message); } finally { setSending(false); }
+  };
 
   useEffect(() => {
     fetch("/api/public/" + params.token).then((r) => r.json()).then((j) => {
@@ -71,6 +82,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
       `}</style>
 
       <div className="toolbar">
+        {admin && <button className="btn sec" disabled={sending} onClick={enviarEmail}>{sending ? "Enviando…" : "✉️ Enviar por email"}</button>}
         <button className="btn" onClick={() => window.print()}>🖨 Imprimir / Guardar PDF</button>
       </div>
 
