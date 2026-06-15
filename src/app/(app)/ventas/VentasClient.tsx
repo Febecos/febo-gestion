@@ -6,6 +6,9 @@ import { useWindows } from "../WindowManager";
 // Factura/Remito = fg_comprobantes. Pagos = fg_pagos. Proveedor = pedidos_proveedores.
 // Vista/PDF/edición pública en coti.febecos.com (/p/{token}); edición interna embebida con ?rev.
 const COTI = "https://coti.febecos.com";
+// Link al presupuesto público según tipo: FV usa el visor FV; bombas usa coti.
+const linkPresup = (tipo: string, token: string) =>
+  tipo === "fv" ? `https://fv.febecos.com/ver-presupuesto?token=${token}` : `${COTI}/p/${token}`;
 
 const fmt = (v: number, m = "$") => `${m} ` + Math.round(Number(v) || 0).toLocaleString("es-AR");
 const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—");
@@ -114,8 +117,9 @@ function Presupuestos() {
                 <td className="px-4 py-2 text-gray-600">{fmtF(r.created_at)}</td>
                 <td className="px-4 py-2 text-right font-semibold">{fmt(r.precio_ofrecido, r.tipo === "fv" ? "USD" : "$")}</td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
-                  {r.public_token && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}` })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
-                  {r.public_token && <a href={`${COTI}/p/${r.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
+                  {r.public_token && r.tipo !== "fv" && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}` })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
+                  {r.public_token && r.tipo === "fv" && <a href={`https://fv.febecos.com/ver-presupuesto?token=${r.public_token}`} target="_blank" rel="noreferrer" title="Editar/Ver (formato FV)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</a>}
+                  {r.public_token && <a href={linkPresup(r.tipo, r.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                   {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id })} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
                 </td>
               </tr>

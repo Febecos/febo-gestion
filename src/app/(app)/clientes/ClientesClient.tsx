@@ -308,6 +308,8 @@ const FICHA_TABS = [
 ] as const;
 type FichaTab = (typeof FICHA_TABS)[number]["k"];
 const COTI_BASE = "https://coti.febecos.com";
+const linkPresup = (tipo: string, token: string) =>
+  tipo === "fv" ? `https://fv.febecos.com/ver-presupuesto?token=${token}` : `${COTI_BASE}/p/${token}`;
 const esPedidoEstado = (e: string) => ["pedido", "convertido"].includes((e || "").toLowerCase());
 
 function OperacionesTab({ clienteId }: { clienteId: number }) {
@@ -429,7 +431,7 @@ function TablaPresup({ rows, vacio }: { rows: any[]; vacio: string }) {
                 <td className="px-3 py-2 text-gray-500">{p.created_at ? new Date(p.created_at).toLocaleDateString("es-AR") : "—"}</td>
                 <td className="px-3 py-2 text-gray-500">{p.estado || "—"}</td>
                 <td className="px-3 py-2 text-right font-semibold">{m} {Math.round(Number(p.precio_ofrecido) || 0).toLocaleString("es-AR")}</td>
-                <td className="px-3 py-2 text-right">{p.public_token && <a href={`${COTI_BASE}/p/${p.public_token}`} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
+                <td className="px-3 py-2 text-right">{p.public_token && <a href={linkPresup(p.tipo, p.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
               </tr>
             );
           })}
