@@ -189,6 +189,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [pesos, setPesos] = useState(false);
   const [busy, setBusy] = useState(false);
   const [nota, setNota] = useState("");
+  const [provPanel, setProvPanel] = useState(false);
+  const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); } }), [refId]);
   useEffect(() => { load(); }, [load]);
   if (!ped) return null;
@@ -268,6 +270,42 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             </table>
           </div>
 
+          {/* Pedido a proveedor */}
+          {provPanel && (() => {
+            const grupos: Record<string, any[]> = {};
+            items.forEach((it: any) => { const k = it.proveedor || "Sin proveedor"; (grupos[k] = grupos[k] || []).push(it); });
+            const enviarProv = async (prov: string, its: any[]) => {
+              const info = provData[prov] || { email: "", mensaje: "" };
+              if (!info.email) { alert("Ingresá el email del proveedor " + prov); return; }
+              if (!confirm(`¿Enviar pedido a ${prov} (${its.length} ítems) a ${info.email}?`)) return;
+              setBusy(true);
+              try {
+                const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "proveedor", proveedor: prov, email_destinatario: info.email, mensaje: info.mensaje, items: its.map((it) => ({ codigo: it.codigo, descripcion: it.descripcion, cantidad: it.cantidad, costo_usd: it.costo_usd })) }) });
+                const d = await r.json(); if (!d.ok) throw new Error(d.error);
+                alert(`✅ Pedido enviado a ${prov}` + (d.gsa_numero ? ` (GSA ${d.gsa_numero})` : ""));
+              } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
+            };
+            return (
+              <div className="border border-violet-200 bg-violet-50/40 rounded-lg p-3">
+                <div className="text-[11px] font-bold text-violet-700 uppercase mb-2">🏭 Pedido a proveedor (un email por proveedor, con Excel)</div>
+                <div className="space-y-3">
+                  {Object.entries(grupos).map(([prov, its]) => (
+                    <div key={prov} className="bg-white border border-gray-200 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="font-semibold text-sm">{chip(prov, "#7c3aed")} <span className="text-gray-500 text-xs ml-1">{its.length} ítem(s)</span></div>
+                        <button disabled={busy} onClick={() => enviarProv(prov, its)} className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-semibold hover:bg-violet-700">📤 Enviar a {prov}</button>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input placeholder="email del proveedor *" value={(provData[prov]?.email) || ""} onChange={(e) => setProvData({ ...provData, [prov]: { ...(provData[prov] || { mensaje: "" }), email: e.target.value } })} className="border border-gray-300 rounded px-2 py-1 text-sm" />
+                        <input placeholder="mensaje (opcional)" value={(provData[prov]?.mensaje) || ""} onChange={(e) => setProvData({ ...provData, [prov]: { ...(provData[prov] || { email: "" }), mensaje: e.target.value } })} className="border border-gray-300 rounded px-2 py-1 text-sm" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Nota interna */}
           <div>
             <div className="text-[11px] font-bold text-gray-400 uppercase mb-1">Nota interna</div>
@@ -281,6 +319,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
         {/* Footer acciones */}
         <div className="border-t border-gray-200 p-3 flex flex-wrap gap-2 justify-end bg-gray-50 rounded-b-xl">
           <button onClick={() => setPesos(!pesos)} disabled={!dolar} title={dolar ? `TC $${dolar}` : "sin TC"} className="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-white">🔁 {enP ? "Ver USD" : "Ver $ ARS"}</button>
+          <button onClick={() => setProvPanel(!provPanel)} className="px-3 py-2 rounded-lg border border-violet-300 text-violet-700 text-sm font-semibold hover:bg-violet-50">🏭 Proveedor</button>
           {ped.estado === "pendiente_confirmacion" && <>
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido?")} className="px-4 py-2 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600">✅ Aprobar pedido</button>

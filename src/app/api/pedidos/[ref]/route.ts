@@ -64,6 +64,19 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{envio}', ${JSON.stringify(b.envio || {})}::jsonb) WHERE numero=${ref}`;
       return NextResponse.json({ ok: true });
     }
+    // Mail al proveedor: reusa el endpoint del admin (genera Excel "Pedido GSA" + email). 1 llamada por proveedor.
+    if (b.accion === "proveedor") {
+      const tok = process.env.FV_ADMIN_TOKEN;
+      if (!tok) return NextResponse.json({ ok: false, error: "Falta FV_ADMIN_TOKEN en el servidor de gestión" }, { status: 500 });
+      if (!b.proveedor || !b.email_destinatario || !b.items?.length) return NextResponse.json({ ok: false, error: "proveedor, email e ítems requeridos" }, { status: 400 });
+      const r = await fetch("https://febecos.com/api/admin?action=pedido-proveedor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Token": tok },
+        body: JSON.stringify({ fv_numero: ref, proveedor: b.proveedor, email_destinatario: b.email_destinatario, mensaje: b.mensaje || "", items: b.items }),
+      });
+      const d = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON del admin" }));
+      return NextResponse.json(d, { status: r.ok ? 200 : (r.status || 502) });
+    }
     return NextResponse.json({ ok: false, error: "acción inválida" }, { status: 400 });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
