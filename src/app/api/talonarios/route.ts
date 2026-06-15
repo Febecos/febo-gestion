@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { esOwner } from "@/lib/owner";
 
 // Talonarios = numeración configurable por tipo de comprobante (como Táctica).
 // El próximo número se puede editar a mano. Tipos de factura tomados de Táctica:
@@ -18,6 +19,11 @@ async function ensure(sql: any) {
     orden INT DEFAULT 0,
     updated_at TIMESTAMPTZ DEFAULT now()
   )`;
+  // Campos estilo Táctica
+  await sql`ALTER TABLE fg_talonarios ADD COLUMN IF NOT EXISTS nro_desde INT DEFAULT 1`.catch(() => {});
+  await sql`ALTER TABLE fg_talonarios ADD COLUMN IF NOT EXISTS nro_hasta INT`.catch(() => {});
+  await sql`ALTER TABLE fg_talonarios ADD COLUMN IF NOT EXISTS defecto BOOLEAN DEFAULT false`.catch(() => {});
+  await sql`ALTER TABLE fg_talonarios ADD COLUMN IF NOT EXISTS bloqueado BOOLEAN DEFAULT false`.catch(() => {});
   const n = await sql`SELECT count(*)::int c FROM fg_talonarios`;
   if (n[0].c > 0) return;
   // Próximos números desde los contadores existentes
@@ -41,11 +47,12 @@ async function ensure(sql: any) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    if (!(await esOwner(req))) return NextResponse.json({ ok: false, error: "Solo el administrador (owner) puede ver Talonarios." }, { status: 403 });
     const sql = getDb();
     await ensure(sql);
-    const rows = await sql`SELECT id, clave, nombre, prefijo, serie, proximo_numero, electronica, activo, cai, vencimiento FROM fg_talonarios ORDER BY orden, id`;
+    const rows = await sql`SELECT id, clave, nombre, prefijo, serie, nro_desde, nro_hasta, proximo_numero, electronica, activo, defecto, bloqueado, cai, vencimiento FROM fg_talonarios ORDER BY orden, id`;
     return NextResponse.json({ ok: true, talonarios: rows });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
@@ -53,12 +60,17 @@ export async function GET() {
 // PATCH /api/talonarios  Body: { id, campo, valor }  (serie, proximo_numero, activo, cai, vencimiento)
 export async function PATCH(req: NextRequest) {
   try {
+    if (!(await esOwner(req))) return NextResponse.json({ ok: false, error: "Solo el owner puede modificar Talonarios." }, { status: 403 });
     const sql = getDb();
     const { id, campo, valor } = await req.json();
-    const ALLOWED = ["serie", "proximo_numero", "activo", "cai", "vencimiento"];
+    const ALLOWED = ["serie", "proximo_numero", "nro_desde", "nro_hasta", "activo", "defecto", "bloqueado", "cai", "vencimiento"];
     if (!id || !ALLOWED.includes(campo)) return NextResponse.json({ ok: false, error: "campo inválido" }, { status: 400 });
     if (campo === "proximo_numero") await sql`UPDATE fg_talonarios SET proximo_numero=${Math.max(1, Number(valor) || 1)}, updated_at=now() WHERE id=${id}`;
+    else if (campo === "nro_desde") await sql`UPDATE fg_talonarios SET nro_desde=${Math.max(1, Number(valor) || 1)}, updated_at=now() WHERE id=${id}`;
+    else if (campo === "nro_hasta") await sql`UPDATE fg_talonarios SET nro_hasta=${valor ? Number(valor) : null}, updated_at=now() WHERE id=${id}`;
     else if (campo === "activo") await sql`UPDATE fg_talonarios SET activo=${!!valor}, updated_at=now() WHERE id=${id}`;
+    else if (campo === "defecto") await sql`UPDATE fg_talonarios SET defecto=${!!valor}, updated_at=now() WHERE id=${id}`;
+    else if (campo === "bloqueado") await sql`UPDATE fg_talonarios SET bloqueado=${!!valor}, updated_at=now() WHERE id=${id}`;
     else if (campo === "serie") await sql`UPDATE fg_talonarios SET serie=${String(valor || "").trim()}, updated_at=now() WHERE id=${id}`;
     else if (campo === "cai") await sql`UPDATE fg_talonarios SET cai=${String(valor || "").trim() || null}, updated_at=now() WHERE id=${id}`;
     else if (campo === "vencimiento") await sql`UPDATE fg_talonarios SET vencimiento=${valor || null}, updated_at=now() WHERE id=${id}`;

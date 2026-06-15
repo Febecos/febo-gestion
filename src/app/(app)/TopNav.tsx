@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWindows, WinKey } from "./WindowManager";
 
@@ -16,6 +17,8 @@ const SOON = [
 export default function TopNav() {
   const router = useRouter();
   const { open } = useWindows();
+  const [esOwner, setEsOwner] = useState(false);
+  useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setEsOwner(!!(d.ok && d.es_owner))).catch(() => {}); }, []);
   async function salir() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }
 
   // "Cotizar FV" abre el cotizador FV en modo INTERNO, EMBEBIDO en una ventana de gestión
@@ -50,6 +53,13 @@ export default function TopNav() {
             <span className="text-[8px]">pronto</span>
           </div>
         ))}
+        {esOwner && (
+          <button onClick={() => open("config")} title="Solo administrador"
+            className="flex flex-col items-center justify-center min-w-[80px] px-2 py-2 rounded-lg text-gray-600 hover:bg-febo-azul/10 hover:text-febo-azul transition ml-auto">
+            <span className="text-2xl">⚙️</span>
+            <span className="text-[11px] mt-0.5 font-semibold whitespace-nowrap">Configuración</span>
+          </button>
+        )}
       </nav>
     </header>
   );

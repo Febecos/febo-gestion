@@ -4,14 +4,16 @@ import ClientesClient from "./clientes/ClientesClient";
 import VentasClient from "./ventas/VentasClient";
 import ProductosClient from "./productos/ProductosClient";
 import CotizadorEmbed from "./cotizadores/CotizadorEmbed";
+import ConfigClient from "./config/ConfigClient";
 
-export type WinKey = "clientes" | "ventas" | "productos" | "cot-bomba" | "cot-fv" | "presup-edit";
+export type WinKey = "clientes" | "ventas" | "productos" | "cot-bomba" | "cot-fv" | "presup-edit" | "config";
 type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean; payload?: any };
 
 const TITULOS: Record<WinKey, string> = {
   clientes: "👥 Clientes / CRM", ventas: "🧾 Ventas / Presupuestos", productos: "📦 Productos",
   "cot-bomba": "🔧 Cotizador de bombas", "cot-fv": "☀️ Cotizador fotovoltaico",
   "presup-edit": "✏️ Editar presupuesto",
+  config: "⚙️ Configuración",
 };
 
 const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void; setTitle: (k: WinKey, title: string) => void } | null>(null);
@@ -21,6 +23,7 @@ function Body({ k, payload }: { k: WinKey; payload?: any }) {
   if (k === "clientes") return <ClientesClient openClienteId={payload?.clienteId} />;
   if (k === "ventas") return <VentasClient />;
   if (k === "productos") return <ProductosClient />;
+  if (k === "config") return <ConfigClient />;
   if (k === "presup-edit") return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-100 text-[11px] text-gray-400 shrink-0">

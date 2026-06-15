@@ -23,7 +23,6 @@ const SECCIONES = [
   { k: "remitos", icon: "🚚", label: "Remitos" },
   { k: "pagos", icon: "💵", label: "Pagos" },
   { k: "prov", icon: "🏭", label: "Pedidos a proveedor" },
-  { k: "talonarios", icon: "🔢", label: "Talonarios" },
 ] as const;
 type Seccion = (typeof SECCIONES)[number]["k"];
 
@@ -52,7 +51,6 @@ export default function VentasClient() {
         {sec === "remitos" && <Comprobantes tipo="remito" titulo="Remitos" />}
         {sec === "pagos" && <Pagos />}
         {sec === "prov" && <PedidosProveedor />}
-        {sec === "talonarios" && <Talonarios />}
       </div>
     </div>
   );
@@ -178,44 +176,6 @@ function Pedidos() {
     </Tabla>
     {sel && <PedidoModal refId={sel} onClose={() => setSel(null)} onChanged={load} />}
     </>
-  );
-}
-
-// ---------- TALONARIOS (numeración configurable) ----------
-function Talonarios() {
-  const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
-  const load = () => fetch("/api/talonarios").then((r) => r.json()).then((d) => { setRows(d.ok ? d.talonarios : []); setLoading(false); });
-  useEffect(() => { load(); }, []);
-  const patch = async (id: number, campo: string, valor: any) => {
-    await fetch("/api/talonarios", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, campo, valor }) });
-    load();
-  };
-  if (loading) return <div className="text-gray-400 py-8 text-center">Cargando…</div>;
-  return (
-    <div>
-      <div className="text-sm text-gray-500 mb-3">Numeración por comprobante. El <b>próximo número</b> es editable (modificalo al empezar a trabajar). Las facturas no electrónicas generan <b>proforma</b>; las electrónicas (AFIP) quedan para más adelante.</div>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
-            <th className="text-left px-4 py-3">Comprobante</th><th className="text-left px-4 py-3">Prefijo</th>
-            <th className="text-left px-4 py-3">Serie / Pto. venta</th><th className="text-right px-4 py-3">Próximo número</th>
-            <th className="text-center px-4 py-3">Tipo</th><th className="text-center px-4 py-3">Activo</th>
-          </tr></thead>
-          <tbody>
-            {rows.map((t) => (
-              <tr key={t.id} className="border-t border-gray-100">
-                <td className="px-4 py-2 font-semibold">{t.nombre}</td>
-                <td className="px-4 py-2 text-gray-500 font-mono">{t.prefijo}</td>
-                <td className="px-4 py-2"><input defaultValue={t.serie || ""} onBlur={(e) => e.target.value !== (t.serie || "") && patch(t.id, "serie", e.target.value)} className="border border-gray-300 rounded px-2 py-1 w-24 text-sm" /></td>
-                <td className="px-4 py-2 text-right"><input type="number" defaultValue={t.proximo_numero} onBlur={(e) => Number(e.target.value) !== t.proximo_numero && patch(t.id, "proximo_numero", e.target.value)} className="border border-gray-300 rounded px-2 py-1 w-28 text-sm text-right" /></td>
-                <td className="px-4 py-2 text-center">{t.electronica ? chip("Electrónica (AFIP)", "#2563eb") : chip("Manual / Proforma", "#64748b")}</td>
-                <td className="px-4 py-2 text-center"><input type="checkbox" checked={!!t.activo} onChange={(e) => patch(t.id, "activo", e.target.checked)} /></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
   );
 }
 

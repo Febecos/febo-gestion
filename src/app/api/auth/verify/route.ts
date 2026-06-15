@@ -25,7 +25,8 @@ export async function POST(req: NextRequest) {
     // (de admin_users, ej "Guillermo Sandler") para atribuir cada cotización al
     // vendedor → base del cálculo de comisiones.
     const nombre = d?.user?.nombre || d?.user?.name || email;
-    const token = await new SignJWT({ email, nombre })
+    const es_owner = !!(d?.user?.es_owner);
+    const token = await new SignJWT({ email, nombre, es_owner })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("7d")
