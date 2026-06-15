@@ -68,8 +68,14 @@ export async function POST(req: NextRequest) {
     const t = tipoPorCodigo(tipo_codigo);
     if (!t) return NextResponse.json({ ok: false, error: "tipo inválido" }, { status: 400 });
     const sql = getDb(); await ensure(sql);
-    const r = await sql`INSERT INTO fg_talonarios (tipo_codigo, tipo_nombre, electronica, sucursal, nro_desde, nro_hasta, proximo_numero, activo)
-      VALUES (${t.codigo}, ${t.nombre}, ${t.electronica}, '0001', 1, 99999999, 1, true) RETURNING id`;
+    // Domicilio LEGAL (ARCA) por defecto desde fg_empresa. La sucursal/pto. de venta es manual.
+    let domicilioLegal: string | null = null;
+    try {
+      const e = await sql`SELECT domicilio, localidad, provincia FROM fg_empresa WHERE id=1`;
+      if (e[0]) domicilioLegal = [e[0].domicilio, e[0].localidad, e[0].provincia].filter(Boolean).join(", ") || null;
+    } catch {}
+    const r = await sql`INSERT INTO fg_talonarios (tipo_codigo, tipo_nombre, electronica, sucursal, direccion_sucursal, nro_desde, nro_hasta, proximo_numero, activo)
+      VALUES (${t.codigo}, ${t.nombre}, ${t.electronica}, '0001', ${domicilioLegal}, 1, 99999999, 1, true) RETURNING id`;
     return NextResponse.json({ ok: true, id: r[0].id });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }

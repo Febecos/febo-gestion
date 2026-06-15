@@ -188,7 +188,7 @@ function TalonarioModal({ tal, onClose, onSaved }: { tal: any; onClose: () => vo
         <div className="p-5 grid grid-cols-2 gap-3">
           {F("serie", "Serie")}
           {F("sucursal", "Punto de venta / Sucursal")}
-          <label className="col-span-2"><span className={lbl}>Dirección de sucursal</span><input defaultValue={t.direccion_sucursal ?? ""} onBlur={(e) => e.target.value !== (t.direccion_sucursal ?? "") && patch("direccion_sucursal", e.target.value)} className={inp} /></label>
+          <label className="col-span-2"><span className={lbl}>Dirección de sucursal (domicilio legal — se precarga desde Datos de empresa)</span><input defaultValue={t.direccion_sucursal ?? ""} onBlur={(e) => e.target.value !== (t.direccion_sucursal ?? "") && patch("direccion_sucursal", e.target.value)} className={inp} /></label>
           {F("modelo_impresora", "Modelo impresora")}
           {F("cantidad_max_items", "Cant. máx. de ítems", "number")}
           {F("nro_desde", "Desde", "number")}
