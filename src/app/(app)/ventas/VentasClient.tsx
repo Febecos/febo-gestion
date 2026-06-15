@@ -57,7 +57,8 @@ export default function VentasClient() {
 }
 
 // ---------- PRESUPUESTOS (tabla real, coti) ----------
-type Presup = { id: number; numero: string; tipo: string; estado: string; cliente_display: string; cliente_nombre: string; cliente_apellido: string; cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string; precio_ofrecido: number; revendedor_nombre: string; public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string };
+type Presup = { id: number; numero: string; tipo: string; estado: string; cliente_display: string; cliente_nombre: string; cliente_apellido: string; cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string; precio_ofrecido: number; revendedor_nombre: string; public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string; pedido_numero?: string | null; factura_numero?: string | null };
+const tienePedido = (r: Presup) => !!r.pedido_numero || ["pedido", "convertido", "pagado", "anulado"].includes((r.estado || "").toLowerCase());
 
 function Presupuestos() {
   const { open } = useWindows();
@@ -124,12 +125,20 @@ function Presupuestos() {
                 <td className="px-4 py-2">{nombreCli(r)}</td>
                 <td className="px-4 py-2 text-gray-600">{r.bomba_codigo || r.bomba_descripcion || "—"}</td>
                 <td className="px-4 py-2 text-gray-500">{r.revendedor_nombre || "—"}</td>
-                <td className="px-4 py-2">{chip(r.estado || "—", EST_COL[r.estado] || "#888")}</td>
+                <td className="px-4 py-2">
+                  {chip(r.estado || "—", EST_COL[r.estado] || "#888")}
+                  {r.pedido_numero && <span className="ml-1 text-[10px] font-semibold text-violet-700" title="Pedido generado">📦 {r.pedido_numero}</span>}
+                  {r.factura_numero && <span className="ml-1 text-[10px] font-semibold text-emerald-600" title="Facturado">🧾 {r.factura_numero}</span>}
+                </td>
                 <td className="px-4 py-2 text-gray-600">{fmtF(r.created_at)}</td>
                 <td className="px-4 py-2 text-right font-semibold">{fmt(r.precio_ofrecido, r.tipo === "fv" ? "USD" : "$")}</td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
-                  {r.public_token && r.tipo !== "fv" && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}` })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
-                  {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token)} title="Editar/Operar FV (modo interno, todos los botones)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
+                  {tienePedido(r)
+                    ? <span title="Con pedido generado: no se edita" className="text-gray-300 mr-2">🔒</span>
+                    : <>
+                      {r.public_token && r.tipo !== "fv" && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}` })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
+                      {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token)} title="Editar/Operar FV (modo interno)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
+                    </>}
                   {r.public_token && <a href={linkPresup(r.tipo, r.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                   {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id })} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
                 </td>

@@ -26,8 +26,16 @@ export async function GET(req: NextRequest) {
         c.id AS cliente_id,
         -- Nombre CANÓNICO: del CRM (enlazado o resuelto por cuit/email/tel); si no, la copia
         COALESCE(NULLIF(c.razon_social,''), NULLIF(c.nombre,''), NULLIF(p.cliente_razon_social,''),
-                 NULLIF(trim(concat_ws(' ', p.cliente_nombre, p.cliente_apellido)),'')) AS cliente_display
+                 NULLIF(trim(concat_ws(' ', p.cliente_nombre, p.cliente_apellido)),'')) AS cliente_display,
+        ped.pedido_numero, ped.factura_numero
       FROM presupuestos p
+      LEFT JOIN LATERAL (
+        SELECT fp.numero AS pedido_numero, op.factura_numero
+        FROM fv_pedidos fp
+        LEFT JOIN fg_operaciones op ON op.origen = 'fv' AND op.pedido_ref = fp.numero
+        WHERE fp.payload->>'presupuesto_numero' = p.numero
+        LIMIT 1
+      ) ped ON true
       LEFT JOIN LATERAL (
         SELECT cc.id, cc.nombre, cc.razon_social FROM clientes cc
         WHERE (cc.crm_eliminado IS NULL OR cc.crm_eliminado = false) AND (

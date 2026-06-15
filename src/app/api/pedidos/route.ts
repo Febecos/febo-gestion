@@ -39,8 +39,9 @@ export async function GET(_req: NextRequest) {
         };
       }),
     ];
-    // bombas tienen fecha; fv no → bombas primero por fecha, fv después por número
-    lista.sort((a, b) => (b.fecha ? new Date(b.fecha).getTime() : 0) - (a.fecha ? new Date(a.fecha).getTime() : 0));
+    // Ordenar por NÚMERO de pedido (PED-NNNN) descendente
+    const numOf = (x: any) => { const m = String(x.numero || "").match(/(\d+)\s*$/); return m ? parseInt(m[1], 10) : 0; };
+    lista.sort((a, b) => numOf(b) - numOf(a));
 
     return NextResponse.json({ ok: true, pedidos: lista });
   } catch (e: any) {
