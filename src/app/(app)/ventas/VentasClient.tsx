@@ -22,6 +22,7 @@ const SECCIONES = [
   { k: "facturas", icon: "🧾", label: "Facturas" },
   { k: "remitos", icon: "🚚", label: "Remitos" },
   { k: "pagos", icon: "💵", label: "Pagos" },
+  { k: "ctacte", icon: "💳", label: "Cuentas corrientes" },
   { k: "prov", icon: "🏭", label: "Pedidos a proveedor" },
 ] as const;
 type Seccion = (typeof SECCIONES)[number]["k"];
@@ -50,6 +51,7 @@ export default function VentasClient() {
         {sec === "facturas" && <Comprobantes tipo="factura" titulo="Facturas" />}
         {sec === "remitos" && <Comprobantes tipo="remito" titulo="Remitos" />}
         {sec === "pagos" && <Pagos />}
+        {sec === "ctacte" && <CuentasCorrientes />}
         {sec === "prov" && <PedidosProveedor />}
       </div>
     </div>
@@ -194,7 +196,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [unlockedProv, setUnlockedProv] = useState<Record<string, boolean>>({});
   const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "" });
   const [emailCli, setEmailCli] = useState(""); const [editEmail, setEditEmail] = useState(false);
-  const [pp, setPp] = useState({ tc: "", moneda: "ars", monto: "", provUsd: "", fecha: "", nota: "" });
+  const [pp, setPp] = useState({ proveedor: "", tc: "", medio: "pesos", monto: "", provUsd: "", fecha: "", nota: "" });
   const [tab, setTab] = useState<"detalle" | "prov" | "pago">("detalle");
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || ""); } }), [refId]);
   useEffect(() => { load(); }, [load]);
@@ -333,54 +335,72 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             );
           })()}
 
-          {/* === Pago AL PROVEEDOR (cotejo) === TC manual del momento del pago */}
+          {/* === Pago AL PROVEEDOR (cotejo) === TC manual; medio USD/pesos/cheque propio/endosado */}
           {tab === "prov" && !cancelado && (() => {
-            const reg = ped.pago_proveedor;
+            const MEDIOS: Record<string, string> = { usd: "USD (efvo/transf)", pesos: "Pesos (efvo/transf)", cheque_propio: "Cheque propio", cheque_endosado: "Cheque endosado" };
+            const pagos: any[] = Array.isArray(ped.pago_proveedor) ? ped.pago_proveedor : (ped.pago_proveedor ? [ped.pago_proveedor] : []);
+            // proveedores presentes en el pedido + su costo
+            const costoProv: Record<string, number> = {};
+            items.forEach((it: any) => { const k = it.proveedor || "Sin proveedor"; costoProv[k] = (costoProv[k] || 0) + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1); });
+            const provs = Object.keys(costoProv);
+            const provSel = pp.proveedor || provs[0] || "Sin proveedor";
+            const costoP = costoProv[provSel] || 0;
+            const esUSD = pp.medio === "usd";
             const tcV = Number(pp.tc) || 0;
             const montoN = Number(pp.monto) || 0;
             const provUsd = Number(pp.provUsd) || 0;
-            const montoUsd = pp.moneda === "ars" ? (tcV ? montoN / tcV : 0) : montoN;
-            const diffPed = +(montoUsd - costoTot).toFixed(2);          // vs costo del pedido
-            const diffProv = provUsd ? +(montoUsd - provUsd).toFixed(2) : null; // vs lo que informa el proveedor
+            const montoUsd = esUSD ? montoN : (tcV ? montoN / tcV : 0);
+            const diffPed = +(montoUsd - costoP).toFixed(2);
+            const diffProv = provUsd ? +(montoUsd - provUsd).toFixed(2) : null;
             const okProv = diffProv == null ? null : Math.abs(diffProv) <= 0.5;
             const guardar = () => {
-              if (!tcV) { alert("Ingresá el TC USD del momento del pago (es manual)."); return; }
+              if (!esUSD && !tcV) { alert("Ingresá el TC USD del momento del pago (es manual)."); return; }
               if (!montoN) { alert("Ingresá el monto pagado al proveedor."); return; }
               accion({ accion: "pago_proveedor", pago: {
-                costo_pedido_usd: +costoTot.toFixed(2), tc_usd: tcV, moneda: pp.moneda, monto: montoN,
-                monto_usd: +montoUsd.toFixed(2), monto_proveedor_usd: provUsd || null,
-                diff_vs_pedido: diffPed, diff_vs_proveedor: diffProv, ok: okProv,
+                proveedor: provSel, medio: pp.medio, costo_pedido_usd: +costoP.toFixed(2),
+                tc_usd: esUSD ? null : tcV, monto: montoN, monto_usd: +montoUsd.toFixed(2),
+                monto_proveedor_usd: provUsd || null, diff_vs_pedido: diffPed, diff_vs_proveedor: diffProv, ok: okProv,
                 fecha: pp.fecha || new Date().toISOString().slice(0, 10), nota: pp.nota || "",
               }});
+              setPp({ proveedor: provSel, tc: "", medio: pp.medio, monto: "", provUsd: "", fecha: "", nota: "" });
             };
             return (
               <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-3">
                 <div className="text-[11px] font-bold text-amber-700 uppercase mb-2">💸 Pago al proveedor — TC manual (cambio del momento del pago)</div>
-                <div className="text-xs text-gray-500 mb-2">Costo del pedido (lo que deberíamos pagar): <b>USD {costoTot.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b></div>
-                {reg ? (
-                  <div className="text-sm text-gray-700 bg-white border border-gray-200 rounded p-2 space-y-0.5">
-                    <div>✅ <b>Pagado</b> {reg.fecha ? "· " + new Date(reg.fecha).toLocaleDateString("es-AR") : ""} · {reg.moneda === "ars" ? "$" : "USD"} {Number(reg.monto).toLocaleString("es-AR")} @ TC {reg.tc_usd} = <b>USD {Number(reg.monto_usd).toFixed(2)}</b></div>
-                    <div className={Math.abs(reg.diff_vs_pedido) <= 0.5 ? "text-emerald-600" : "text-amber-600"}>vs costo pedido: {reg.diff_vs_pedido > 0 ? "+" : ""}{reg.diff_vs_pedido} USD</div>
-                    {reg.monto_proveedor_usd != null && <div className={reg.ok ? "text-emerald-600" : "text-red-600"}>Proveedor informó USD {Number(reg.monto_proveedor_usd).toFixed(2)} → {reg.ok ? "✔ coincide" : `⚠️ dif ${reg.diff_vs_proveedor} USD`}</div>}
-                    {reg.nota && <div className="text-gray-500">📝 {reg.nota}</div>}
-                    <button disabled={busy} onClick={() => accion({ accion: "pago_proveedor", pago: null })} className="text-xs text-gray-400 underline hover:text-red-500 mt-1">quitar pago</button>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-2 items-end">
-                    <label className="text-xs text-gray-500">TC USD (manual)<input type="number" value={pp.tc} onChange={(e) => setPp({ ...pp, tc: e.target.value })} placeholder={String(dolar || "")} className="block border border-gray-300 rounded px-2 py-1 text-sm w-24" /></label>
-                    <select value={pp.moneda} onChange={(e) => setPp({ ...pp, moneda: e.target.value })} className="border border-gray-300 rounded px-2 py-1 text-sm"><option value="ars">$ ARS</option><option value="usd">USD</option></select>
-                    <label className="text-xs text-gray-500">Monto pagado<input type="number" value={pp.monto} onChange={(e) => setPp({ ...pp, monto: e.target.value })} placeholder="0" className="block border border-gray-300 rounded px-2 py-1 text-sm w-32" /></label>
-                    <label className="text-xs text-gray-500">Informa proveedor (USD)<input type="number" value={pp.provUsd} onChange={(e) => setPp({ ...pp, provUsd: e.target.value })} placeholder="opcional" className="block border border-gray-300 rounded px-2 py-1 text-sm w-32" /></label>
-                    <label className="text-xs text-gray-500">Fecha<input type="date" value={pp.fecha} onChange={(e) => setPp({ ...pp, fecha: e.target.value })} className="block border border-gray-300 rounded px-2 py-1 text-sm" /></label>
-                    <label className="text-xs text-gray-500 flex-1 min-w-[140px]">Nota<input value={pp.nota} onChange={(e) => setPp({ ...pp, nota: e.target.value })} placeholder="referencia / comprobante" className="block border border-gray-300 rounded px-2 py-1 text-sm w-full" /></label>
-                    {montoN > 0 && tcV > 0 && <div className="text-xs w-full flex gap-3">
-                      <span className="text-gray-500">= USD {montoUsd.toFixed(2)}</span>
-                      <span className={Math.abs(diffPed) <= 0.5 ? "text-emerald-600" : "text-amber-600"}>vs pedido {diffPed > 0 ? "+" : ""}{diffPed}</span>
-                      {okProv != null && <span className={okProv ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>{okProv ? "✔ coincide c/ proveedor" : `⚠️ dif proveedor ${diffProv}`}</span>}
-                    </div>}
-                    <button disabled={busy} onClick={guardar} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700">💾 Registrar pago a proveedor</button>
-                  </div>
-                )}
+                {pagos.length > 0 && <div className="mb-3 space-y-1">
+                  {pagos.map((reg: any, i: number) => (
+                    <div key={i} className="text-sm text-gray-700 bg-white border border-gray-200 rounded p-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        {chip(reg.proveedor || "—", "#7c3aed")}
+                        <span>✅ <b>Pagado</b> {reg.fecha ? "· " + new Date(reg.fecha).toLocaleDateString("es-AR") : ""} · {MEDIOS[reg.medio] || reg.medio} · {reg.medio === "usd" ? "USD" : "$"} {Number(reg.monto).toLocaleString("es-AR")}{reg.tc_usd ? " @ TC " + reg.tc_usd : ""} = <b>USD {Number(reg.monto_usd).toFixed(2)}</b></span>
+                        <button disabled={busy} onClick={() => accion({ accion: "pago_proveedor", quitar: reg.proveedor })} className="text-xs text-gray-400 underline hover:text-red-500">quitar</button>
+                      </div>
+                      <div className="text-xs mt-0.5 flex flex-wrap gap-3">
+                        <span className={Math.abs(reg.diff_vs_pedido) <= 0.5 ? "text-emerald-600" : "text-amber-600"}>vs costo: {reg.diff_vs_pedido > 0 ? "+" : ""}{reg.diff_vs_pedido} USD</span>
+                        {reg.monto_proveedor_usd != null && <span className={reg.ok ? "text-emerald-600" : "text-red-600"}>proveedor informó USD {Number(reg.monto_proveedor_usd).toFixed(2)} → {reg.ok ? "✔ coincide" : `⚠️ dif ${reg.diff_vs_proveedor}`}</span>}
+                        {reg.nota && <span className="text-gray-500">📝 {reg.nota}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>}
+                <div className="flex flex-wrap gap-2 items-end">
+                  {provs.length > 1 && <label className="text-xs text-gray-500">Proveedor<select value={provSel} onChange={(e) => setPp({ ...pp, proveedor: e.target.value })} className="block border border-gray-300 rounded px-2 py-1 text-sm">{provs.map((p) => <option key={p} value={p}>{p}</option>)}</select></label>}
+                  <label className="text-xs text-gray-500">Medio<select value={pp.medio} onChange={(e) => setPp({ ...pp, medio: e.target.value })} className="block border border-gray-300 rounded px-2 py-1 text-sm">{Object.entries(MEDIOS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+                  {!esUSD && <label className="text-xs text-gray-500">TC USD (manual)<input type="number" value={pp.tc} onChange={(e) => setPp({ ...pp, tc: e.target.value })} placeholder={String(dolar || "")} className="block border border-gray-300 rounded px-2 py-1 text-sm w-24" /></label>}
+                  <label className="text-xs text-gray-500">Monto pagado ({esUSD ? "USD" : "$"})<input type="number" value={pp.monto} onChange={(e) => setPp({ ...pp, monto: e.target.value })} placeholder="0" className="block border border-gray-300 rounded px-2 py-1 text-sm w-32" /></label>
+                  <label className="text-xs text-gray-500">Informa proveedor (USD)<input type="number" value={pp.provUsd} onChange={(e) => setPp({ ...pp, provUsd: e.target.value })} placeholder="opcional" className="block border border-gray-300 rounded px-2 py-1 text-sm w-32" /></label>
+                  <label className="text-xs text-gray-500">Fecha<input type="date" value={pp.fecha} onChange={(e) => setPp({ ...pp, fecha: e.target.value })} className="block border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+                  <label className="text-xs text-gray-500 flex-1 min-w-[140px]">Nota<input value={pp.nota} onChange={(e) => setPp({ ...pp, nota: e.target.value })} placeholder="referencia / nº cheque" className="block border border-gray-300 rounded px-2 py-1 text-sm w-full" /></label>
+                </div>
+                <div className="text-xs mt-1.5 flex flex-wrap gap-3 items-center">
+                  <span className="text-gray-500">Costo {provSel}: <b>USD {costoP.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b></span>
+                  {montoN > 0 && (esUSD || tcV > 0) && <>
+                    <span className="text-gray-500">= USD {montoUsd.toFixed(2)}</span>
+                    <span className={Math.abs(diffPed) <= 0.5 ? "text-emerald-600" : "text-amber-600"}>vs costo {diffPed > 0 ? "+" : ""}{diffPed}</span>
+                    {okProv != null && <span className={okProv ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>{okProv ? "✔ coincide c/ proveedor" : `⚠️ dif proveedor ${diffProv}`}</span>}
+                  </>}
+                  <button disabled={busy} onClick={guardar} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700 ml-auto">💾 Registrar pago a {provSel}</button>
+                </div>
               </div>
             );
           })()}
@@ -665,6 +685,94 @@ function Operaciones() {
         </table>
       </div>
       {sel && <PedidoModal refId={sel} onClose={() => setSel(null)} onChanged={load} />}
+    </div>
+  );
+}
+
+// ---------- CUENTAS CORRIENTES (cliente + proveedor, en USD) ----------
+function CuentasCorrientes() {
+  const [amb, setAmb] = useState<"clientes" | "proveedores">("clientes");
+  const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
+  const [sel, setSel] = useState<{ tipo: string; key: string | number; nombre: string } | null>(null);
+  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?listar=" + amb).then((r) => r.json()).then((d) => { setRows(d.ok ? d.cuentas : []); setLoading(false); }); }, [amb]);
+  useEffect(() => { load(); }, [load]);
+  const totalSaldo = rows.reduce((a, r) => a + Number(r.saldo || 0), 0);
+  return (
+    <div>
+      <div className="flex gap-1 mb-3 text-sm">
+        {(["clientes", "proveedores"] as const).map((k) => (
+          <button key={k} onClick={() => setAmb(k)} className={`px-4 py-1.5 rounded-lg font-semibold ${amb === k ? "bg-febo-azul text-white" : "bg-gray-100 text-gray-600"}`}>{k === "clientes" ? "👤 Clientes" : "🏭 Proveedores"}</button>
+        ))}
+      </div>
+      <div className="text-sm text-gray-500 mb-3">{rows.length} cuenta(s) con saldo · {amb === "clientes" ? "saldo > 0 = el cliente nos debe" : "saldo > 0 = le debemos al proveedor"} · Total: <b className="text-febo-azul">USD {totalSaldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b></div>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
+            <th className="text-left px-4 py-3">{amb === "clientes" ? "Cliente" : "Proveedor"}</th>
+            <th className="text-right px-4 py-3">Debe</th><th className="text-right px-4 py-3">Haber</th><th className="text-right px-4 py-3">Saldo (USD)</th>
+          </tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={4} className="text-center py-8 text-gray-400">Cargando…</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={4} className="text-center py-8 text-gray-400">Sin saldos pendientes</td></tr>
+            : rows.map((r, i) => (
+              <tr key={i} className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer" onClick={() => setSel({ tipo: amb === "clientes" ? "cliente" : "proveedor", key: amb === "clientes" ? r.cliente_id : r.nombre, nombre: r.nombre })}>
+                <td className="px-4 py-2 font-semibold">{r.nombre}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-gray-500">{Number(r.debe).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+                <td className="px-4 py-2 text-right tabular-nums text-gray-500">{Number(r.haber).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+                <td className={`px-4 py-2 text-right tabular-nums font-bold ${Number(r.saldo) > 0.01 ? "text-red-600" : "text-emerald-600"}`}>{Number(r.saldo).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {sel && <CtaCteDetalle ambito={sel.tipo} keyVal={sel.key} nombre={sel.nombre} onClose={() => { setSel(null); load(); }} />}
+    </div>
+  );
+}
+
+function CtaCteDetalle({ ambito, keyVal, nombre, onClose }: { ambito: string; keyVal: string | number; nombre: string; onClose: () => void }) {
+  const [movs, setMovs] = useState<any[]>([]); const [saldo, setSaldo] = useState(0); const [loading, setLoading] = useState(true);
+  const qs = ambito === "cliente" ? "ambito=cliente&cliente_id=" + keyVal : "ambito=proveedor&proveedor=" + encodeURIComponent(String(keyVal));
+  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?" + qs).then((r) => r.json()).then((d) => { setMovs(d.ok ? d.movimientos : []); setSaldo(d.saldo || 0); setLoading(false); }); }, [qs]);
+  useEffect(() => { load(); }, [load]);
+  let acum = 0;
+  return (
+    <div className="fixed inset-0 z-[120] bg-black/50 flex items-stretch justify-center p-2 sm:p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-[820px] h-full flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-febo-azul text-white rounded-t-xl px-5 py-3 flex items-center justify-between">
+          <div><div className="text-lg font-bold">💳 Cta cte · {nombre}</div><div className="text-xs opacity-90">{ambito === "cliente" ? "Cliente" : "Proveedor"} · saldo en USD</div></div>
+          <button onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">✕</button>
+        </div>
+        <div className="px-5 py-2 border-b border-gray-200 bg-gray-50 text-sm">
+          Saldo: <b className={saldo > 0.01 ? "text-red-600" : "text-emerald-600"}>USD {saldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b>
+          <span className="text-gray-400 ml-2">{ambito === "cliente" ? (saldo > 0.01 ? "(nos debe)" : "(al día)") : (saldo > 0.01 ? "(le debemos)" : "(al día)")}</span>
+        </div>
+        <div className="flex-1 overflow-auto p-4">
+          <table className="w-full text-sm">
+            <thead className="text-[10px] uppercase text-gray-400 sticky top-0 bg-white"><tr>
+              <th className="text-left px-2 py-1">Fecha</th><th className="text-left px-2 py-1">Concepto</th>
+              <th className="text-right px-2 py-1">Debe</th><th className="text-right px-2 py-1">Haber</th><th className="text-right px-2 py-1">Saldo</th>
+            </tr></thead>
+            <tbody>
+              {loading ? <tr><td colSpan={5} className="text-center py-8 text-gray-400">Cargando…</td></tr>
+              : movs.length === 0 ? <tr><td colSpan={5} className="text-center py-8 text-gray-400">Sin movimientos</td></tr>
+              : movs.map((m, i) => {
+                const d = Number(m.debe) || 0, h = Number(m.haber) || 0;
+                acum += ambito === "cliente" ? (d - h) : (h - d);
+                return (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="px-2 py-1.5 text-gray-500 whitespace-nowrap">{fmtF(m.fecha)}</td>
+                    <td className="px-2 py-1.5">{m.concepto}{m.comprobante && <span className="text-gray-400 ml-1">· {m.comprobante}</span>}{m.pedido_ref && <span className="text-[10px] text-gray-400 ml-1">({m.pedido_ref})</span>}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{d ? d.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : ""}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums text-gray-600">{h ? h.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : ""}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{acum.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

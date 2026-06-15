@@ -12,7 +12,7 @@ function estadoFv(fp: any): string {
   const e = String(fp.estado || "").toLowerCase();
   if (e === "cancelado") return "anulado";
   if (fp.factura_numero || e === "facturado") return "facturado";
-  if (fp.pago_proveedor) return "pagado_proveedor";
+  if (fp.pago_proveedor && (Array.isArray(fp.pago_proveedor) ? fp.pago_proveedor.length : true)) return "pagado_proveedor";
   if (e === "pagado" || e === "enviado") return "pagado_cliente";
   if (fp.proveedor_confirmado) return "confirmado_cliente";
   if (e === "aprobado") return "reservado_proveedor";

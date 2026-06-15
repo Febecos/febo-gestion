@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { movCtaCte, delMov, delMovPrefijo } from "@/lib/ctacte";
+
+async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
+  const pn = payload?.presupuesto_numero;
+  if (!pn) return null;
+  const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pn} LIMIT 1` as any[];
+  return pr[0]?.cliente_id ?? null;
+}
+const hoy = () => new Date().toISOString().slice(0, 10);
 
 async function ensureCols(sql: any) {
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proveedor_confirmado boolean DEFAULT false`.catch(() => {});
@@ -73,11 +82,25 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     }
 
     if (b.accion === "confirmar_proveedor") {
-      if (esFv) await sql`UPDATE fv_pedidos SET proveedor_confirmado=true, proveedor_confirmado_at=now(), proforma_archivo=${JSON.stringify(b.archivos || [])}::jsonb WHERE numero=${ref}`;
+      if (esFv) {
+        await sql`UPDATE fv_pedidos SET proveedor_confirmado=true, proveedor_confirmado_at=now(), proforma_archivo=${JSON.stringify(b.archivos || [])}::jsonb WHERE numero=${ref}`;
+        // Cta cte proveedor: nace lo que le debemos (costo USD) al confirmar stock, por proveedor.
+        const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+        const items = row?.payload?.items || [];
+        const porProv: Record<string, number> = {};
+        for (const it of items) { const k = it.proveedor || "Sin proveedor"; porProv[k] = (porProv[k] || 0) + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1); }
+        for (const [prov, costo] of Object.entries(porProv)) {
+          if (costo <= 0) continue;
+          await movCtaCte(sql, { ambito: "proveedor", proveedor: prov, fecha: hoy(), concepto: "Pedido confirmado " + ref, pedido_ref: ref, haber: +costo.toFixed(2), uniq: `provconf:${ref}:${prov}` });
+        }
+      }
       return NextResponse.json({ ok: true });
     }
     if (b.accion === "desconfirmar_proveedor") {
-      if (esFv) await sql`UPDATE fv_pedidos SET proveedor_confirmado=false, proveedor_confirmado_at=null WHERE numero=${ref}`;
+      if (esFv) {
+        await sql`UPDATE fv_pedidos SET proveedor_confirmado=false, proveedor_confirmado_at=null WHERE numero=${ref}`;
+        await delMovPrefijo(sql, `provconf:${ref}:`);
+      }
       return NextResponse.json({ ok: true });
     }
 
@@ -104,16 +127,41 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     }
     if (b.accion === "verificar") {
       // b.pago = { monto, moneda, tc, redondeo, monto_usd, diff_usd, ok, fecha }
-      if (esFv) await sql`UPDATE fv_pedidos
-        SET pagos_recibidos = coalesce(pagos_recibidos,'[]'::jsonb) || ${JSON.stringify([b.pago])}::jsonb,
-            verificacion_pago = ${JSON.stringify(b.pago)}::jsonb
-        WHERE numero=${ref}`;
+      if (esFv) {
+        const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+        await sql`UPDATE fv_pedidos
+          SET pagos_recibidos = coalesce(pagos_recibidos,'[]'::jsonb) || ${JSON.stringify([b.pago])}::jsonb,
+              verificacion_pago = ${JSON.stringify(b.pago)}::jsonb
+          WHERE numero=${ref}`;
+        // Cta cte cliente: el pago cancela (haber). uniq por fecha exacta del pago.
+        const cid = await clienteIdDe(sql, row?.payload);
+        if (cid && Number(b.pago?.monto_usd) > 0) {
+          await movCtaCte(sql, { ambito: "cliente", cliente_id: cid, fecha: (b.pago.fecha || "").slice(0, 10) || hoy(),
+            concepto: "Pago recibido", pedido_ref: ref, haber: +Number(b.pago.monto_usd).toFixed(2),
+            detalle: b.pago, uniq: `pcli:${ref}:${b.pago.fecha}` });
+        }
+      }
       return NextResponse.json({ ok: true });
     }
     if (b.accion === "pago_proveedor") {
-      // b.pago = { costo_pedido_usd, tc_usd, moneda, monto, monto_usd, monto_proveedor_usd, diff_vs_pedido, diff_vs_proveedor, ok, fecha, nota }
-      // TC manual (el del momento del pago). null limpia el registro.
-      if (esFv) await sql`UPDATE fv_pedidos SET pago_proveedor=${b.pago ? JSON.stringify(b.pago) : null}::jsonb WHERE numero=${ref}`;
+      // b.pago = { proveedor, medio('usd'|'pesos'|'cheque_propio'|'cheque_endosado'), tc_usd, monto, monto_usd,
+      //            monto_proveedor_usd, diff_vs_pedido, diff_vs_proveedor, ok, fecha, nota }  (TC manual)
+      // b.quitar = nombre de proveedor → elimina su pago.  pago_proveedor se guarda como ARRAY (un pago por proveedor).
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const cur = (await sql`SELECT pago_proveedor FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0]?.pago_proveedor;
+      let arr: any[] = Array.isArray(cur) ? cur : (cur ? [cur] : []);
+      if (b.quitar) {
+        arr = arr.filter((p) => p.proveedor !== b.quitar);
+        await delMov(sql, `pprov:${ref}:${b.quitar}`);
+      } else if (b.pago) {
+        const prov = b.pago.proveedor || "Sin proveedor";
+        arr = arr.filter((p) => p.proveedor !== prov);
+        arr.push(b.pago);
+        await movCtaCte(sql, { ambito: "proveedor", proveedor: prov, fecha: b.pago.fecha || hoy(),
+          concepto: "Pago a proveedor (" + (b.pago.medio || "") + ")", pedido_ref: ref,
+          debe: +Number(b.pago.monto_usd || 0).toFixed(2), detalle: b.pago, uniq: `pprov:${ref}:${prov}` });
+      }
+      await sql`UPDATE fv_pedidos SET pago_proveedor=${arr.length ? JSON.stringify(arr) : null}::jsonb WHERE numero=${ref}`;
       return NextResponse.json({ ok: true });
     }
     if (b.accion === "email_cliente") {
@@ -174,6 +222,11 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
           VALUES (${comp.id}, ${(it.descripcion || it.codigo || "").slice(0, 300)}, ${it.cantidad || 1}, ${it.pvp_sin_iva_usd ?? null}, ${it.subtotal ?? null}, ${orden++})`;
       }
       await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_token=${comp.token} WHERE numero=${ref}`;
+      // Cta cte cliente: la factura genera la deuda (debe).
+      if (cliente_id && Number(tot.total) > 0) {
+        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum,
+          comprobante: facturaNum, pedido_ref: ref, debe: +Number(tot.total).toFixed(2), uniq: `fac:${facturaNum}` });
+      }
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: comp.token });
     }
     return NextResponse.json({ ok: false, error: "acción inválida" }, { status: 400 });
