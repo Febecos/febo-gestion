@@ -78,6 +78,13 @@ function Presupuestos() {
   }, [tipo, q, estado, vendedor]);
   useEffect(() => { const t = setTimeout(load, 250); return () => clearTimeout(t); }, [load]);
 
+  // Abre el visor/cotizador FV en modo INTERNO (con todos los botones): pide a gestión
+  // un token efímero (server↔server) y lo pasa en el hash que fv lee como sesión admin.
+  async function abrirFvInterno(token: string) {
+    let hash = "";
+    try { const r = await fetch("/api/fv-session"); const d = await r.json(); if (d.ok && d.token) hash = "#admin_jwt=" + d.token; } catch {}
+    window.open(`https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, "_blank");
+  }
   const nombreCli = (r: Presup) => r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ") || "—";
   const selCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm";
   return (
@@ -118,7 +125,7 @@ function Presupuestos() {
                 <td className="px-4 py-2 text-right font-semibold">{fmt(r.precio_ofrecido, r.tipo === "fv" ? "USD" : "$")}</td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
                   {r.public_token && r.tipo !== "fv" && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}` })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
-                  {r.public_token && r.tipo === "fv" && <a href={`https://fv.febecos.com/ver-presupuesto?token=${r.public_token}`} target="_blank" rel="noreferrer" title="Editar/Ver (formato FV)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</a>}
+                  {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token)} title="Editar/Operar FV (modo interno, todos los botones)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                   {r.public_token && <a href={linkPresup(r.tipo, r.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                   {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id })} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
                 </td>
