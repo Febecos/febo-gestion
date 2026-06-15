@@ -206,6 +206,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const money = (usd: number) => { const x = v(usd); return x == null ? "—" : `${sym} ${nf(x)}`; };
   const costoTot = items.reduce((a: number, it: any) => a + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1), 0);
   const badge = PED_BADGE[ped.estado] || [ped.estado, "#888"];
+  const cancelado = ped.estado === "cancelado";
 
   const accion = async (body: any, msg?: string) => {
     if (msg && !confirm(msg)) return;
@@ -238,6 +239,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
         </div>
 
         <div className="flex-1 overflow-auto p-5 space-y-4">
+          {cancelado && <div className="bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm font-semibold">⛔ Pedido CANCELADO — NO SE PUEDE EDITAR. Para continuar, generá un nuevo pedido.</div>}
           {/* === SOLAPA DETALLE === */}
           {tab === "detalle" && (<>
           {/* Contacto */}
@@ -297,7 +299,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
 
           {/* === SOLAPA PROVEEDOR / STOCK === */}
           {/* Confirmación de proveedor / stock (compuerta antes de aprobar) */}
-          {tab === "prov" && (() => {
+          {tab === "prov" && !cancelado && (() => {
             const conf = ped.proveedor_confirmado;
             const proformas = ped.proforma_archivo || [];
             const toB64 = (f: File) => new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.readAsDataURL(f); });
@@ -331,7 +333,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           })()}
 
           {/* === SOLAPA PAGO / FACTURA === Comprobante de pago + verificar monto */}
-          {tab === "pago" && (() => {
+          {tab === "pago" && !cancelado && (() => {
             const archivos = ped.comprobante_archivo || [];
             const pagos = ped.pagos_recibidos || [];
             const tcV = Number(vf.tc) || dolar || 0;
@@ -376,7 +378,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           })()}
 
           {/* Pedido a proveedor — checkboxes por ítem, parcial, anti-doble envío */}
-          {tab === "prov" && (() => {
+          {tab === "prov" && !cancelado && (() => {
             const grupos: Record<string, any[]> = {};
             items.forEach((it: any, idx: number) => { const k = it.proveedor || "Sin proveedor"; (grupos[k] = grupos[k] || []).push({ ...it, _idx: idx }); });
             const enviados = ped.pedidos_proveedor || [];
@@ -472,7 +474,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           <a href={`/pedido-prep/${encodeURIComponent(refId)}?print=1`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-semibold hover:bg-white">🖨 Imprimir pedido</a>
           {ped.factura_numero
             ? <a href={`${COTI}/p/${ped.factura_token}`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 {ped.factura_numero}</a>
-            : <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Confirmá el stock antes de facturar"} onClick={() => accion({ accion: "facturar" }, "¿Generar la factura?")} className={`px-3 py-2 rounded-lg text-sm font-semibold ${ped.proveedor_confirmado ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar</button>}
+            : <button disabled={busy || cancelado || !ped.proveedor_confirmado} title={cancelado ? "Pedido cancelado" : ped.proveedor_confirmado ? "" : "Confirmá el stock antes de facturar"} onClick={() => accion({ accion: "facturar" }, "¿Generar la factura?")} className={`px-3 py-2 rounded-lg text-sm font-semibold ${!cancelado && ped.proveedor_confirmado ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar</button>}
           {ped.estado === "pendiente_confirmacion" && <>
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
             <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor"} onClick={() => accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido y avisar al cliente para el pago?")} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ped.proveedor_confirmado ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>

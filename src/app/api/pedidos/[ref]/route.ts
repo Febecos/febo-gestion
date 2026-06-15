@@ -64,7 +64,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     const ref = decodeURIComponent(params.ref);
     const b = await req.json();
     await ensureCols(sql);
-    const esFv = (await sql`SELECT 1 FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[]).length > 0;
+    const fvRow = await sql`SELECT estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
+    const esFv = fvRow.length > 0;
+    // Pedido cancelado → bloquea toda operatoria (hay que generar uno nuevo)
+    if (esFv && fvRow[0].estado === "cancelado") {
+      return NextResponse.json({ ok: false, error: "El pedido está CANCELADO: no se puede editar. Generá un nuevo pedido." }, { status: 409 });
+    }
 
     if (b.accion === "confirmar_proveedor") {
       if (esFv) await sql`UPDATE fv_pedidos SET proveedor_confirmado=true, proveedor_confirmado_at=now(), proforma_archivo=${JSON.stringify(b.archivos || [])}::jsonb WHERE numero=${ref}`;
