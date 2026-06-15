@@ -55,6 +55,12 @@ export async function GET(req: NextRequest) {
     if (!(await esOwner(req))) return NextResponse.json({ ok: false, error: "Solo el administrador (owner) puede ver Talonarios." }, { status: 403 });
     const sql = getDb();
     await ensure(sql);
+    // Backfill: completar dirección vacía con el domicilio LEGAL (ARCA) de fg_empresa
+    try {
+      const e = await sql`SELECT domicilio, localidad, provincia FROM fg_empresa WHERE id=1`;
+      const dom = e[0] ? [e[0].domicilio, e[0].localidad, e[0].provincia].filter(Boolean).join(", ") : "";
+      if (dom) await sql`UPDATE fg_talonarios SET direccion_sucursal=${dom} WHERE coalesce(direccion_sucursal,'')=''`;
+    } catch {}
     const rows = await sql`SELECT * FROM fg_talonarios ORDER BY orden, id`;
     return NextResponse.json({ ok: true, talonarios: rows });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
