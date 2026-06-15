@@ -501,7 +501,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         <div className="font-semibold text-sm">{chip(prov, "#7c3aed")} <span className="text-gray-500 text-xs ml-1">{pendientes} pendiente(s) de {its.length}</span>{yaEnv && <span className="text-emerald-600 text-xs ml-2">✅ enviado</span>}</div>
                         <div className="flex gap-2">
                           {hayBloqueados && !unlockedProv[prov] && <button onClick={() => desbloquear(prov)} className="px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-semibold text-gray-600 hover:bg-gray-50" title="Solo administrador">🔓 Desbloquear</button>}
-                          <button disabled={busy || pendientes === 0} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${pendientes === 0 ? "bg-gray-300 cursor-not-allowed" : yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{pendientes === 0 ? "✅ Todo pedido" : yaEnv ? "📤 Enviar pendientes" : (/^multi/i.test(prov) ? "📤 Generar Excel y Enviar" : "📤 Enviar pedido")}</button>
+                          <button disabled={busy || pendientes === 0} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${pendientes === 0 ? "bg-gray-300 cursor-not-allowed" : yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{pendientes === 0 ? "✅ Todo pedido" : yaEnv ? "📤 Enviar pendientes" : (/^multi(radio|solar)$/i.test(prov) ? "📤 Generar Excel y Enviar" : "📤 Enviar pedido")}</button>
                         </div>
                       </div>
                       <table className="w-full text-xs mb-2">
