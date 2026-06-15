@@ -6,7 +6,10 @@ const chip = (txt: string, color: string) => (
   <span style={{ background: color + "1a", color }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{txt}</span>
 );
 
-const SECCIONES = [{ k: "talonarios", icon: "🔢", label: "Talonarios / Numeración" }] as const;
+const SECCIONES = [
+  { k: "empresa", icon: "🏢", label: "Datos de la empresa (AFIP)" },
+  { k: "talonarios", icon: "🔢", label: "Talonarios / Numeración" },
+] as const;
 type Sec = (typeof SECCIONES)[number]["k"];
 
 export default function ConfigClient() {
@@ -24,7 +27,69 @@ export default function ConfigClient() {
           </button>
         ))}
       </aside>
-      <div className="flex-1 min-w-0 overflow-auto">{sec === "talonarios" && <Talonarios />}</div>
+      <div className="flex-1 min-w-0 overflow-auto">{sec === "empresa" ? <Empresa /> : <Talonarios />}</div>
+    </div>
+  );
+}
+
+function Empresa() {
+  const [e, setE] = useState<any>(null); const [loading, setLoading] = useState(true);
+  const [arca, setArca] = useState(""); const [msg, setMsg] = useState("");
+  useEffect(() => { fetch("/api/empresa").then((r) => r.json()).then((d) => { setE(d.empresa || {}); setLoading(false); }); }, []);
+  const patch = async (campo: string, valor: any) => {
+    setE((p: any) => ({ ...p, [campo]: valor }));
+    await fetch("/api/empresa", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ campo, valor }) });
+    setMsg("Guardado ✓"); setTimeout(() => setMsg(""), 1500);
+  };
+  const traerArca = async () => {
+    const cuit = String(e.cuit || "").replace(/\D/g, "");
+    if (cuit.length !== 11) { setArca("El CUIT debe tener 11 dígitos."); return; }
+    setArca("Buscando en ARCA…");
+    try {
+      const r = await fetch("/api/consultar-cuit?cuit=" + cuit); const d = await r.json();
+      if (!d.ok || d.valido === false) throw new Error(d.error || "CUIT sin datos");
+      const dom = d.domicilio || {};
+      const bulk: any = {
+        razon_social: d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" "),
+        domicilio: dom.direccion || "", localidad: dom.localidad || "", provincia: dom.provincia || "",
+        cod_postal: dom.codPostal || "", condicion_iva: d.condicionFiscal || d.condicion_iva || "",
+      };
+      setE((p: any) => ({ ...p, ...bulk }));
+      await fetch("/api/empresa", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ bulk }) });
+      setArca("✓ " + (bulk.razon_social || cuit));
+    } catch (err: any) { setArca("✕ " + err.message); }
+  };
+  if (loading) return <div className="text-gray-400 py-8 text-center">Cargando…</div>;
+  const lbl = "block text-[11px] uppercase text-gray-500 font-semibold mb-1";
+  const inp = "w-full border border-gray-300 rounded px-2 py-1.5 text-sm";
+  const Fld = (campo: string, label: string, span = false) => (
+    <label key={campo} className={span ? "col-span-2" : ""}><span className={lbl}>{label}</span>
+      <input defaultValue={e[campo] ?? ""} onBlur={(ev) => ev.target.value !== (e[campo] ?? "") && patch(campo, ev.target.value)} className={inp} /></label>
+  );
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-lg font-bold text-febo-azul mb-1">🏢 Datos de la empresa (AFIP)</h2>
+      <div className="text-sm text-gray-500 mb-3">Datos legales del emisor según ARCA/AFIP. Se usan como <b>sucursal / domicilio fiscal</b> por defecto en los talonarios y comprobantes.</div>
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="flex items-end gap-2 mb-4">
+          <label className="flex-1"><span className={lbl}>CUIT</span>
+            <input defaultValue={e.cuit ?? ""} onBlur={(ev) => ev.target.value !== (e.cuit ?? "") && patch("cuit", ev.target.value)} className={inp} placeholder="30xxxxxxxxx" /></label>
+          <button onClick={traerArca} className="bg-febo-cyan text-white rounded-lg px-3 h-[34px] text-sm whitespace-nowrap">🔍 Traer de ARCA</button>
+        </div>
+        {arca && <div className="text-[11px] mb-3 -mt-2" style={{ color: arca.startsWith("✓") ? "#059669" : "#e53935" }}>{arca}</div>}
+        <div className="grid grid-cols-2 gap-3">
+          {Fld("razon_social", "Razón social", true)}
+          {Fld("nombre_fantasia", "Nombre de fantasía", true)}
+          {Fld("domicilio", "Domicilio fiscal", true)}
+          {Fld("localidad", "Localidad")}
+          {Fld("provincia", "Provincia")}
+          {Fld("cod_postal", "Código postal")}
+          {Fld("condicion_iva", "Condición frente al IVA")}
+          {Fld("iibb", "Ingresos Brutos")}
+          {Fld("inicio_actividades", "Inicio de actividades")}
+        </div>
+        {msg && <div className="text-[11px] text-green-600 mt-3">{msg}</div>}
+      </div>
     </div>
   );
 }
@@ -102,11 +167,16 @@ function TalonarioModal({ tal, onClose, onSaved }: { tal: any; onClose: () => vo
   const del = async () => { if (!confirm("¿Eliminar este talonario?")) return; await fetch("/api/talonarios?id=" + t.id, { method: "DELETE" }); onSaved(); onClose(); };
   const lbl = "block text-[11px] uppercase text-gray-500 font-semibold mb-1";
   const inp = "w-full border border-gray-300 rounded px-2 py-1.5 text-sm";
-  const F = ({ campo, label, type = "text" }: { campo: string; label: string; type?: string }) => (
-    <label><span className={lbl}>{label}</span><input type={type} defaultValue={t[campo] ?? ""} onBlur={(e) => String(e.target.value) !== String(t[campo] ?? "") && patch(campo, e.target.value)} className={inp} /></label>
+  // Funciones (NO componentes) → no remontan el input, así el date-picker funciona
+  const F = (campo: string, label: string, type = "text") => (
+    <label key={campo}><span className={lbl}>{label}</span>
+      <input type={type} defaultValue={type === "date" ? (t[campo] ? String(t[campo]).slice(0, 10) : "") : (t[campo] ?? "")}
+        onChange={type === "date" ? (e) => patch(campo, e.target.value) : undefined}
+        onBlur={type !== "date" ? (e) => String(e.target.value) !== String(t[campo] ?? "") && patch(campo, e.target.value) : undefined}
+        className={inp} /></label>
   );
-  const C = ({ campo, label }: { campo: string; label: string }) => (
-    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!t[campo]} onChange={(e) => patch(campo, e.target.checked)} />{label}</label>
+  const C = (campo: string, label: string) => (
+    <label key={campo} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!t[campo]} onChange={(e) => patch(campo, e.target.checked)} />{label}</label>
   );
   return (
     <div className="fixed inset-0 z-[130] bg-black/50 flex items-start justify-center overflow-auto py-6" onClick={onClose}>
@@ -116,27 +186,27 @@ function TalonarioModal({ tal, onClose, onSaved }: { tal: any; onClose: () => vo
           <button onClick={onClose} className="text-white/80 hover:text-white text-xl">✕</button>
         </div>
         <div className="p-5 grid grid-cols-2 gap-3">
-          <F campo="serie" label="Serie" />
-          <F campo="sucursal" label="Punto de venta / Sucursal" />
+          {F("serie", "Serie")}
+          {F("sucursal", "Punto de venta / Sucursal")}
           <label className="col-span-2"><span className={lbl}>Dirección de sucursal</span><input defaultValue={t.direccion_sucursal ?? ""} onBlur={(e) => e.target.value !== (t.direccion_sucursal ?? "") && patch("direccion_sucursal", e.target.value)} className={inp} /></label>
-          <F campo="modelo_impresora" label="Modelo impresora" />
-          <F campo="cantidad_max_items" label="Cant. máx. de ítems" type="number" />
-          <F campo="nro_desde" label="Desde" type="number" />
-          <F campo="nro_hasta" label="Hasta" type="number" />
-          <F campo="proximo_numero" label="Próximo número a emitir" type="number" />
-          <F campo="vencimiento" label="Fecha de vencimiento" type="date" />
+          {F("modelo_impresora", "Modelo impresora")}
+          {F("cantidad_max_items", "Cant. máx. de ítems", "number")}
+          {F("nro_desde", "Desde", "number")}
+          {F("nro_hasta", "Hasta", "number")}
+          {F("proximo_numero", "Próximo número a emitir", "number")}
+          {F("vencimiento", "Fecha de vencimiento", "date")}
           {esFactura && <>
-            <F campo="cai" label="CAI" />
-            <F campo="nro_autorizacion" label="Nº de autorización" />
-            <F campo="fecha_autorizacion" label="Fecha de autorización" type="date" />
+            {F("cai", "CAI")}
+            {F("nro_autorizacion", "Nº de autorización")}
+            {F("fecha_autorizacion", "Fecha de autorización", "date")}
           </>}
           <div className="col-span-2 border-t border-gray-100 pt-3 grid grid-cols-2 gap-2">
-            <C campo="es_bono_fiscal" label="Es Bono Fiscal (solo factura electrónica)" />
-            <C campo="informar_traslado" label="Informar traslado (solo remitos)" />
-            <C campo="excluir_facturacion" label="Excluir de facturación (pedidos/remitos)" />
-            <C campo="defecto" label="Por defecto para este tipo" />
-            <C campo="activo" label="Activo" />
-            <C campo="bloqueado" label="Bloquear" />
+            {C("es_bono_fiscal", "Es Bono Fiscal (solo factura electrónica)")}
+            {C("informar_traslado", "Informar traslado (solo remitos)")}
+            {C("excluir_facturacion", "Excluir de facturación (pedidos/remitos)")}
+            {C("defecto", "Por defecto para este tipo")}
+            {C("activo", "Activo")}
+            {C("bloqueado", "Bloquear")}
           </div>
         </div>
         <div className="border-t border-gray-200 p-3 flex justify-between bg-gray-50 rounded-b-xl">
