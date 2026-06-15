@@ -239,7 +239,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           ))}
         </div>
 
-        <div className="flex-1 overflow-auto p-5 space-y-4">
+        <div className="flex-1 overflow-auto p-5 flex flex-col gap-4">
           {cancelado && <div className="bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm font-semibold">⛔ Pedido CANCELADO — NO SE PUEDE EDITAR. Para continuar, generá un nuevo pedido.</div>}
           {/* === SOLAPA DETALLE === */}
           {tab === "detalle" && (<>
@@ -311,8 +311,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               await accion({ accion: "confirmar_proveedor", archivos: arr });
             };
             return (
-              <div className={`rounded-lg p-3 border ${conf ? "border-emerald-200 bg-emerald-50/40" : "border-amber-300 bg-amber-50/40"}`}>
-                <div className="text-[11px] font-bold uppercase mb-2" style={{ color: conf ? "#059669" : "#b45309" }}>🏭 Confirmación de proveedor / stock</div>
+              <div className={`order-2 rounded-lg p-3 border ${conf ? "border-emerald-200 bg-emerald-50/40" : "border-amber-300 bg-amber-50/40"}`}>
+                <div className="text-[11px] font-bold uppercase mb-2" style={{ color: conf ? "#059669" : "#b45309" }}>② Confirmación del proveedor / stock — cargá la proforma cuando confirme</div>
                 {conf ? (
                   <div className="text-sm text-emerald-700 flex flex-wrap items-center gap-3">
                     <span>✔ Stock confirmado{ped.proveedor_confirmado_at ? " · " + new Date(ped.proveedor_confirmado_at).toLocaleDateString("es-AR") : ""}</span>
@@ -363,8 +363,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               setPp({ proveedor: provSel, tc: "", medio: pp.medio, monto: "", provUsd: "", fecha: "", nota: "" });
             };
             return (
-              <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-3">
-                <div className="text-[11px] font-bold text-amber-700 uppercase mb-2">💸 Pago al proveedor — TC manual (cambio del momento del pago)</div>
+              <div className="order-3 border border-amber-200 bg-amber-50/40 rounded-lg p-3">
+                <div className="text-[11px] font-bold text-amber-700 uppercase mb-2">③ Pago al proveedor — TC manual (cambio del momento del pago)</div>
                 {pagos.length > 0 && <div className="mb-3 space-y-1">
                   {pagos.map((reg: any, i: number) => (
                     <div key={i} className="text-sm text-gray-700 bg-white border border-gray-200 rounded p-2">
@@ -482,8 +482,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
             };
             return (
-              <div className="border border-violet-200 bg-violet-50/40 rounded-lg p-3">
-                <div className="text-[11px] font-bold text-violet-700 uppercase mb-2">🏭 Pedido a proveedor — marcá los ítems a pedir (podés pedir parcial)</div>
+              <div className="order-1 border border-violet-200 bg-violet-50/40 rounded-lg p-3">
+                <div className="text-[11px] font-bold text-violet-700 uppercase mb-2">① Pedido al proveedor — marcá los ítems a pedir y enviá (podés pedir parcial)</div>
                 {enviados.length > 0 && (
                   <div className="mb-3 text-xs bg-emerald-50 border border-emerald-200 rounded p-2">
                     <b className="text-emerald-700">Ya enviado:</b>
