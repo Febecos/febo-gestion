@@ -5,16 +5,18 @@ import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 // Devuelve null si el talonario no existe o está bloqueado.
 const PREFIJO: Record<string, string> = { factura: "FA", nc: "NC", nd: "ND", operativo: "" };
 
-// Letra de factura según AFIP, siendo el EMISOR Responsable Inscripto.
-//   Cliente Responsable Inscripto                         → A
-//   Monotributo / Exento / Consumidor Final / No categ.   → B
-//   Exterior / Exportación                                → E
-//   Sin condición fiscal                                  → null (no se puede facturar)
+// Letra de factura según ARCA (ex AFIP), siendo el EMISOR Responsable Inscripto.
+//   Cliente Responsable Inscripto                 → A
+//   Cliente Monotributo                           → A  (RG 5003/2021, con leyendas)
+//   Exento / Consumidor Final / No categorizado   → B
+//   Exterior / Exportación                        → E
+//   Sin condición fiscal                          → null (no se puede facturar)
+// IMPORTANTE: revisar normativa ARCA vigente al activar facturación electrónica (CAE/WSFE).
 export function letraFacturaPara(condicion: string | null | undefined): "A" | "B" | "E" | null {
-  const c = String(condicion || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  const c = norm(condicion);
   if (!c) return null;
   if (c.includes("exterior") || c.includes("exportac")) return "E";
-  if (c.includes("monotrib")) return "B";
+  if (c.includes("monotrib")) return "A";                                   // RG 5003: RI → Monotributo = Factura A
   if (c.includes("inscripto") && c.includes("responsable")) return "A";
   if (c === "ri") return "A";
   if (c.includes("exento")) return "B";
@@ -22,6 +24,35 @@ export function letraFacturaPara(condicion: string | null | undefined): "A" | "B
   if (c.includes("no categoriz") || c.includes("no inscripto") || c.includes("sujeto no")) return "B";
   if (c.includes("inscripto")) return "A";
   return null;
+}
+
+function norm(s: string | null | undefined) {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+}
+
+// Leyendas obligatorias según la condición del receptor (RG 5003 / RG 5616).
+export function leyendasFactura(condicion: string | null | undefined): string[] {
+  const c = norm(condicion);
+  const out: string[] = [];
+  if (c.includes("monotrib")) {
+    out.push("Receptor del comprobante – Responsable Monotributo");
+    out.push("El monto del IVA discriminado no puede computarse como crédito fiscal (RG AFIP 5003/2021).");
+  }
+  return out;
+}
+
+// Texto de la condición frente al IVA del receptor (obligatorio en el comprobante, RG 5616/2024 vig. 15/04/2025).
+export function condicionIvaReceptor(condicion: string | null | undefined): string {
+  const c = norm(condicion);
+  if (!c) return "";
+  if (c.includes("monotrib")) return "Responsable Monotributo";
+  if (c.includes("inscripto") && c.includes("responsable")) return "Responsable Inscripto";
+  if (c === "ri") return "Responsable Inscripto";
+  if (c.includes("exento")) return "IVA Exento";
+  if (c.includes("consumidor") || c.includes("final")) return "Consumidor Final";
+  if (c.includes("exterior") || c.includes("exportac")) return "Cliente del Exterior";
+  if (c.includes("no categoriz") || c.includes("sujeto no")) return "IVA Sujeto No Categorizado";
+  return String(condicion || "");
 }
 
 export async function numeroDesdeTalonario(sql: any, id: number): Promise<{
