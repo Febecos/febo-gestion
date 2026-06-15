@@ -194,6 +194,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [unlockedProv, setUnlockedProv] = useState<Record<string, boolean>>({});
   const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "" });
   const [emailCli, setEmailCli] = useState(""); const [editEmail, setEditEmail] = useState(false);
+  const [pp, setPp] = useState({ tc: "", moneda: "ars", monto: "", provUsd: "", fecha: "", nota: "" });
   const [tab, setTab] = useState<"detalle" | "prov" | "pago">("detalle");
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || ""); } }), [refId]);
   useEffect(() => { load(); }, [load]);
@@ -326,6 +327,58 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                       <span className="text-xs text-gray-500">o</span>
                       <button disabled={busy} onClick={() => confirmar(null)} className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">✔ Confirmar stock (manual)</button>
                     </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* === Pago AL PROVEEDOR (cotejo) === TC manual del momento del pago */}
+          {tab === "prov" && !cancelado && (() => {
+            const reg = ped.pago_proveedor;
+            const tcV = Number(pp.tc) || 0;
+            const montoN = Number(pp.monto) || 0;
+            const provUsd = Number(pp.provUsd) || 0;
+            const montoUsd = pp.moneda === "ars" ? (tcV ? montoN / tcV : 0) : montoN;
+            const diffPed = +(montoUsd - costoTot).toFixed(2);          // vs costo del pedido
+            const diffProv = provUsd ? +(montoUsd - provUsd).toFixed(2) : null; // vs lo que informa el proveedor
+            const okProv = diffProv == null ? null : Math.abs(diffProv) <= 0.5;
+            const guardar = () => {
+              if (!tcV) { alert("Ingresá el TC USD del momento del pago (es manual)."); return; }
+              if (!montoN) { alert("Ingresá el monto pagado al proveedor."); return; }
+              accion({ accion: "pago_proveedor", pago: {
+                costo_pedido_usd: +costoTot.toFixed(2), tc_usd: tcV, moneda: pp.moneda, monto: montoN,
+                monto_usd: +montoUsd.toFixed(2), monto_proveedor_usd: provUsd || null,
+                diff_vs_pedido: diffPed, diff_vs_proveedor: diffProv, ok: okProv,
+                fecha: pp.fecha || new Date().toISOString().slice(0, 10), nota: pp.nota || "",
+              }});
+            };
+            return (
+              <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-3">
+                <div className="text-[11px] font-bold text-amber-700 uppercase mb-2">💸 Pago al proveedor — TC manual (cambio del momento del pago)</div>
+                <div className="text-xs text-gray-500 mb-2">Costo del pedido (lo que deberíamos pagar): <b>USD {costoTot.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b></div>
+                {reg ? (
+                  <div className="text-sm text-gray-700 bg-white border border-gray-200 rounded p-2 space-y-0.5">
+                    <div>✅ <b>Pagado</b> {reg.fecha ? "· " + new Date(reg.fecha).toLocaleDateString("es-AR") : ""} · {reg.moneda === "ars" ? "$" : "USD"} {Number(reg.monto).toLocaleString("es-AR")} @ TC {reg.tc_usd} = <b>USD {Number(reg.monto_usd).toFixed(2)}</b></div>
+                    <div className={Math.abs(reg.diff_vs_pedido) <= 0.5 ? "text-emerald-600" : "text-amber-600"}>vs costo pedido: {reg.diff_vs_pedido > 0 ? "+" : ""}{reg.diff_vs_pedido} USD</div>
+                    {reg.monto_proveedor_usd != null && <div className={reg.ok ? "text-emerald-600" : "text-red-600"}>Proveedor informó USD {Number(reg.monto_proveedor_usd).toFixed(2)} → {reg.ok ? "✔ coincide" : `⚠️ dif ${reg.diff_vs_proveedor} USD`}</div>}
+                    {reg.nota && <div className="text-gray-500">📝 {reg.nota}</div>}
+                    <button disabled={busy} onClick={() => accion({ accion: "pago_proveedor", pago: null })} className="text-xs text-gray-400 underline hover:text-red-500 mt-1">quitar pago</button>
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2 items-end">
+                    <label className="text-xs text-gray-500">TC USD (manual)<input type="number" value={pp.tc} onChange={(e) => setPp({ ...pp, tc: e.target.value })} placeholder={String(dolar || "")} className="block border border-gray-300 rounded px-2 py-1 text-sm w-24" /></label>
+                    <select value={pp.moneda} onChange={(e) => setPp({ ...pp, moneda: e.target.value })} className="border border-gray-300 rounded px-2 py-1 text-sm"><option value="ars">$ ARS</option><option value="usd">USD</option></select>
+                    <label className="text-xs text-gray-500">Monto pagado<input type="number" value={pp.monto} onChange={(e) => setPp({ ...pp, monto: e.target.value })} placeholder="0" className="block border border-gray-300 rounded px-2 py-1 text-sm w-32" /></label>
+                    <label className="text-xs text-gray-500">Informa proveedor (USD)<input type="number" value={pp.provUsd} onChange={(e) => setPp({ ...pp, provUsd: e.target.value })} placeholder="opcional" className="block border border-gray-300 rounded px-2 py-1 text-sm w-32" /></label>
+                    <label className="text-xs text-gray-500">Fecha<input type="date" value={pp.fecha} onChange={(e) => setPp({ ...pp, fecha: e.target.value })} className="block border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+                    <label className="text-xs text-gray-500 flex-1 min-w-[140px]">Nota<input value={pp.nota} onChange={(e) => setPp({ ...pp, nota: e.target.value })} placeholder="referencia / comprobante" className="block border border-gray-300 rounded px-2 py-1 text-sm w-full" /></label>
+                    {montoN > 0 && tcV > 0 && <div className="text-xs w-full flex gap-3">
+                      <span className="text-gray-500">= USD {montoUsd.toFixed(2)}</span>
+                      <span className={Math.abs(diffPed) <= 0.5 ? "text-emerald-600" : "text-amber-600"}>vs pedido {diffPed > 0 ? "+" : ""}{diffPed}</span>
+                      {okProv != null && <span className={okProv ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>{okProv ? "✔ coincide c/ proveedor" : `⚠️ dif proveedor ${diffProv}`}</span>}
+                    </div>}
+                    <button disabled={busy} onClick={guardar} className="px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-semibold hover:bg-amber-700">💾 Registrar pago a proveedor</button>
                   </div>
                 )}
               </div>
@@ -562,7 +615,7 @@ const FLUJO_OP: { estado: string; label: string; col: string }[] = [
 ];
 
 // Circuito derivado (solo lectura). Se calcula en vivo desde el pedido real.
-const CIRCUITO = ["pedido_proveedor", "reservado_proveedor", "confirmado_cliente", "pagado_cliente", "facturado"];
+const CIRCUITO = ["pedido_proveedor", "reservado_proveedor", "confirmado_cliente", "pagado_cliente", "pagado_proveedor", "facturado"];
 function Operaciones() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -577,7 +630,7 @@ function Operaciones() {
   const idx = (e: string) => CIRCUITO.indexOf(e);
   return (
     <div>
-      <div className="text-sm text-gray-500 mb-3">{rows.length} operaciones · circuito: pedido → reservado → confirmado → pagado cliente → facturado. <span className="text-gray-400">Vista de solo lectura — hacé clic en una fila para operar el pedido.</span></div>
+      <div className="text-sm text-gray-500 mb-3">{rows.length} operaciones · circuito: pedido → reservado → confirmado → pagado cliente → pagado proveedor → facturado. <span className="text-gray-400">Vista de solo lectura — hacé clic en una fila para operar el pedido.</span></div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>

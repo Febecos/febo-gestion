@@ -12,6 +12,7 @@ function estadoFv(fp: any): string {
   const e = String(fp.estado || "").toLowerCase();
   if (e === "cancelado") return "anulado";
   if (fp.factura_numero || e === "facturado") return "facturado";
+  if (fp.pago_proveedor) return "pagado_proveedor";
   if (e === "pagado" || e === "enviado") return "pagado_cliente";
   if (fp.proveedor_confirmado) return "confirmado_cliente";
   if (e === "aprobado") return "reservado_proveedor";
@@ -41,7 +42,7 @@ export async function GET(req: NextRequest) {
     let fv: any[] = [];
     try {
       fv = await sql`
-        SELECT fp.numero, fp.estado, fp.payload, fp.proveedor_confirmado, fp.factura_numero, fp.recibido,
+        SELECT fp.numero, fp.estado, fp.payload, fp.proveedor_confirmado, fp.factura_numero, fp.recibido, fp.pago_proveedor,
                (SELECT pr.vendedor FROM presupuestos pr WHERE pr.numero = fp.payload->>'presupuesto_numero' LIMIT 1) AS vendedor
         FROM fv_pedidos fp ORDER BY fp.numero DESC LIMIT 300` as any[];
     } catch { fv = []; }

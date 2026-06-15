@@ -7,6 +7,7 @@ async function ensureCols(sql: any) {
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proforma_archivo jsonb`.catch(() => {});
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_numero text`.catch(() => {});
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_token text`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS pago_proveedor jsonb`.catch(() => {});
 }
 
 // GET /api/pedidos/[ref]  → detalle completo de un pedido (FV: fv_pedidos por numero; bomba: pedidos por id)
@@ -18,7 +19,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
     try { const c = await sql`SELECT data FROM fv_config WHERE id=1`; dolar = Number((c[0] as any)?.data?.dolar) || 0; } catch {}
 
     await ensureCols(sql);
-    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago, proveedor_confirmado, proveedor_confirmado_at, proforma_archivo, factura_numero, factura_token FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
+    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago, proveedor_confirmado, proveedor_confirmado_at, proforma_archivo, factura_numero, factura_token, pago_proveedor FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
     if (fv.length) {
       const p = fv[0];
       // nombre canónico del cliente desde el presupuesto/CRM
@@ -36,7 +37,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
         proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
-        factura_numero: p.factura_numero, factura_token: p.factura_token,
+        factura_numero: p.factura_numero, factura_token: p.factura_token, pago_proveedor: p.pago_proveedor || null,
       }});
     }
 
@@ -107,6 +108,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         SET pagos_recibidos = coalesce(pagos_recibidos,'[]'::jsonb) || ${JSON.stringify([b.pago])}::jsonb,
             verificacion_pago = ${JSON.stringify(b.pago)}::jsonb
         WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
+    }
+    if (b.accion === "pago_proveedor") {
+      // b.pago = { costo_pedido_usd, tc_usd, moneda, monto, monto_usd, monto_proveedor_usd, diff_vs_pedido, diff_vs_proveedor, ok, fecha, nota }
+      // TC manual (el del momento del pago). null limpia el registro.
+      if (esFv) await sql`UPDATE fv_pedidos SET pago_proveedor=${b.pago ? JSON.stringify(b.pago) : null}::jsonb WHERE numero=${ref}`;
       return NextResponse.json({ ok: true });
     }
     if (b.accion === "email_cliente") {
