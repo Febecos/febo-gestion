@@ -300,9 +300,11 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS letra TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS leyendas jsonb`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS condicion_iva_receptor TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS iva_detalle jsonb`.catch(() => {});
+      const ivaDetalle = tot.iva_detalle || null;
       const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, leyendas, condicion_iva_receptor)
-        VALUES ('factura','proforma',${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${tot.neto || tot.total || 0}, ${tot.total || 0}, ${tot.moneda || "USD"}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null})
+        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, leyendas, condicion_iva_receptor, iva_detalle)
+        VALUES ('factura','proforma',${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${tot.neto || tot.total || 0}, ${tot.total || 0}, ${tot.moneda || "USD"}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb)
         RETURNING id, token` as any[])[0];
 
       let orden = 0;

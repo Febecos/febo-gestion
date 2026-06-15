@@ -1,20 +1,55 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const fmt = (v: any) => "$ " + Math.round(Number(v) || 0).toLocaleString("es-AR");
-const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
 const TITULO: Record<string, string> = { presupuesto: "PRESUPUESTO", pedido: "PEDIDO", factura: "FACTURA", remito: "REMITO" };
 const COND: Record<string, string> = {
   responsable_inscripto: "Responsable Inscripto", monotributista: "Monotributista",
   consumidor_final: "Consumidor Final", exento: "Exento",
 };
+const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
+
+// ── Número a letras (es-AR), para el "SON ..." ──
+function enLetras(n: number): string {
+  const U = ["", "uno", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve", "veinte"];
+  const D = ["", "", "veinti", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+  const C = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+  function hasta999(x: number): string {
+    if (x === 0) return "";
+    if (x === 100) return "cien";
+    let s = "";
+    const c = Math.floor(x / 100), r = x % 100;
+    if (c) s += C[c] + " ";
+    if (r <= 20) s += U[r];
+    else { const d = Math.floor(r / 10), u = r % 10; s += (d === 2 ? "veinti" + U[u] : D[d] + (u ? " y " + U[u] : "")); }
+    return s.trim();
+  }
+  if (n === 0) return "cero";
+  const millones = Math.floor(n / 1e6), miles = Math.floor((n % 1e6) / 1000), resto = n % 1000;
+  let s = "";
+  if (millones) s += (millones === 1 ? "un millón " : hasta999(millones) + " millones ");
+  if (miles) s += (miles === 1 ? "mil " : hasta999(miles) + " mil ");
+  if (resto) s += hasta999(resto);
+  return s.trim();
+}
+function importeEnLetras(total: number, moneda: string): string {
+  const ent = Math.floor(total), cent = Math.round((total - ent) * 100);
+  const mon = moneda === "USD" ? "Dólares" : "Pesos";
+  return `SON ${mon} ${enLetras(ent)} con ${String(cent).padStart(2, "0")}/100`.toUpperCase();
+}
 
 export default function ComprobantePublico({ params }: { params: { token: string } }) {
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState("");
   const [admin, setAdmin] = useState(false);
   const [sending, setSending] = useState(false);
-  useEffect(() => { setAdmin(new URLSearchParams(window.location.search).get("admin") === "1"); }, []);
+  useEffect(() => {
+    setAdmin(new URLSearchParams(window.location.search).get("admin") === "1");
+    fetch("/api/public/" + params.token).then((r) => r.json()).then((j) => {
+      if (!j.ok) { setErr(j.error || "No encontrado"); return; }
+      setD(j);
+      if (new URLSearchParams(window.location.search).get("print") === "1") setTimeout(() => window.print(), 700);
+    }).catch((e) => setErr(e.message));
+  }, [params.token]);
   const enviarEmail = async () => {
     setSending(true);
     try {
@@ -24,61 +59,66 @@ export default function ComprobantePublico({ params }: { params: { token: string
     } catch (e: any) { alert("Error: " + e.message); } finally { setSending(false); }
   };
 
-  useEffect(() => {
-    fetch("/api/public/" + params.token).then((r) => r.json()).then((j) => {
-      if (!j.ok) { setErr(j.error || "No encontrado"); return; }
-      setD(j);
-      // ?print=1 → imprime automáticamente al cargar
-      if (new URLSearchParams(window.location.search).get("print") === "1") setTimeout(() => window.print(), 600);
-    }).catch((e) => setErr(e.message));
-  }, [params.token]);
+  if (err) return <div style={{ padding: 40, textAlign: "center", color: "#6b7280" }}>⚠️ {err}</div>;
+  if (!d) return <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Cargando…</div>;
 
-  if (err) return <div className="p-10 text-center text-gray-500">⚠️ {err}</div>;
-  if (!d) return <div className="p-10 text-center text-gray-400">Cargando…</div>;
+  const c = d.comprobante, cli = d.cliente, emp = d.empresa || {}, items = d.items || [];
+  const titulo = TITULO[c.tipo] || String(c.tipo).toUpperCase();
+  const esFactura = c.tipo === "factura";
+  const moneda = c.moneda || "USD";
+  const sym = moneda === "USD" ? "USD" : "$";
+  const fmt = (v: any) => `${sym} ${Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const subtotal = items.reduce((a: number, it: any) => a + (Number(it.total) || 0), 0) || Number(c.subtotal) || 0;
+  // Detalle de IVA: acepta objeto {"21":monto,"10.5":monto} o array [{pct,monto}]
+  let ivaLines: { pct: string; monto: number }[] = [];
+  const idet = c.iva_detalle;
+  if (Array.isArray(idet)) ivaLines = idet.map((x: any) => ({ pct: String(x.pct ?? x.alicuota ?? ""), monto: Number(x.monto ?? x.importe ?? 0) }));
+  else if (idet && typeof idet === "object") ivaLines = Object.entries(idet).map(([pct, monto]) => ({ pct, monto: Number(monto) }));
+  ivaLines = ivaLines.filter((l) => l.monto > 0);
+  const ivaTotal = ivaLines.reduce((a, l) => a + l.monto, 0);
+  const totalDoc = Number(c.total) || (subtotal + ivaTotal);
 
-  const c = d.comprobante, cli = d.cliente, items = d.items || [];
-  const titulo = TITULO[c.tipo] || c.tipo.toUpperCase();
-  const subtotal = items.reduce((a: number, it: any) => a + (Number(it.total) || 0), 0);
+  const emisorCond = emp.condicion_iva || "Responsable Inscripto";
 
   return (
     <div className="doc-wrap">
       <style>{`
-        :root { --azul:#1e3a8a; }
+        :root { --azul:#0b3d6b; }
         body { background:#e5e7eb; }
         .doc-wrap { max-width: 820px; margin: 0 auto; padding: 24px 16px 60px; }
         .toolbar { display:flex; gap:8px; justify-content:flex-end; margin-bottom:16px; }
         .btn { background:var(--azul); color:#fff; border:0; border-radius:8px; padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; }
         .btn.sec { background:#fff; color:#334155; border:1px solid #cbd5e1; }
-        .sheet { background:#fff; border:1px solid #d1d5db; border-radius:6px; padding:40px; color:#1f2937; font-size:13px; }
-        .head { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid var(--azul); padding-bottom:16px; }
-        .brand { font-size:26px; font-weight:800; color:var(--azul); letter-spacing:1px; }
-        .brand small { display:block; font-size:11px; font-weight:500; color:#64748b; letter-spacing:0; margin-top:2px; }
-        .doctype { text-align:right; }
-        .doctype .t { font-size:22px; font-weight:800; color:#111827; }
-        .doctype .n { font-size:14px; color:#374151; margin-top:2px; }
-        .doctype .f { font-size:12px; color:#6b7280; }
-        .parties { display:flex; justify-content:space-between; gap:24px; margin:22px 0; }
-        .parties .box { flex:1; }
-        .parties .lbl { font-size:10px; text-transform:uppercase; color:#9ca3af; font-weight:700; margin-bottom:4px; }
+        .sheet { background:#fff; border:1px solid #d1d5db; border-radius:6px; padding:34px 38px; color:#1f2937; font-size:12.5px; position:relative; }
+        .head { display:grid; grid-template-columns: 1fr 64px 1fr; align-items:flex-start; border-bottom:2px solid var(--azul); padding-bottom:14px; }
+        .logo img { max-height:64px; max-width:200px; }
+        .emisor { font-size:11.5px; line-height:1.45; }
+        .emisor .rs { font-size:15px; font-weight:800; color:var(--azul); }
+        .letra { text-align:center; }
+        .letra .L { display:inline-block; border:2px solid #111; border-radius:6px; width:46px; height:46px; line-height:44px; font-size:30px; font-weight:800; }
+        .letra .cod { font-size:9px; color:#555; margin-top:2px; }
+        .doctype { text-align:right; font-size:11.5px; line-height:1.5; }
+        .doctype .t { font-size:18px; font-weight:800; color:#111827; }
+        .doctype .n { font-size:14px; font-weight:700; }
+        .noval { text-align:center; font-size:11px; font-weight:700; color:#9a3412; background:#fff7ed; border:1px solid #fed7aa; border-radius:4px; padding:4px; margin:10px 0; letter-spacing:.5px; }
+        .parties { display:flex; gap:24px; margin:14px 0; }
+        .parties .box { flex:1; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; }
+        .parties .lbl { font-size:9px; text-transform:uppercase; color:#9ca3af; font-weight:700; margin-bottom:3px; }
         .parties .v { line-height:1.5; }
-        table.items { width:100%; border-collapse:collapse; margin-top:8px; }
-        table.items th { background:#f1f5f9; text-align:left; padding:8px 10px; font-size:10px; text-transform:uppercase; color:#475569; border-bottom:1px solid #cbd5e1; }
-        table.items td { padding:8px 10px; border-bottom:1px solid #eef2f7; }
-        table.items td.r, table.items th.r { text-align:right; }
-        .totales { display:flex; justify-content:flex-end; margin-top:16px; }
-        .totales .t { width:280px; }
-        .totales .row { display:flex; justify-content:space-between; padding:4px 0; }
-        .totales .grand { border-top:2px solid var(--azul); margin-top:6px; padding-top:8px; font-size:18px; font-weight:800; color:var(--azul); }
-        .cae { margin-top:18px; padding:10px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; font-size:12px; color:#166534; }
-        .proforma { margin-top:18px; padding:8px 12px; background:#fff7ed; border:1px solid #fed7aa; border-radius:6px; font-size:12px; color:#9a3412; }
-        .foot { margin-top:28px; text-align:center; font-size:11px; color:#9ca3af; }
-        @media print {
-          body { background:#fff; }
-          .toolbar { display:none !important; }
-          .doc-wrap { max-width:none; padding:0; }
-          .sheet { border:0; border-radius:0; padding:0; }
-          @page { margin: 16mm; }
-        }
+        .cond { display:flex; gap:24px; font-size:11px; color:#374151; margin-bottom:10px; flex-wrap:wrap; }
+        table.items { width:100%; border-collapse:collapse; margin-top:6px; }
+        table.items th { background:var(--azul); color:#fff; text-align:left; padding:7px 9px; font-size:10px; text-transform:uppercase; }
+        table.items td { padding:6px 9px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+        table.items td.r, table.items th.r { text-align:right; white-space:nowrap; }
+        .letras { margin-top:12px; font-size:11.5px; font-style:italic; color:#374151; }
+        .totales { display:flex; justify-content:flex-end; margin-top:8px; }
+        .totales .t { width:300px; }
+        .totales .row { display:flex; justify-content:space-between; padding:3px 0; font-size:12.5px; }
+        .totales .grand { border-top:2px solid var(--azul); margin-top:6px; padding-top:8px; font-size:17px; font-weight:800; color:var(--azul); }
+        .leyendas { margin-top:14px; font-size:10.5px; color:#4b5563; border-top:1px solid #e5e7eb; padding-top:8px; line-height:1.5; }
+        .cae { margin-top:16px; padding:10px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; font-size:12px; color:#166534; }
+        .foot { margin-top:24px; text-align:center; font-size:10.5px; color:#9ca3af; }
+        @media print { body{background:#fff;} .toolbar{display:none !important;} .doc-wrap{max-width:none;padding:0;} .sheet{border:0;border-radius:0;padding:0;} @page{margin:14mm;} }
       `}</style>
 
       <div className="toolbar">
@@ -89,32 +129,39 @@ export default function ComprobantePublico({ params }: { params: { token: string
       <div className="sheet">
         <div className="head">
           <div>
-            <div className="brand">FEBECOS<small>Energía solar · Bombas · Fotovoltaico</small></div>
+            <div className="logo"><img src="/images/febecos-logo.png" alt="FEBECOS" /></div>
+            <div className="emisor" style={{ marginTop: 8 }}>
+              <div className="rs">{emp.razon_social || "Sandler Guillermo Javier"}</div>
+              {(emp.domicilio || emp.localidad) && <div>{[emp.domicilio, emp.localidad, emp.provincia, emp.cod_postal].filter(Boolean).join(" - ")}</div>}
+              <div>CUIT: {emp.cuit || "20-21730156-5"} · {emisorCond}</div>
+              {emp.iibb && <div>IIBB: {emp.iibb}</div>}
+              {emp.inicio_actividades && <div>Inicio de actividades: {emp.inicio_actividades}</div>}
+              <div>ventas@febecos.com</div>
+            </div>
+          </div>
+          <div className="letra">
+            {esFactura && c.letra ? <><div className="L">{c.letra}</div><div className="cod">COMP. {c.letra}</div></> : null}
           </div>
           <div className="doctype">
-            <div className="t">{titulo}{c.letra ? <span style={{ display: "inline-block", marginLeft: 8, border: "2px solid #0b3d6b", borderRadius: 6, padding: "0 10px", fontWeight: 800 }}>{c.letra}</span> : null}</div>
-            <div className="n">{c.numero || ""}</div>
-            <div className="f">Fecha: {fmtF(c.fecha)}</div>
-            {c.estado && <div className="f">Estado: {c.estado}</div>}
+            <div className="t">{esFactura ? (c.afip_cae ? "FACTURA" : "FACTURA PROFORMA") : titulo}</div>
+            <div className="n">Nº: {c.numero || ""}</div>
+            <div>Fecha Emisión: {fmtF(c.fecha)}</div>
+            <div>Fecha Vencimiento: {fmtF(c.vencimiento || c.fecha)}</div>
+            {c.estado && <div style={{ color: "#6b7280" }}>Estado: {c.estado}</div>}
           </div>
         </div>
+
+        {esFactura && !c.afip_cae && <div className="noval">DOCUMENTO NO VÁLIDO COMO FACTURA</div>}
 
         <div className="parties">
           <div className="box">
             <div className="lbl">Cliente</div>
             <div className="v">
               <strong>{cli?.razon_social || cli?.nombre || c.cliente_nombre || "—"}</strong><br />
-              {cli?.cuit || c.cliente_cuit ? <>CUIT: {cli?.cuit || c.cliente_cuit}<br /></> : null}
-              {c.condicion_iva_receptor ? <>Condición IVA: {c.condicion_iva_receptor}<br /></> : (cli?.condicion_fiscal ? <>{COND[cli.condicion_fiscal] || cli.condicion_fiscal}<br /></> : null)}
+              {(cli?.cuit || c.cliente_cuit) ? <>CUIT: {cli?.cuit || c.cliente_cuit}<br /></> : null}
+              {c.condicion_iva_receptor ? <>Condición de IVA: {c.condicion_iva_receptor}<br /></> : (cli?.condicion_fiscal ? <>Condición de IVA: {COND[cli.condicion_fiscal] || cli.condicion_fiscal}<br /></> : null)}
               {cli?.domicilio ? <>{cli.domicilio}<br /></> : null}
               {[cli?.localidad, cli?.provincia, cli?.cod_postal].filter(Boolean).join(", ")}
-            </div>
-          </div>
-          <div className="box" style={{ textAlign: "right" }}>
-            <div className="lbl">Emisor</div>
-            <div className="v">
-              <strong>FEBECOS</strong><br />
-              {cli?.email && <>{cli.email}<br /></>}
             </div>
           </div>
         </div>
@@ -122,46 +169,42 @@ export default function ComprobantePublico({ params }: { params: { token: string
         <table className="items">
           <thead>
             <tr>
-              <th>Descripción</th>
               <th className="r">Cant.</th>
-              <th className="r">P. unit.</th>
-              {items.some((it: any) => Number(it.descuento_pct)) ? <th className="r">Desc.</th> : null}
-              <th className="r">Total</th>
+              <th>Descripción</th>
+              <th className="r">Precio Unit.</th>
+              <th className="r">Precio Total</th>
             </tr>
           </thead>
           <tbody>
             {items.map((it: any, i: number) => (
               <tr key={i}>
-                <td>{it.descripcion}</td>
                 <td className="r">{it.cantidad}</td>
+                <td>{it.descripcion}</td>
                 <td className="r">{fmt(it.precio_unitario)}</td>
-                {items.some((x: any) => Number(x.descuento_pct)) ? <td className="r">{Number(it.descuento_pct) ? it.descuento_pct + "%" : "—"}</td> : null}
                 <td className="r">{fmt(it.total)}</td>
               </tr>
             ))}
           </tbody>
         </table>
 
+        <div className="letras">{importeEnLetras(totalDoc, moneda)}</div>
+
         <div className="totales">
           <div className="t">
             <div className="row"><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
-            <div className="row grand"><span>TOTAL</span><span>{fmt(c.total)}</span></div>
+            {ivaLines.map((l, i) => <div className="row" key={i}><span>IVA {l.pct.replace(".", ",")}%</span><span>{fmt(l.monto)}</span></div>)}
+            {ivaLines.length === 0 && totalDoc - subtotal > 0.01 && <div className="row"><span>IVA</span><span>{fmt(totalDoc - subtotal)}</span></div>}
+            <div className="row grand"><span>TOTAL</span><span>{fmt(totalDoc)}</span></div>
           </div>
         </div>
 
-        {c.tipo === "factura" && (
-          c.afip_cae
-            ? <div className="cae">CAE: {c.afip_cae}{c.afip_validada ? " · Comprobante autorizado por AFIP" : ""}</div>
-            : <div className="proforma">FACTURA PROFORMA — sin validez fiscal hasta su autorización en AFIP.</div>
-        )}
-
         {Array.isArray(c.leyendas) && c.leyendas.length > 0 && (
-          <div style={{ marginTop: 12, fontSize: 12, color: "#374151", borderTop: "1px solid #e5e7eb", paddingTop: 8 }}>
-            {c.leyendas.map((l: string, i: number) => <div key={i}>• {l}</div>)}
-          </div>
+          <div className="leyendas">{c.leyendas.map((l: string, i: number) => <div key={i}>{l}</div>)}</div>
         )}
 
-        {c.condiciones_pago && <div style={{ marginTop: 16, fontSize: 12, color: "#6b7280" }}>Condiciones: {c.condiciones_pago}</div>}
+        {esFactura && c.afip_cae && (
+          <div className="cae">C.A.E. Nº: {c.afip_cae}{c.afip_cae_vto ? " · Vto. CAE: " + fmtF(c.afip_cae_vto) : ""}{c.afip_validada ? " · Autorizado por AFIP" : ""}</div>
+        )}
 
         <div className="foot">Documento generado por FEBO-GESTION · febecos.com</div>
       </div>
