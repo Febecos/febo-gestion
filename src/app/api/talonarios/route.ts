@@ -52,9 +52,16 @@ async function ensure(sql: any) {
 
 export async function GET(req: NextRequest) {
   try {
-    if (!(await esOwner(req))) return NextResponse.json({ ok: false, error: "Solo el administrador (owner) puede ver Talonarios." }, { status: 403 });
     const sql = getDb();
     await ensure(sql);
+    // Lista mínima para el selector de facturación (cualquier usuario que factura).
+    if (req.nextUrl.searchParams.get("facturacion") === "1") {
+      const rows = await sql`SELECT id, tipo_codigo, tipo_nombre, sucursal, serie, proximo_numero, defecto, electronica
+        FROM fg_talonarios WHERE activo=true AND bloqueado=false AND tipo_codigo IN ('FAA','FAB','FAC','FAM','FAI','FBI','FAE','FEA','FEB','FEC','FEE')
+        ORDER BY defecto DESC, orden, id`;
+      return NextResponse.json({ ok: true, talonarios: rows });
+    }
+    if (!(await esOwner(req))) return NextResponse.json({ ok: false, error: "Solo el administrador (owner) puede ver Talonarios." }, { status: 403 });
     // Backfill: completar dirección vacía con el domicilio LEGAL (ARCA) de fg_empresa
     try {
       const e = await sql`SELECT domicilio, localidad, provincia FROM fg_empresa WHERE id=1`;

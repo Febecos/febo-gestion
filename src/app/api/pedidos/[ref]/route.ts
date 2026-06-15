@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { movCtaCte, delMov, delMovPrefijo } from "@/lib/ctacte";
 import { resolveProveedor } from "@/lib/proveedores";
+import { numeroDesdeTalonario } from "@/lib/talonarios";
 
 async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
   const pn = payload?.presupuesto_numero;
@@ -224,15 +225,32 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       let cliente_id: number | null = null;
       if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; cliente_id = pr[0]?.cliente_id ?? null; }
 
-      await sql`CREATE TABLE IF NOT EXISTS fg_counters (clave TEXT PRIMARY KEY, ultimo_numero INT NOT NULL DEFAULT 0)`;
-      await sql`INSERT INTO fg_counters (clave, ultimo_numero) VALUES ('FA', 0) ON CONFLICT (clave) DO NOTHING`;
-      const nr = await sql`UPDATE fg_counters SET ultimo_numero = ultimo_numero + 1 WHERE clave='FA' RETURNING ultimo_numero` as any[];
-      const facturaNum = "FA-" + String(nr[0].ultimo_numero).padStart(6, "0");
+      // Numeración: si se eligió talonario → serie/número Táctica (FA B 0001-00000123).
+      // Si no, intenta el talonario de factura por defecto. Fallback: counter FA-NNNN (compat).
+      let talId = Number(b.talonario_id) || 0;
+      if (!talId) {
+        const def = await sql`SELECT id FROM fg_talonarios WHERE activo=true AND bloqueado=false AND tipo_codigo IN ('FAA','FAB','FAC','FAM','FAI','FBI','FAE','FEA','FEB','FEC','FEE') ORDER BY defecto DESC, orden, id LIMIT 1`.catch(() => []) as any[];
+        talId = def[0]?.id || 0;
+      }
+      let facturaNum: string;
+      let letraFac: string | null = null;
+      if (talId) {
+        const n = await numeroDesdeTalonario(sql, talId);
+        if (!n) return NextResponse.json({ ok: false, error: "talonario inválido" }, { status: 400 });
+        facturaNum = n.numero; letraFac = n.letra || null;
+      } else {
+        await sql`CREATE TABLE IF NOT EXISTS fg_counters (clave TEXT PRIMARY KEY, ultimo_numero INT NOT NULL DEFAULT 0)`;
+        await sql`INSERT INTO fg_counters (clave, ultimo_numero) VALUES ('FA', 0) ON CONFLICT (clave) DO NOTHING`;
+        const nr = await sql`UPDATE fg_counters SET ultimo_numero = ultimo_numero + 1 WHERE clave='FA' RETURNING ultimo_numero` as any[];
+        facturaNum = "FA-" + String(nr[0].ultimo_numero).padStart(6, "0");
+      }
 
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS vendedor TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS talonario_id INT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS letra TEXT`.catch(() => {});
       const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token)
-        VALUES ('factura','proforma',${facturaNum},${cliente_id},${rev.nombre || null}, now(), ${tot.neto || tot.total || 0}, ${tot.total || 0}, ${tot.moneda || "USD"}, ${"Pedido " + ref}, gen_random_uuid()::text)
+        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token)
+        VALUES ('factura','proforma',${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${tot.neto || tot.total || 0}, ${tot.total || 0}, ${tot.moneda || "USD"}, ${"Pedido " + ref}, gen_random_uuid()::text)
         RETURNING id, token` as any[])[0];
 
       let orden = 0;

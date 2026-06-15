@@ -195,6 +195,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "" });
   const [emailCli, setEmailCli] = useState(""); const [editEmail, setEditEmail] = useState(false);
   const [pp, setPp] = useState({ proveedor: "", tc: "", medio: "pesos", monto: "", provUsd: "", fecha: "", nota: "" });
+  const [tals, setTals] = useState<any[]>([]); const [talSel, setTalSel] = useState<string>("");
+  useEffect(() => { fetch("/api/talonarios?facturacion=1").then((r) => r.json()).then((d) => { if (d.ok) { setTals(d.talonarios); const def = d.talonarios.find((t: any) => t.defecto) || d.talonarios[0]; if (def) setTalSel(String(def.id)); } }).catch(() => {}); }, []);
   const [tab, setTab] = useState<"detalle" | "prov" | "pago">("detalle");
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || ""); } }), [refId]);
   useEffect(() => { load(); }, [load]);
@@ -545,7 +547,12 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           <a href={`/pedido-prep/${encodeURIComponent(refId)}?print=1`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-semibold hover:bg-white">🖨 Imprimir pedido</a>
           {ped.factura_numero
             ? <a href={`${COTI}/p/${ped.factura_token}`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 {ped.factura_numero}</a>
-            : <button disabled={busy || cancelado || !ped.proveedor_confirmado} title={cancelado ? "Pedido cancelado" : ped.proveedor_confirmado ? "" : "Confirmá el stock antes de facturar"} onClick={() => accion({ accion: "facturar" }, "¿Generar la factura?")} className={`px-3 py-2 rounded-lg text-sm font-semibold ${!cancelado && ped.proveedor_confirmado ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar</button>}
+            : <div className="flex items-center gap-1">
+                {tals.length > 0 && <select value={talSel} onChange={(e) => setTalSel(e.target.value)} disabled={cancelado || !ped.proveedor_confirmado} title="Talonario" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white disabled:opacity-50">
+                  {tals.map((t) => <option key={t.id} value={t.id}>{t.tipo_nombre} · {String(t.sucursal || "0001")}-{String(t.proximo_numero).padStart(8, "0")}{t.defecto ? " ★" : ""}</option>)}
+                </select>}
+                <button disabled={busy || cancelado || !ped.proveedor_confirmado} title={cancelado ? "Pedido cancelado" : ped.proveedor_confirmado ? "" : "Confirmá el stock antes de facturar"} onClick={() => accion({ accion: "facturar", talonario_id: talSel ? Number(talSel) : undefined }, "¿Generar la factura?")} className={`px-3 py-2 rounded-lg text-sm font-semibold ${!cancelado && ped.proveedor_confirmado ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar</button>
+              </div>}
           {ped.estado === "pendiente_confirmacion" && <>
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
             <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor"} onClick={() => accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido y avisar al cliente para el pago?")} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ped.proveedor_confirmado ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
