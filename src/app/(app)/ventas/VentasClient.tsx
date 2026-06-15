@@ -291,6 +291,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             const confirmar = async (files: FileList | null) => {
               const arr: any[] = [];
               if (files) for (const f of Array.from(files)) arr.push({ nombre: f.name, tipo: f.type, b64: await toB64(f) });
+              setPed((p: any) => ({ ...p, proveedor_confirmado: true }));
               await accion({ accion: "confirmar_proveedor", archivos: arr });
             };
             return (
@@ -300,7 +301,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   <div className="text-sm text-emerald-700 flex flex-wrap items-center gap-3">
                     <span>✔ Stock confirmado{ped.proveedor_confirmado_at ? " · " + new Date(ped.proveedor_confirmado_at).toLocaleDateString("es-AR") : ""}</span>
                     {proformas.map((a: any, i: number) => <a key={i} href={`data:${a.tipo};base64,${a.b64}`} download={a.nombre} className="text-xs text-febo-azul underline">⬇ {a.nombre}</a>)}
-                    <button disabled={busy} onClick={() => accion({ accion: "desconfirmar_proveedor" })} className="text-xs text-gray-400 underline hover:text-red-500">quitar</button>
+                    <button disabled={busy} onClick={() => { setPed((p: any) => ({ ...p, proveedor_confirmado: false })); accion({ accion: "desconfirmar_proveedor" }); }} className="text-xs text-gray-400 underline hover:text-red-500">quitar confirmación</button>
                   </div>
                 ) : (
                   <div className="text-sm text-amber-800">
