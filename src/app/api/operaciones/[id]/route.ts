@@ -11,17 +11,31 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     const sql = getDb();
 
     if (b.accion === "facturar") {
+      const op = (await sql`SELECT * FROM fg_operaciones WHERE id=${id}`)[0];
+      if (!op) return NextResponse.json({ ok: false, error: "no encontrada" }, { status: 404 });
+      if (op.factura_numero) return NextResponse.json({ ok: false, error: "ya facturada (" + op.factura_numero + ")" }, { status: 409 });
+
       // Numerador de facturas (FA-NNNN) compartido, atómico.
       await sql`CREATE TABLE IF NOT EXISTS fg_counters (clave TEXT PRIMARY KEY, ultimo_numero INT NOT NULL DEFAULT 0)`;
       await sql`INSERT INTO fg_counters (clave, ultimo_numero) VALUES ('FA', 0) ON CONFLICT (clave) DO NOTHING`;
       const nr = await sql`UPDATE fg_counters SET ultimo_numero = ultimo_numero + 1 WHERE clave='FA' RETURNING ultimo_numero`;
       const facturaNum = "FA-" + String(nr[0].ultimo_numero).padStart(6, "0");
-      const r = await sql`
+
+      // Crear la FACTURA real (proforma sin AFIP) en fg_comprobantes → listable + imprimible (/p/token)
+      const comp = (await sql`
+        INSERT INTO fg_comprobantes (tipo, estado, numero, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token)
+        VALUES ('factura', 'proforma', ${facturaNum}, ${op.cliente_id || null}, ${op.cliente_nombre || null}, now(),
+                ${op.total || 0}, ${op.total || 0}, ${op.moneda || "ARS"}, ${"Según pedido " + (op.numero || op.pedido_ref)}, gen_random_uuid()::text)
+        RETURNING id`)[0] as any;
+      await sql`
+        INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
+        VALUES (${comp.id}, ${"Pedido " + (op.numero || op.pedido_ref)}, 1, ${op.total || 0}, ${op.total || 0}, 0)`;
+
+      await sql`
         UPDATE fg_operaciones
         SET estado='facturado', facturado_at=now(), factura_numero=${facturaNum}, updated_at=now()
-        WHERE id=${id} RETURNING id, factura_numero`;
-      if (!r.length) return NextResponse.json({ ok: false, error: "no encontrada" }, { status: 404 });
-      return NextResponse.json({ ok: true, factura_numero: r[0].factura_numero });
+        WHERE id=${id}`;
+      return NextResponse.json({ ok: true, factura_numero: facturaNum });
     }
 
     const notas = b.notas ?? null;
