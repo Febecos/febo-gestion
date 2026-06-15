@@ -398,6 +398,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
         {/* Footer acciones */}
         <div className="border-t border-gray-200 p-3 flex flex-wrap gap-2 justify-end bg-gray-50 rounded-b-xl">
           <button onClick={() => setPesos(!pesos)} disabled={!dolar} title={dolar ? `TC $${dolar}` : "sin TC"} className="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-white">🔁 {enP ? "Ver USD" : "Ver $ ARS"}</button>
+          <a href={`/pedido-prep/${encodeURIComponent(refId)}?print=1`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-semibold hover:bg-white">🖨 Imprimir pedido</a>
           <button onClick={() => setProvPanel(!provPanel)} className="px-3 py-2 rounded-lg border border-violet-300 text-violet-700 text-sm font-semibold hover:bg-violet-50">🏭 Proveedor</button>
           {ped.factura_numero
             ? <a href={`${COTI}/p/${ped.factura_token}`} target="_blank" rel="noreferrer" className="px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 {ped.factura_numero}</a>
