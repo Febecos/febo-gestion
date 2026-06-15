@@ -30,11 +30,14 @@ export async function GET(req: NextRequest) {
     }
     if (listar === "proveedores") {
       const rows = await sql`
-        SELECT c.proveedor AS nombre,
+        SELECT COALESCE(c.proveedor_id, -1) AS proveedor_id,
+               COALESCE(pr.razon_social, pr.nombre_fantasia, c.proveedor) AS nombre,
                SUM(c.debe)::numeric AS debe, SUM(c.haber)::numeric AS haber,
                (SUM(c.haber) - SUM(c.debe))::numeric AS saldo
-        FROM fg_ctacte c WHERE c.ambito='proveedor' AND c.proveedor IS NOT NULL
-        GROUP BY c.proveedor HAVING ABS(SUM(c.haber) - SUM(c.debe)) > 0.01 ORDER BY saldo DESC`;
+        FROM fg_ctacte c LEFT JOIN fg_proveedores pr ON pr.id = c.proveedor_id
+        WHERE c.ambito='proveedor'
+        GROUP BY COALESCE(c.proveedor_id, -1), COALESCE(pr.razon_social, pr.nombre_fantasia, c.proveedor)
+        HAVING ABS(SUM(c.haber) - SUM(c.debe)) > 0.01 ORDER BY saldo DESC`;
       return NextResponse.json({ ok: true, cuentas: rows, dolar });
     }
 
@@ -47,9 +50,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok: true, movimientos: movs, saldo: +saldo.toFixed(2), orientacion: "cliente_debe_si_positivo", dolar });
     }
     if (ambito === "proveedor") {
+      const pid = Number(sp.get("proveedor_id"));
       const prov = sp.get("proveedor") || "";
-      if (!prov) return NextResponse.json({ ok: false, error: "proveedor requerido" }, { status: 400 });
-      const movs = await sql`SELECT * FROM fg_ctacte WHERE ambito='proveedor' AND proveedor=${prov} ORDER BY fecha, created_at, id`;
+      if (!pid && !prov) return NextResponse.json({ ok: false, error: "proveedor requerido" }, { status: 400 });
+      // Por id (robusto) si viene; si no, por nombre (legacy / sin maestro).
+      const movs = pid
+        ? await sql`SELECT * FROM fg_ctacte WHERE ambito='proveedor' AND proveedor_id=${pid} ORDER BY fecha, created_at, id`
+        : await sql`SELECT * FROM fg_ctacte WHERE ambito='proveedor' AND proveedor_id IS NULL AND proveedor=${prov} ORDER BY fecha, created_at, id`;
       const saldo = movs.reduce((a: number, m: any) => a + Number(m.haber) - Number(m.debe), 0);
       return NextResponse.json({ ok: true, movimientos: movs, saldo: +saldo.toFixed(2), orientacion: "le_debemos_si_positivo", dolar });
     }

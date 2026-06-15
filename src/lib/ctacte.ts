@@ -12,6 +12,7 @@ export async function ensureCtaCte(sql: any) {
     ambito TEXT NOT NULL,                 -- 'cliente' | 'proveedor'
     cliente_id INT,
     proveedor TEXT,
+    proveedor_id INT,
     fecha DATE NOT NULL DEFAULT now(),
     concepto TEXT,
     comprobante TEXT,
@@ -23,12 +24,14 @@ export async function ensureCtaCte(sql: any) {
     uniq TEXT UNIQUE,
     created_at TIMESTAMPTZ DEFAULT now()
   )`;
+  await sql`ALTER TABLE fg_ctacte ADD COLUMN IF NOT EXISTS proveedor_id INT`.catch(() => {});
 }
 
 export type Mov = {
   ambito: "cliente" | "proveedor";
   cliente_id?: number | null;
   proveedor?: string | null;
+  proveedor_id?: number | null;
   fecha?: string | null;
   concepto: string;
   comprobante?: string | null;
@@ -43,12 +46,12 @@ export type Mov = {
 export async function movCtaCte(sql: any, m: Mov) {
   await ensureCtaCte(sql);
   await sql`
-    INSERT INTO fg_ctacte (ambito, cliente_id, proveedor, fecha, concepto, comprobante, pedido_ref, debe, haber, moneda, detalle, uniq)
-    VALUES (${m.ambito}, ${m.cliente_id ?? null}, ${m.proveedor ?? null}, ${m.fecha || null}, ${m.concepto},
+    INSERT INTO fg_ctacte (ambito, cliente_id, proveedor, proveedor_id, fecha, concepto, comprobante, pedido_ref, debe, haber, moneda, detalle, uniq)
+    VALUES (${m.ambito}, ${m.cliente_id ?? null}, ${m.proveedor ?? null}, ${m.proveedor_id ?? null}, ${m.fecha || null}, ${m.concepto},
             ${m.comprobante ?? null}, ${m.pedido_ref ?? null}, ${m.debe || 0}, ${m.haber || 0}, 'USD',
             ${m.detalle ? JSON.stringify(m.detalle) : null}::jsonb, ${m.uniq})
     ON CONFLICT (uniq) DO UPDATE SET
-      cliente_id=EXCLUDED.cliente_id, proveedor=EXCLUDED.proveedor, fecha=COALESCE(EXCLUDED.fecha, fg_ctacte.fecha),
+      cliente_id=EXCLUDED.cliente_id, proveedor=EXCLUDED.proveedor, proveedor_id=EXCLUDED.proveedor_id, fecha=COALESCE(EXCLUDED.fecha, fg_ctacte.fecha),
       concepto=EXCLUDED.concepto, comprobante=EXCLUDED.comprobante, debe=EXCLUDED.debe, haber=EXCLUDED.haber,
       detalle=EXCLUDED.detalle`;
 }

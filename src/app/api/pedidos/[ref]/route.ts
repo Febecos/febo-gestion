@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { movCtaCte, delMov, delMovPrefijo } from "@/lib/ctacte";
+import { resolveProveedor } from "@/lib/proveedores";
 
 async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
   const pn = payload?.presupuesto_numero;
@@ -91,7 +92,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         for (const it of items) { const k = it.proveedor || "Sin proveedor"; porProv[k] = (porProv[k] || 0) + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1); }
         for (const [prov, costo] of Object.entries(porProv)) {
           if (costo <= 0) continue;
-          await movCtaCte(sql, { ambito: "proveedor", proveedor: prov, fecha: hoy(), concepto: "Pedido confirmado " + ref, pedido_ref: ref, haber: +costo.toFixed(2), uniq: `provconf:${ref}:${prov}` });
+          const pr = await resolveProveedor(sql, prov);
+          await movCtaCte(sql, { ambito: "proveedor", proveedor: prov, proveedor_id: pr?.id ?? null, fecha: hoy(), concepto: "Pedido confirmado " + ref, pedido_ref: ref, haber: +costo.toFixed(2), uniq: `provconf:${ref}:${prov}` });
         }
       }
       return NextResponse.json({ ok: true });
@@ -157,7 +159,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         const prov = b.pago.proveedor || "Sin proveedor";
         arr = arr.filter((p) => p.proveedor !== prov);
         arr.push(b.pago);
-        await movCtaCte(sql, { ambito: "proveedor", proveedor: prov, fecha: b.pago.fecha || hoy(),
+        const pr = await resolveProveedor(sql, prov);
+        await movCtaCte(sql, { ambito: "proveedor", proveedor: prov, proveedor_id: pr?.id ?? null, fecha: b.pago.fecha || hoy(),
           concepto: "Pago a proveedor (" + (b.pago.medio || "") + ")", pedido_ref: ref,
           debe: +Number(b.pago.monto_usd || 0).toFixed(2), detalle: b.pago, uniq: `pprov:${ref}:${prov}` });
       }

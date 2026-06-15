@@ -724,7 +724,7 @@ function CuentasCorrientes() {
             {loading ? <tr><td colSpan={4} className="text-center py-8 text-gray-400">Cargando…</td></tr>
             : rows.length === 0 ? <tr><td colSpan={4} className="text-center py-8 text-gray-400">Sin saldos pendientes</td></tr>
             : rows.map((r, i) => (
-              <tr key={i} className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer" onClick={() => setSel({ tipo: amb === "clientes" ? "cliente" : "proveedor", key: amb === "clientes" ? r.cliente_id : r.nombre, nombre: r.nombre })}>
+              <tr key={i} className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer" onClick={() => setSel({ tipo: amb === "clientes" ? "cliente" : "proveedor", key: amb === "clientes" ? r.cliente_id : (Number(r.proveedor_id) > 0 ? r.proveedor_id : r.nombre), nombre: r.nombre })}>
                 <td className="px-4 py-2 font-semibold">{r.nombre}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-gray-500">{Number(r.debe).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-gray-500">{Number(r.haber).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
@@ -741,7 +741,9 @@ function CuentasCorrientes() {
 
 function CtaCteDetalle({ ambito, keyVal, nombre, onClose }: { ambito: string; keyVal: string | number; nombre: string; onClose: () => void }) {
   const [movs, setMovs] = useState<any[]>([]); const [saldo, setSaldo] = useState(0); const [loading, setLoading] = useState(true); const [dolar, setDolar] = useState(0);
-  const qs = ambito === "cliente" ? "ambito=cliente&cliente_id=" + keyVal : "ambito=proveedor&proveedor=" + encodeURIComponent(String(keyVal));
+  const qs = ambito === "cliente"
+    ? "ambito=cliente&cliente_id=" + keyVal
+    : (typeof keyVal === "number" ? "ambito=proveedor&proveedor_id=" + keyVal : "ambito=proveedor&proveedor=" + encodeURIComponent(String(keyVal)));
   const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?" + qs).then((r) => r.json()).then((d) => { setMovs(d.ok ? d.movimientos : []); setSaldo(d.saldo || 0); setDolar(d.dolar || 0); setLoading(false); }); }, [qs]);
   useEffect(() => { load(); }, [load]);
   let acum = 0;

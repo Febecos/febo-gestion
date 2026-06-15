@@ -105,7 +105,7 @@ function ProvModal({ prov, onClose, onSaved }: { prov: Prov | null; onClose: () 
             <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={p.activo !== false} onChange={(e) => { set("activo", e.target.checked); !esNuevo && patch("activo", e.target.checked); }} /> Activo</label>
             <label className="col-span-2"><span className={lbl}>Notas</span><textarea value={p.notas ?? ""} onChange={(e) => set("notas", e.target.value)} onBlur={(e) => !esNuevo && patch("notas", e.target.value)} className={inp} rows={2} /></label>
           </div>
-          {!esNuevo && (p.razon_social || p.nombre_fantasia) && <CtaCteProv nombre={p.razon_social || p.nombre_fantasia} />}
+          {!esNuevo && p.id && <CtaCteProv provId={p.id} />}
         </div>
         <div className="border-t border-gray-200 p-3 flex justify-end bg-gray-50">
           {esNuevo
@@ -117,9 +117,9 @@ function ProvModal({ prov, onClose, onSaved }: { prov: Prov | null; onClose: () 
   );
 }
 
-function CtaCteProv({ nombre }: { nombre: string }) {
+function CtaCteProv({ provId }: { provId: number }) {
   const [movs, setMovs] = useState<any[]>([]); const [saldo, setSaldo] = useState(0); const [dolar, setDolar] = useState(0); const [loaded, setLoaded] = useState(false);
-  useEffect(() => { fetch("/api/ctacte?ambito=proveedor&proveedor=" + encodeURIComponent(nombre)).then((r) => r.json()).then((d) => { if (d.ok) { setMovs(d.movimientos || []); setSaldo(d.saldo || 0); setDolar(d.dolar || 0); } setLoaded(true); }).catch(() => setLoaded(true)); }, [nombre]);
+  useEffect(() => { fetch("/api/ctacte?ambito=proveedor&proveedor_id=" + provId).then((r) => r.json()).then((d) => { if (d.ok) { setMovs(d.movimientos || []); setSaldo(d.saldo || 0); setDolar(d.dolar || 0); } setLoaded(true); }).catch(() => setLoaded(true)); }, [provId]);
   let acum = 0;
   return (
     <div className="rounded-lg border border-gray-200">
