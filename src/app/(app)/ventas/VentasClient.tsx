@@ -154,12 +154,15 @@ function Presupuestos() {
 // ---------- PEDIDOS (bombas + fv unificados) ----------
 function Pedidos() {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
-  useEffect(() => { fetch("/api/pedidos").then((r) => r.json()).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); }); }, []);
+  const [sel, setSel] = useState<string | null>(null);
+  const load = () => fetch("/api/pedidos").then((r) => r.json()).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); });
+  useEffect(() => { load(); }, []);
   return (
+    <>
     <Tabla loading={loading} count={rows.length} unidad="pedidos"
       cols={["Origen", "Número", "Cliente", "Detalle", "Estado", "Fecha", "Total", ""]}>
       {rows.map((p, i) => (
-        <tr key={i} className="border-t border-gray-100 hover:bg-gray-50">
+        <tr key={i} className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer" onClick={() => setSel(String(p.numero || p.ref))}>
           <td className="px-4 py-2">{chip(p.origen === "fv" ? "FV" : "Bomba", p.origen === "fv" ? "#d97706" : "#2563eb")}</td>
           <td className="px-4 py-2 font-semibold">{p.numero || (p.presup ? "↳ " + p.presup : "—")}</td>
           <td className="px-4 py-2">{p.cliente}</td>
@@ -167,11 +170,130 @@ function Pedidos() {
           <td className="px-4 py-2">{chip(p.estado, EST_COL[p.estado] || "#888")}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(p.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold">{fmt(p.total, p.moneda)}</td>
-          <td className="px-4 py-2 text-right">{p.token && <a href={`${COTI}/p/${p.token}`} target="_blank" rel="noreferrer" title="Ver" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
+          <td className="px-4 py-2 text-right">{p.token && <a onClick={(e) => e.stopPropagation()} href={`${COTI}/p/${p.token}`} target="_blank" rel="noreferrer" title="Ver presupuesto" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
         </tr>
       ))}
     </Tabla>
+    {sel && <PedidoModal refId={sel} onClose={() => setSel(null)} onChanged={load} />}
+    </>
   );
+}
+
+// ---------- MODAL DE PEDIDO (detalle completo, estilo admin) ----------
+const PED_BADGE: Record<string, [string, string]> = {
+  pendiente_confirmacion: ["⏳ Pendiente", "#fbbf24"], aprobado: ["✅ Aprobado", "#22c55e"],
+  pagado: ["💰 Pagado", "#3b82f6"], enviado: ["📦 Enviado", "#8b5cf6"], cancelado: ["❌ Cancelado", "#ef4444"],
+};
+function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: () => void; onChanged: () => void }) {
+  const [ped, setPed] = useState<any>(null);
+  const [pesos, setPesos] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [nota, setNota] = useState("");
+  const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); } }), [refId]);
+  useEffect(() => { load(); }, [load]);
+  if (!ped) return null;
+  const pl = ped.payload || {}; const items = pl.items || []; const tot = pl.totales || {};
+  const rev = pl.revendedor || pl.cliente || {}; const dolar = Number(ped.dolar) || 0;
+  const enP = pesos && dolar > 0; const sym = enP ? "$" : "USD";
+  const v = (usd: number) => usd == null ? null : (enP ? Math.round(usd * dolar) : usd);
+  const nf = (n: number | null) => n == null || isNaN(Number(n)) ? "—" : Number(n).toLocaleString("es-AR", { minimumFractionDigits: enP ? 0 : 2, maximumFractionDigits: enP ? 0 : 2 });
+  const money = (usd: number) => { const x = v(usd); return x == null ? "—" : `${sym} ${nf(x)}`; };
+  const costoTot = items.reduce((a: number, it: any) => a + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1), 0);
+  const badge = PED_BADGE[ped.estado] || [ped.estado, "#888"];
+
+  const accion = async (body: any, msg?: string) => {
+    if (msg && !confirm(msg)) return;
+    setBusy(true);
+    try { const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!d.ok) throw new Error(d.error); await load(); onChanged(); }
+    catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[120] bg-black/50 flex items-start justify-center overflow-auto py-6" onClick={onClose}>
+      <div className="bg-white rounded-xl w-[860px] max-w-[96vw] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="bg-febo-azul text-white rounded-t-xl px-5 py-3 flex items-center justify-between">
+          <div>
+            <div className="text-lg font-bold">{rev.nombre || "(sin nombre)"}</div>
+            <div className="text-xs opacity-90 flex gap-2 items-center mt-0.5">
+              <span>☀️ {ped.origen === "fv" ? "Fotovoltaico" : "Bomba"}</span><span>{ped.numero}</span><span>{fmtF(ped.fecha)}</span>
+              <span style={{ background: badge[1] }} className="rounded px-2 py-0.5 font-bold text-[11px]">{badge[0]}</span>
+              <span className="bg-white/20 rounded px-2 py-0.5 font-bold text-[11px]">{sym}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">✕</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* Contacto */}
+          <div>
+            <div className="text-[11px] font-bold text-gray-400 uppercase mb-1 bg-gray-50 px-2 py-1 rounded">Contacto del cliente</div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm px-2">
+              {pl.presupuesto_numero && <Cell l="Origen" v={<span className="font-mono font-bold text-febo-azul bg-blue-50 px-2 rounded">{pl.presupuesto_numero}</span>} />}
+              <Cell l="Nombre" v={rev.nombre || "—"} />
+              {rev.empresa && <Cell l="Empresa" v={rev.empresa} />}
+              <Cell l="WhatsApp" v={rev.whatsapp || rev.wa || "—"} />
+              <Cell l="Email" v={rev.email || "—"} />
+              {rev.localidad && <Cell l="Localidad" v={rev.localidad} />}
+              {rev.cuit && <Cell l="CUIT/CUIL" v={rev.cuit} />}
+              <Cell l="Nota del revendedor" v={pl.notas || "—"} />
+            </div>
+          </div>
+
+          {/* Items */}
+          <div>
+            <div className="text-[11px] font-bold text-gray-400 uppercase mb-1 bg-gray-50 px-2 py-1 rounded">Detalle del pedido</div>
+            <table className="w-full text-sm">
+              <thead className="text-[10px] uppercase text-gray-400"><tr>
+                <th className="text-left px-2 py-1">Producto</th><th className="text-center px-2 py-1">Cant</th>
+                <th className="text-right px-2 py-1">Costo</th><th className="text-right px-2 py-1">PVP s/IVA</th><th className="text-right px-2 py-1">Subtotal</th>
+              </tr></thead>
+              <tbody>
+                {items.map((it: any, i: number) => (
+                  <tr key={i} className="border-t border-gray-100 align-top">
+                    <td className="px-2 py-1.5"><div className="font-semibold text-febo-azul">{it.codigo} {it.proveedor && chip(it.proveedor, "#64748b")}</div><div className="text-xs text-gray-500">{it.descripcion}</div></td>
+                    <td className="px-2 py-1.5 text-center font-bold">{it.cantidad}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{nf(v(it.costo_usd))}</td>
+                    <td className="px-2 py-1.5 text-right tabular-nums">{nf(v(it.pvp_sin_iva_usd))}</td>
+                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{nf(v(it.subtotal))}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="text-sm">
+                {costoTot > 0 && <tr className="text-[11px] text-gray-400"><td colSpan={4} className="text-right px-2 py-1">Costo total FEBECOS</td><td className="text-right px-2 py-1">{money(costoTot)}</td></tr>}
+                <tr><td colSpan={4} className="text-right px-2 py-1 text-gray-500">Subtotal s/IVA</td><td className="text-right px-2 py-1">{money(tot.neto)}</td></tr>
+                <tr><td colSpan={4} className="text-right px-2 py-1 text-gray-500">IVA</td><td className="text-right px-2 py-1">{money(tot.iva)}</td></tr>
+                <tr className="border-t border-gray-200"><td colSpan={4} className="text-right px-2 py-2 font-bold text-febo-azul">TOTAL</td><td className="text-right px-2 py-2 font-bold text-febo-azul">{money(tot.total)}</td></tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Nota interna */}
+          <div>
+            <div className="text-[11px] font-bold text-gray-400 uppercase mb-1">Nota interna</div>
+            <div className="flex gap-2">
+              <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Observación interna…" className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+              <button disabled={busy} onClick={() => accion({ accion: "nota", nota })} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">💾 Nota</button>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer acciones */}
+        <div className="border-t border-gray-200 p-3 flex flex-wrap gap-2 justify-end bg-gray-50 rounded-b-xl">
+          <button onClick={() => setPesos(!pesos)} disabled={!dolar} title={dolar ? `TC $${dolar}` : "sin TC"} className="px-3 py-2 rounded-lg border border-gray-300 text-sm hover:bg-white">🔁 {enP ? "Ver USD" : "Ver $ ARS"}</button>
+          {ped.estado === "pendiente_confirmacion" && <>
+            <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
+            <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido?")} className="px-4 py-2 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600">✅ Aprobar pedido</button>
+          </>}
+          {ped.estado === "aprobado" && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "pagado" }, "¿Marcar como pagado?")} className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">💰 Marcar pagado</button>}
+          {ped.estado === "pagado" && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}
+        </div>
+      </div>
+    </div>
+  );
+}
+function Cell({ l, v }: { l: string; v: React.ReactNode }) {
+  return <div><div className="text-[10px] uppercase text-gray-400">{l}</div><div className="text-gray-800">{v}</div></div>;
 }
 
 // ---------- FACTURAS / REMITOS (fg_comprobantes) ----------
