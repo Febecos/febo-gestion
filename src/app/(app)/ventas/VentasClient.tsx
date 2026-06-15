@@ -191,6 +191,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [nota, setNota] = useState("");
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
+  const [unlockedProv, setUnlockedProv] = useState<Record<string, boolean>>({});
   const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "" });
   const [emailCli, setEmailCli] = useState(""); const [editEmail, setEditEmail] = useState(false);
   const [tab, setTab] = useState<"detalle" | "prov" | "pago">("detalle");
@@ -379,13 +380,21 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             const grupos: Record<string, any[]> = {};
             items.forEach((it: any, idx: number) => { const k = it.proveedor || "Sin proveedor"; (grupos[k] = grupos[k] || []).push({ ...it, _idx: idx }); });
             const enviados = ped.pedidos_proveedor || [];
+            // Ítems ya pedidos (por código) por proveedor → quedan bloqueados salvo desbloqueo (admin)
+            const orderedCodes: Record<string, Set<string>> = {};
+            enviados.forEach((e: any) => (e.items || []).forEach((it: any) => { (orderedCodes[e.proveedor] = orderedCodes[e.proveedor] || new Set()).add(String(it.codigo || "").toUpperCase()); }));
+            const isLocked = (prov: string, code: string) => !unlockedProv[prov] && !!orderedCodes[prov]?.has(String(code || "").toUpperCase());
             const sel = (prov: string, idx: number) => provSel[prov]?.[idx] !== false; // default checked
             const toggle = (prov: string, idx: number) => setProvSel({ ...provSel, [prov]: { ...(provSel[prov] || {}), [idx]: !sel(prov, idx) } });
+            const desbloquear = async (prov: string) => {
+              try { const d = await (await fetch("/api/me")).json(); if (d.ok && d.es_owner) { setUnlockedProv((p) => ({ ...p, [prov]: true })); } else alert("🔒 Solo el administrador (owner) puede desbloquear para re-enviar ítems ya pedidos."); }
+              catch { alert("No se pudo validar el permiso."); }
+            };
             const enviarProv = async (prov: string, its: any[]) => {
               const info = provData[prov] || { email: "", mensaje: "" };
               if (!info.email) { alert("Ingresá el email del proveedor " + prov); return; }
-              const elegidos = its.filter((it) => sel(prov, it._idx));
-              if (!elegidos.length) { alert("Marcá al menos un ítem para pedir."); return; }
+              const elegidos = its.filter((it) => !isLocked(prov, it.codigo) && sel(prov, it._idx));
+              if (!elegidos.length) { alert("Marcá al menos un ítem PENDIENTE para pedir."); return; }
               const yaEnv = enviados.find((e: any) => e.proveedor === prov);
               const msg = yaEnv
                 ? `⚠️ Ya enviaste un pedido a ${prov} el ${new Date(yaEnv.created_at).toLocaleString("es-AR")}. ¿Enviar OTRO con ${elegidos.length} ítem(s)?`
@@ -411,22 +420,29 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 <div className="space-y-3">
                   {Object.entries(grupos).map(([prov, its]) => {
                     const yaEnv = enviados.find((e: any) => e.proveedor === prov);
+                    const hayBloqueados = its.some((it) => isLocked(prov, it.codigo));
+                    const pendientes = its.filter((it) => !isLocked(prov, it.codigo)).length;
                     return (
                     <div key={prov} className="bg-white border border-gray-200 rounded-lg p-3">
                       <div className="flex items-center justify-between mb-2">
-                        <div className="font-semibold text-sm">{chip(prov, "#7c3aed")} <span className="text-gray-500 text-xs ml-1">{its.length} ítem(s)</span>{yaEnv && <span className="text-emerald-600 text-xs ml-2">✅ enviado</span>}</div>
-                        <button disabled={busy} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{yaEnv ? "📤 Re-enviar" : (prov === "Multiradio" ? "📤 Generar Excel y Enviar" : "📤 Enviar pedido")}</button>
+                        <div className="font-semibold text-sm">{chip(prov, "#7c3aed")} <span className="text-gray-500 text-xs ml-1">{pendientes} pendiente(s) de {its.length}</span>{yaEnv && <span className="text-emerald-600 text-xs ml-2">✅ enviado</span>}</div>
+                        <div className="flex gap-2">
+                          {hayBloqueados && !unlockedProv[prov] && <button onClick={() => desbloquear(prov)} className="px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-semibold text-gray-600 hover:bg-gray-50" title="Solo administrador">🔓 Desbloquear</button>}
+                          <button disabled={busy || pendientes === 0} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${pendientes === 0 ? "bg-gray-300 cursor-not-allowed" : yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{pendientes === 0 ? "✅ Todo pedido" : yaEnv ? "📤 Enviar pendientes" : (prov === "Multiradio" ? "📤 Generar Excel y Enviar" : "📤 Enviar pedido")}</button>
+                        </div>
                       </div>
                       <table className="w-full text-xs mb-2">
                         <tbody>
-                          {its.map((it) => (
-                            <tr key={it._idx} className="border-t border-gray-100">
-                              <td className="py-1 w-6"><input type="checkbox" checked={sel(prov, it._idx)} onChange={() => toggle(prov, it._idx)} /></td>
+                          {its.map((it) => {
+                            const locked = isLocked(prov, it.codigo);
+                            return (
+                            <tr key={it._idx} className={`border-t border-gray-100 ${locked ? "opacity-50" : ""}`}>
+                              <td className="py-1 w-6"><input type="checkbox" disabled={locked} checked={locked ? false : sel(prov, it._idx)} onChange={() => toggle(prov, it._idx)} /></td>
                               <td className="py-1 font-semibold text-febo-azul w-40">{it.codigo}</td>
-                              <td className="py-1 text-gray-600">{(it.descripcion || "").slice(0, 50)}</td>
+                              <td className="py-1 text-gray-600">{(it.descripcion || "").slice(0, 50)}{locked && <span className="text-emerald-600 ml-1">· ✅ ya pedido</span>}</td>
                               <td className="py-1 text-center w-10 font-bold">{it.cantidad}</td>
                             </tr>
-                          ))}
+                          );})}
                         </tbody>
                       </table>
                       <div className="grid grid-cols-2 gap-2">
