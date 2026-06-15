@@ -21,8 +21,11 @@ export async function POST(req: NextRequest) {
     const d = await r.json();
     if (!d.ok) return NextResponse.json(d, { status: r.status || 401 });
 
-    // OTP válido → emitir sesión propia
-    const token = await new SignJWT({ email })
+    // OTP válido → emitir sesión propia. Guardamos el nombre del usuario interno
+    // (de admin_users, ej "Guillermo Sandler") para atribuir cada cotización al
+    // vendedor → base del cálculo de comisiones.
+    const nombre = d?.user?.nombre || d?.user?.name || email;
+    const token = await new SignJWT({ email, nombre })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("7d")

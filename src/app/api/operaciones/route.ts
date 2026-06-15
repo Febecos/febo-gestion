@@ -12,6 +12,9 @@ export async function GET(req: NextRequest) {
     const q = (sp.get("q") || "").trim().toLowerCase();
     const like = `%${q}%`;
 
+    // Vendedor (usuario interno que cotizó) → comisiones
+    await sql`ALTER TABLE fg_operaciones ADD COLUMN IF NOT EXISTS vendedor TEXT`.catch(() => {});
+
     // Auto-adopción de pedidos nuevos (idempotente)
     await sql`
       INSERT INTO fg_operaciones (origen, pedido_ref, numero, cliente_nombre, total, moneda, estado, created_at)
@@ -19,16 +22,25 @@ export async function GET(req: NextRequest) {
       FROM pedidos p
       WHERE NOT EXISTS (SELECT 1 FROM fg_operaciones o WHERE o.origen='bomba' AND o.pedido_ref=p.id::text)`;
     await sql`
-      INSERT INTO fg_operaciones (origen, pedido_ref, numero, cliente_nombre, total, moneda, estado, created_at)
+      INSERT INTO fg_operaciones (origen, pedido_ref, numero, cliente_nombre, total, moneda, estado, vendedor, created_at)
       SELECT 'fv', fp.numero, fp.numero,
              COALESCE(fp.payload->'revendedor'->>'nombre', fp.payload->'cliente'->>'nombre'),
              (fp.payload->'totales'->>'total')::numeric, COALESCE(fp.payload->'totales'->>'moneda','USD'),
-             'pedido_proveedor', fp.recibido
+             'pedido_proveedor',
+             (SELECT pr.vendedor FROM presupuestos pr WHERE pr.numero = fp.payload->>'presupuesto_numero' LIMIT 1),
+             fp.recibido
       FROM fv_pedidos fp
       WHERE NOT EXISTS (SELECT 1 FROM fg_operaciones o WHERE o.origen='fv' AND o.pedido_ref=fp.numero)`;
 
+    // Backfill de vendedor en operaciones FV ya adoptadas que no lo tienen
+    await sql`
+      UPDATE fg_operaciones o SET vendedor = pr.vendedor
+      FROM fv_pedidos fp, presupuestos pr
+      WHERE o.origen='fv' AND coalesce(o.vendedor,'')='' AND o.pedido_ref = fp.numero
+        AND pr.numero = fp.payload->>'presupuesto_numero' AND coalesce(pr.vendedor,'') <> ''`.catch(() => {});
+
     const rows = await sql`
-      SELECT id, origen, pedido_ref, numero, cliente_id, cliente_nombre, total, moneda, estado,
+      SELECT id, origen, pedido_ref, numero, cliente_id, cliente_nombre, total, moneda, estado, vendedor,
              proveedor_reservado_at, confirmado_cliente_at, pagado_cliente_at, pagado_proveedor_at,
              facturado_at, factura_numero, notas, created_at
       FROM fg_operaciones

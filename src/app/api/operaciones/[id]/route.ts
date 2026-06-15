@@ -22,10 +22,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       const facturaNum = "FA-" + String(nr[0].ultimo_numero).padStart(6, "0");
 
       // Crear la FACTURA real (proforma sin AFIP) en fg_comprobantes → listable + imprimible (/p/token)
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS vendedor TEXT`.catch(() => {});
       const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token)
+        INSERT INTO fg_comprobantes (tipo, estado, numero, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, vendedor)
         VALUES ('factura', 'proforma', ${facturaNum}, ${op.cliente_id || null}, ${op.cliente_nombre || null}, now(),
-                ${op.total || 0}, ${op.total || 0}, ${op.moneda || "ARS"}, ${"Según pedido " + (op.numero || op.pedido_ref)}, gen_random_uuid()::text)
+                ${op.total || 0}, ${op.total || 0}, ${op.moneda || "ARS"}, ${"Según pedido " + (op.numero || op.pedido_ref)}, gen_random_uuid()::text, ${op.vendedor || null})
         RETURNING id`)[0] as any;
       await sql`
         INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)

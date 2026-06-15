@@ -57,7 +57,7 @@ export default function VentasClient() {
 }
 
 // ---------- PRESUPUESTOS (tabla real, coti) ----------
-type Presup = { id: number; numero: string; tipo: string; estado: string; cliente_display: string; cliente_nombre: string; cliente_apellido: string; cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string; precio_ofrecido: number; revendedor_nombre: string; public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string; pedido_numero?: string | null; factura_numero?: string | null };
+type Presup = { id: number; numero: string; tipo: string; estado: string; cliente_display: string; cliente_nombre: string; cliente_apellido: string; cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string; precio_ofrecido: number; revendedor_nombre: string; public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string; pedido_numero?: string | null; factura_numero?: string | null; vendedor?: string | null; vendedor_email?: string | null };
 const tienePedido = (r: Presup) => !!r.pedido_numero || ["pedido", "convertido", "pagado", "anulado"].includes((r.estado || "").toLowerCase());
 
 function Presupuestos() {
@@ -123,7 +123,7 @@ function Presupuestos() {
                 <td className="px-4 py-2">{chip(r.tipo === "fv" ? "FV" : "Rev", r.tipo === "fv" ? "#d97706" : "#2563eb")}</td>
                 <td className="px-4 py-2">{nombreCli(r)}</td>
                 <td className="px-4 py-2 text-gray-600">{r.bomba_codigo || r.bomba_descripcion || "—"}</td>
-                <td className="px-4 py-2 text-gray-500">{r.revendedor_nombre || "—"}</td>
+                <td className="px-4 py-2 text-gray-500" title={r.vendedor_email || ""}>{r.vendedor || "—"}</td>
                 <td className="px-4 py-2">
                   {chip(r.estado || "—", EST_COL[r.estado] || "#888")}
                   {r.pedido_numero && <span className="ml-1 text-[10px] font-semibold text-violet-700" title="Pedido generado">📦 {r.pedido_numero}</span>}
@@ -282,11 +282,12 @@ function Operaciones() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
             <th className="text-left px-4 py-3">Pedido</th><th className="text-left px-4 py-3">Origen</th><th className="text-left px-4 py-3">Cliente</th>
+            <th className="text-left px-4 py-3">Vendedor</th>
             <th className="text-left px-4 py-3">Estado</th><th className="text-right px-4 py-3">Total</th><th className="text-left px-4 py-3">Acción</th>
           </tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={6} className="text-center py-8 text-gray-400">Cargando…</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={6} className="text-center py-8 text-gray-400">Sin operaciones</td></tr>
+            {loading ? <tr><td colSpan={7} className="text-center py-8 text-gray-400">Cargando…</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={7} className="text-center py-8 text-gray-400">Sin operaciones</td></tr>
             : rows.map((op) => {
               const fl = FLUJO_OP.find((f) => f.estado === op.estado);
               const sig = SIGUIENTE_OP[op.estado];
@@ -296,6 +297,7 @@ function Operaciones() {
                   <td className="px-4 py-2 font-semibold">{op.numero || op.pedido_ref}</td>
                   <td className="px-4 py-2">{chip(op.origen === "fv" ? "FV" : "Bomba", op.origen === "fv" ? "#d97706" : "#2563eb")}</td>
                   <td className="px-4 py-2">{op.cliente_nombre || "—"}</td>
+                  <td className="px-4 py-2 text-gray-500">{op.vendedor || "—"}</td>
                   <td className="px-4 py-2">
                     {anulado ? chip("anulado", "#e53935") : <>
                       {chip(fl?.label || op.estado, fl?.col || "#888")}

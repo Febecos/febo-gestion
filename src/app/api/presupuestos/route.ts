@@ -23,6 +23,7 @@ export async function GET(req: NextRequest) {
         p.bomba_codigo, p.bomba_descripcion,
         p.precio_ofrecido, p.precio_publico, p.descuento_pct, p.tipo_precio,
         p.revendedor_nombre, p.revendedor_email, p.revendedor_token, p.public_token, p.created_at,
+        p.vendedor, p.vendedor_email,
         c.id AS cliente_id,
         -- Nombre CANÓNICO: del CRM (enlazado o resuelto por cuit/email/tel); si no, la copia
         COALESCE(NULLIF(c.razon_social,''), NULLIF(c.nombre,''), NULLIF(p.cliente_razon_social,''),
