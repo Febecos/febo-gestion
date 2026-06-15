@@ -30,6 +30,30 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
            OR (${tel10} <> '' AND length(${tel10}) >= 8 AND right(regexp_replace(coalesce(cliente_telefono,''),'\D','','g'),10) = ${tel10})
         ORDER BY created_at DESC` as any[];
 
+    // PEDIDOS REALES (fv_pedidos) del cliente → número propio PED-NNNN (no el PREV del presupuesto).
+    // Se relacionan vía el presupuesto_numero guardado en el payload del pedido.
+    const presupNums = (presupuestos as any[]).map((p) => p.numero).filter(Boolean);
+    let pedidos: any[] = [];
+    if (presupNums.length) {
+      try {
+        const fvped = await sql`
+          SELECT fp.numero AS numero, fp.estado, fp.public_token AS pedido_token,
+                 pr.public_token AS presup_token, pr.numero AS presup_numero,
+                 COALESCE(pr.tipo,'fv') AS tipo, pr.precio_ofrecido,
+                 pr.bomba_codigo, pr.bomba_descripcion, pr.created_at
+          FROM fv_pedidos fp
+          JOIN presupuestos pr ON pr.numero = fp.payload->>'presupuesto_numero'
+          WHERE fp.payload->>'presupuesto_numero' = ANY(${presupNums})
+          ORDER BY fp.numero DESC` as any[];
+        pedidos = fvped.map((p) => ({
+          id: p.numero, numero: p.numero, tipo: p.tipo,
+          bomba_codigo: p.bomba_codigo, bomba_descripcion: p.bomba_descripcion,
+          precio_ofrecido: p.precio_ofrecido, created_at: p.created_at,
+          estado: p.estado || "pedido", public_token: p.presup_token, presup_numero: p.presup_numero,
+        }));
+      } catch { pedidos = []; }
+    }
+
     // Downstream ERP (factura/remito/pago) — fg_comprobantes (se llena al avanzar la operación)
     const comprobantes = await sql`
       SELECT id, tipo, estado, numero, ref_id, operacion_id, token, fecha, total, moneda, created_at
@@ -80,6 +104,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({
       ok: true,
       presupuestos,
+      pedidos,
       comprobantes,
       pagos,
       compras,

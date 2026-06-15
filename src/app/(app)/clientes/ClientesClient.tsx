@@ -331,7 +331,9 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
   const compras = data?.compras || [];
   const pagos = data?.pagos || [];
   const r = data?.resumen || {};
-  const pedidos = presupuestos.filter((p: any) => esPedidoEstado(p.estado));
+  const pedidos = (data?.pedidos && data.pedidos.length)
+    ? data.pedidos
+    : presupuestos.filter((p: any) => esPedidoEstado(p.estado));
   const facturasFg = comps.filter((c: any) => c.tipo === "factura");
   const remitos = comps.filter((c: any) => c.tipo === "remito");
   const estadoChip = r.estado_derivado === "compro" ? ["✅ Cliente que compró", "#059669"]
@@ -425,7 +427,7 @@ function TablaPresup({ rows, vacio }: { rows: any[]; vacio: string }) {
             const tp = tipoP(p.tipo); const m = p.tipo === "fv" ? "USD" : "$";
             return (
               <tr key={p.id} className="border-t border-gray-100">
-                <td className="px-3 py-2 font-semibold">{p.numero}</td>
+                <td className="px-3 py-2 font-semibold">{p.numero}{p.presup_numero && <div className="text-[10px] font-normal text-gray-400">de {p.presup_numero}</div>}</td>
                 <td className="px-3 py-2"><span style={{ background: (tp[1] as string) + "1a", color: tp[1] as string }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{tp[0]}</span></td>
                 <td className="px-3 py-2 text-gray-600">{p.bomba_codigo || p.bomba_descripcion || "—"}</td>
                 <td className="px-3 py-2 text-gray-500">{p.created_at ? new Date(p.created_at).toLocaleDateString("es-AR") : "—"}</td>
