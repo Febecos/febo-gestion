@@ -1,13 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
+import { TIPOS_COMPROBANTE, tipoPorCodigo } from "@/lib/talonarios-tipos";
 
 const chip = (txt: string, color: string) => (
   <span style={{ background: color + "1a", color }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{txt}</span>
 );
 
-const SECCIONES = [
-  { k: "talonarios", icon: "🔢", label: "Talonarios / Numeración" },
-] as const;
+const SECCIONES = [{ k: "talonarios", icon: "🔢", label: "Talonarios / Numeración" }] as const;
 type Sec = (typeof SECCIONES)[number]["k"];
 
 export default function ConfigClient() {
@@ -20,65 +19,130 @@ export default function ConfigClient() {
       <aside className="w-52 shrink-0 border-r border-gray-200 pr-2">
         <div className="text-[11px] uppercase text-gray-400 font-bold px-2 py-2">⚙️ Configuración</div>
         {SECCIONES.map((s) => (
-          <button key={s.k} onClick={() => setSec(s.k)}
-            className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-left mb-0.5 ${sec === s.k ? "bg-febo-azul text-white font-semibold" : "text-gray-600 hover:bg-gray-100"}`}>
+          <button key={s.k} onClick={() => setSec(s.k)} className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm text-left mb-0.5 ${sec === s.k ? "bg-febo-azul text-white font-semibold" : "text-gray-600 hover:bg-gray-100"}`}>
             <span>{s.icon}</span><span>{s.label}</span>
           </button>
         ))}
       </aside>
-      <div className="flex-1 min-w-0 overflow-auto">
-        {sec === "talonarios" && <Talonarios />}
-      </div>
+      <div className="flex-1 min-w-0 overflow-auto">{sec === "talonarios" && <Talonarios />}</div>
     </div>
   );
 }
 
 function Talonarios() {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true); const [err, setErr] = useState("");
+  const [editId, setEditId] = useState<number | null>(null);
+  const [nuevoTipo, setNuevoTipo] = useState("");
   const load = () => fetch("/api/talonarios").then((r) => r.json()).then((d) => { if (d.ok) setRows(d.talonarios); else setErr(d.error || "Error"); setLoading(false); });
   useEffect(() => { load(); }, []);
-  const patch = async (id: number, campo: string, valor: any) => {
-    await fetch("/api/talonarios", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, campo, valor }) });
-    load();
+  const crear = async () => {
+    if (!nuevoTipo) return;
+    const r = await fetch("/api/talonarios", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tipo_codigo: nuevoTipo }) });
+    const d = await r.json(); if (d.ok) { setNuevoTipo(""); load(); setEditId(d.id); }
   };
   if (loading) return <div className="text-gray-400 py-8 text-center">Cargando…</div>;
   if (err) return <div className="text-red-600 py-8 text-center">{err}</div>;
-  const inp = "border border-gray-300 rounded px-2 py-1 text-sm";
+  const fmtNum = (n: any) => n == null ? "—" : String(n).padStart(8, "0");
   return (
     <div>
       <h2 className="text-lg font-bold text-febo-azul mb-1">🔢 Talonarios / Numeración</h2>
-      <div className="text-sm text-gray-500 mb-3">Numeración por comprobante (estilo Táctica). Editá <b>punto de venta</b>, <b>desde/hasta</b> y el <b>próximo número</b>. Las facturas <b>no electrónicas</b> generan <b>proforma</b>; las electrónicas (AFIP) quedan para más adelante. CAI/vencimiento aplican a comprobantes fiscales manuales.</div>
+      <div className="text-sm text-gray-500 mb-3">Numeración por comprobante (igual a Táctica). Las facturas/NC/ND <b>no electrónicas</b> generan <b>proforma</b>; las electrónicas (AFIP) quedan para más adelante.</div>
+
+      <div className="flex items-center gap-2 mb-3">
+        <select value={nuevoTipo} onChange={(e) => setNuevoTipo(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-sm">
+          <option value="">+ Nuevo talonario — elegí tipo…</option>
+          <optgroup label="Operativos">{TIPOS_COMPROBANTE.filter(t => t.grupo === "operativo").map(t => <option key={t.codigo} value={t.codigo}>{t.codigo} · {t.nombre}</option>)}</optgroup>
+          <optgroup label="Facturas">{TIPOS_COMPROBANTE.filter(t => t.grupo === "factura").map(t => <option key={t.codigo} value={t.codigo}>{t.codigo} · {t.nombre}</option>)}</optgroup>
+          <optgroup label="Notas de Crédito">{TIPOS_COMPROBANTE.filter(t => t.grupo === "nc").map(t => <option key={t.codigo} value={t.codigo}>{t.codigo} · {t.nombre}</option>)}</optgroup>
+          <optgroup label="Notas de Débito">{TIPOS_COMPROBANTE.filter(t => t.grupo === "nd").map(t => <option key={t.codigo} value={t.codigo}>{t.codigo} · {t.nombre}</option>)}</optgroup>
+        </select>
+        <button onClick={crear} disabled={!nuevoTipo} className="px-3 py-1.5 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-40">➕ Agregar</button>
+      </div>
+
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
-            <th className="text-left px-3 py-3">Comprobante</th>
-            <th className="text-left px-3 py-3">Pto. venta</th>
-            <th className="text-right px-3 py-3">Desde</th>
-            <th className="text-right px-3 py-3">Hasta</th>
-            <th className="text-right px-3 py-3">Próximo</th>
-            <th className="text-left px-3 py-3">CAI</th>
-            <th className="text-left px-3 py-3">Vto.</th>
-            <th className="text-center px-3 py-3">Defecto</th>
-            <th className="text-center px-3 py-3">Activo</th>
-            <th className="text-center px-3 py-3">Bloq.</th>
+            <th className="text-left px-3 py-3">Tipo</th><th className="text-left px-3 py-3">Pto. vta</th><th className="text-left px-3 py-3">Serie</th>
+            <th className="text-right px-3 py-3">Próximo</th><th className="text-left px-3 py-3">Vto.</th>
+            <th className="text-center px-3 py-3">Defecto</th><th className="text-center px-3 py-3">Activo</th><th className="text-center px-3 py-3">Bloq.</th><th></th>
           </tr></thead>
           <tbody>
-            {rows.map((t) => (
-              <tr key={t.id} className="border-t border-gray-100">
-                <td className="px-3 py-2"><div className="font-semibold">{t.nombre}</div><div className="text-[10px] text-gray-400 font-mono">{t.prefijo} · {t.electronica ? "electrónica AFIP" : "manual/proforma"}</div></td>
-                <td className="px-3 py-2"><input defaultValue={t.serie || ""} onBlur={(e) => e.target.value !== (t.serie || "") && patch(t.id, "serie", e.target.value)} className={inp + " w-20"} /></td>
-                <td className="px-3 py-2 text-right"><input type="number" defaultValue={t.nro_desde ?? 1} onBlur={(e) => Number(e.target.value) !== (t.nro_desde ?? 1) && patch(t.id, "nro_desde", e.target.value)} className={inp + " w-24 text-right"} /></td>
-                <td className="px-3 py-2 text-right"><input type="number" defaultValue={t.nro_hasta ?? ""} placeholder="—" onBlur={(e) => String(e.target.value) !== String(t.nro_hasta ?? "") && patch(t.id, "nro_hasta", e.target.value)} className={inp + " w-24 text-right"} /></td>
-                <td className="px-3 py-2 text-right"><input type="number" defaultValue={t.proximo_numero} onBlur={(e) => Number(e.target.value) !== t.proximo_numero && patch(t.id, "proximo_numero", e.target.value)} className={inp + " w-24 text-right font-semibold"} /></td>
-                <td className="px-3 py-2"><input defaultValue={t.cai || ""} placeholder="—" onBlur={(e) => e.target.value !== (t.cai || "") && patch(t.id, "cai", e.target.value)} className={inp + " w-28"} /></td>
-                <td className="px-3 py-2"><input type="date" defaultValue={t.vencimiento ? String(t.vencimiento).slice(0, 10) : ""} onBlur={(e) => e.target.value !== (t.vencimiento ? String(t.vencimiento).slice(0, 10) : "") && patch(t.id, "vencimiento", e.target.value)} className={inp} /></td>
-                <td className="px-3 py-2 text-center"><input type="checkbox" checked={!!t.defecto} onChange={(e) => patch(t.id, "defecto", e.target.checked)} /></td>
-                <td className="px-3 py-2 text-center"><input type="checkbox" checked={!!t.activo} onChange={(e) => patch(t.id, "activo", e.target.checked)} /></td>
-                <td className="px-3 py-2 text-center"><input type="checkbox" checked={!!t.bloqueado} onChange={(e) => patch(t.id, "bloqueado", e.target.checked)} /></td>
+            {rows.length === 0 ? <tr><td colSpan={9} className="text-center py-8 text-gray-400">Sin talonarios. Agregá uno arriba.</td></tr> :
+            rows.map((t) => (
+              <tr key={t.id} className="border-t border-gray-100 hover:bg-gray-50">
+                <td className="px-3 py-2"><div className="font-semibold">{t.tipo_nombre}</div><div className="text-[10px] text-gray-400 font-mono">{t.tipo_codigo}{t.electronica ? " · AFIP" : " · proforma"}</div></td>
+                <td className="px-3 py-2 font-mono">{t.sucursal}</td>
+                <td className="px-3 py-2">{t.serie || "—"}</td>
+                <td className="px-3 py-2 text-right font-mono font-semibold">{fmtNum(t.proximo_numero)}</td>
+                <td className="px-3 py-2 text-gray-500">{t.vencimiento ? String(t.vencimiento).slice(0, 10) : "—"}</td>
+                <td className="px-3 py-2 text-center">{t.defecto ? "✔" : ""}</td>
+                <td className="px-3 py-2 text-center">{t.activo ? chip("activo", "#16a34a") : chip("inactivo", "#94a3b8")}</td>
+                <td className="px-3 py-2 text-center">{t.bloqueado ? "🔒" : ""}</td>
+                <td className="px-3 py-2 text-right"><button onClick={() => setEditId(t.id)} className="text-febo-azul hover:underline text-xs">✏️ Editar</button></td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      {editId != null && <TalonarioModal tal={rows.find((r) => r.id === editId)} onClose={() => setEditId(null)} onSaved={load} />}
+    </div>
+  );
+}
+
+function TalonarioModal({ tal, onClose, onSaved }: { tal: any; onClose: () => void; onSaved: () => void }) {
+  const [t, setT] = useState({ ...tal });
+  const tipo = tipoPorCodigo(t.tipo_codigo);
+  const esFactura = tipo && (tipo.grupo === "factura" || tipo.grupo === "nc" || tipo.grupo === "nd");
+  const patch = async (campo: string, valor: any) => {
+    setT((p: any) => ({ ...p, [campo]: valor }));
+    await fetch("/api/talonarios", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: t.id, campo, valor }) });
+    onSaved();
+  };
+  const del = async () => { if (!confirm("¿Eliminar este talonario?")) return; await fetch("/api/talonarios?id=" + t.id, { method: "DELETE" }); onSaved(); onClose(); };
+  const lbl = "block text-[11px] uppercase text-gray-500 font-semibold mb-1";
+  const inp = "w-full border border-gray-300 rounded px-2 py-1.5 text-sm";
+  const F = ({ campo, label, type = "text" }: { campo: string; label: string; type?: string }) => (
+    <label><span className={lbl}>{label}</span><input type={type} defaultValue={t[campo] ?? ""} onBlur={(e) => String(e.target.value) !== String(t[campo] ?? "") && patch(campo, e.target.value)} className={inp} /></label>
+  );
+  const C = ({ campo, label }: { campo: string; label: string }) => (
+    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!t[campo]} onChange={(e) => patch(campo, e.target.checked)} />{label}</label>
+  );
+  return (
+    <div className="fixed inset-0 z-[130] bg-black/50 flex items-start justify-center overflow-auto py-6" onClick={onClose}>
+      <div className="bg-white rounded-xl w-[620px] max-w-[96vw] shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-febo-azul text-white rounded-t-xl px-5 py-3 flex items-center justify-between">
+          <div><div className="font-bold">Talonario · {t.tipo_nombre}</div><div className="text-xs opacity-80 font-mono">{t.tipo_codigo}{t.electronica ? " · Electrónica (AFIP)" : " · manual → proforma"}</div></div>
+          <button onClick={onClose} className="text-white/80 hover:text-white text-xl">✕</button>
+        </div>
+        <div className="p-5 grid grid-cols-2 gap-3">
+          <F campo="serie" label="Serie" />
+          <F campo="sucursal" label="Punto de venta / Sucursal" />
+          <label className="col-span-2"><span className={lbl}>Dirección de sucursal</span><input defaultValue={t.direccion_sucursal ?? ""} onBlur={(e) => e.target.value !== (t.direccion_sucursal ?? "") && patch("direccion_sucursal", e.target.value)} className={inp} /></label>
+          <F campo="modelo_impresora" label="Modelo impresora" />
+          <F campo="cantidad_max_items" label="Cant. máx. de ítems" type="number" />
+          <F campo="nro_desde" label="Desde" type="number" />
+          <F campo="nro_hasta" label="Hasta" type="number" />
+          <F campo="proximo_numero" label="Próximo número a emitir" type="number" />
+          <F campo="vencimiento" label="Fecha de vencimiento" type="date" />
+          {esFactura && <>
+            <F campo="cai" label="CAI" />
+            <F campo="nro_autorizacion" label="Nº de autorización" />
+            <F campo="fecha_autorizacion" label="Fecha de autorización" type="date" />
+          </>}
+          <div className="col-span-2 border-t border-gray-100 pt-3 grid grid-cols-2 gap-2">
+            <C campo="es_bono_fiscal" label="Es Bono Fiscal (solo factura electrónica)" />
+            <C campo="informar_traslado" label="Informar traslado (solo remitos)" />
+            <C campo="excluir_facturacion" label="Excluir de facturación (pedidos/remitos)" />
+            <C campo="defecto" label="Por defecto para este tipo" />
+            <C campo="activo" label="Activo" />
+            <C campo="bloqueado" label="Bloquear" />
+          </div>
+        </div>
+        <div className="border-t border-gray-200 p-3 flex justify-between bg-gray-50 rounded-b-xl">
+          <button onClick={del} className="text-red-500 text-sm hover:underline">🗑 Eliminar</button>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold">Listo</button>
+        </div>
       </div>
     </div>
   );
