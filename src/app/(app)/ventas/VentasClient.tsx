@@ -271,6 +271,39 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             </table>
           </div>
 
+          {/* Confirmación de proveedor / stock (compuerta antes de aprobar) */}
+          {(() => {
+            const conf = ped.proveedor_confirmado;
+            const proformas = ped.proforma_archivo || [];
+            const toB64 = (f: File) => new Promise<string>((res) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.readAsDataURL(f); });
+            const confirmar = async (files: FileList | null) => {
+              const arr: any[] = [];
+              if (files) for (const f of Array.from(files)) arr.push({ nombre: f.name, tipo: f.type, b64: await toB64(f) });
+              await accion({ accion: "confirmar_proveedor", archivos: arr });
+            };
+            return (
+              <div className={`rounded-lg p-3 border ${conf ? "border-emerald-200 bg-emerald-50/40" : "border-amber-300 bg-amber-50/40"}`}>
+                <div className="text-[11px] font-bold uppercase mb-2" style={{ color: conf ? "#059669" : "#b45309" }}>🏭 Confirmación de proveedor / stock</div>
+                {conf ? (
+                  <div className="text-sm text-emerald-700 flex flex-wrap items-center gap-3">
+                    <span>✔ Stock confirmado{ped.proveedor_confirmado_at ? " · " + new Date(ped.proveedor_confirmado_at).toLocaleDateString("es-AR") : ""}</span>
+                    {proformas.map((a: any, i: number) => <a key={i} href={`data:${a.tipo};base64,${a.b64}`} download={a.nombre} className="text-xs text-febo-azul underline">⬇ {a.nombre}</a>)}
+                    <button disabled={busy} onClick={() => accion({ accion: "desconfirmar_proveedor" })} className="text-xs text-gray-400 underline hover:text-red-500">quitar</button>
+                  </div>
+                ) : (
+                  <div className="text-sm text-amber-800">
+                    <div className="mb-2">Hasta no confirmar el stock con el proveedor (proforma / captura del mail) <b>no se puede aprobar</b> el pedido.</div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="text-xs">Adjuntar proforma / mail: <input type="file" multiple onChange={(e) => confirmar(e.target.files)} className="text-xs" /></label>
+                      <span className="text-xs text-gray-500">o</span>
+                      <button disabled={busy} onClick={() => confirmar(null)} className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">✔ Confirmar stock (manual)</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Comprobante de pago + verificar monto */}
           {(() => {
             const archivos = ped.comprobante_archivo || [];
@@ -368,7 +401,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           <button onClick={() => setProvPanel(!provPanel)} className="px-3 py-2 rounded-lg border border-violet-300 text-violet-700 text-sm font-semibold hover:bg-violet-50">🏭 Proveedor</button>
           {ped.estado === "pendiente_confirmacion" && <>
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
-            <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido?")} className="px-4 py-2 rounded-lg bg-emerald-500 text-white text-sm font-semibold hover:bg-emerald-600">✅ Aprobar pedido</button>
+            <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor"} onClick={() => accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido y avisar al cliente para el pago?")} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ped.proveedor_confirmado ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
           </>}
           {ped.estado === "aprobado" && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "pagado" }, "¿Marcar como pagado?")} className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">💰 Marcar pagado</button>}
           {ped.estado === "pagado" && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}

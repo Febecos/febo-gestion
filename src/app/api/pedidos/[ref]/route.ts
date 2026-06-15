@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+async function ensureCols(sql: any) {
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proveedor_confirmado boolean DEFAULT false`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proveedor_confirmado_at timestamptz`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proforma_archivo jsonb`.catch(() => {});
+}
+
 // GET /api/pedidos/[ref]  → detalle completo de un pedido (FV: fv_pedidos por numero; bomba: pedidos por id)
 export async function GET(_req: NextRequest, { params }: { params: { ref: string } }) {
   try {
@@ -9,7 +15,8 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
     let dolar = 0;
     try { const c = await sql`SELECT data FROM fv_config WHERE id=1`; dolar = Number((c[0] as any)?.data?.dolar) || 0; } catch {}
 
-    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
+    await ensureCols(sql);
+    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago, proveedor_confirmado, proveedor_confirmado_at, proforma_archivo FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
     if (fv.length) {
       const p = fv[0];
       // nombre canónico del cliente desde el presupuesto/CRM
@@ -24,6 +31,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         public_token: p.public_token, payload: p.payload || {}, dolar, fecha: p.recibido, cliente_id,
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
+        proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
       }});
     }
 
@@ -50,10 +58,25 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     const sql = getDb();
     const ref = decodeURIComponent(params.ref);
     const b = await req.json();
+    await ensureCols(sql);
     const esFv = (await sql`SELECT 1 FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[]).length > 0;
+
+    if (b.accion === "confirmar_proveedor") {
+      if (esFv) await sql`UPDATE fv_pedidos SET proveedor_confirmado=true, proveedor_confirmado_at=now(), proforma_archivo=${JSON.stringify(b.archivos || [])}::jsonb WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
+    }
+    if (b.accion === "desconfirmar_proveedor") {
+      if (esFv) await sql`UPDATE fv_pedidos SET proveedor_confirmado=false, proveedor_confirmado_at=null WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
+    }
 
     if (b.accion === "estado") {
       if (!ESTADOS_FV.includes(b.estado)) return NextResponse.json({ ok: false, error: "estado inválido" }, { status: 400 });
+      // Compuerta: no se puede aprobar sin confirmación de stock del proveedor
+      if (b.estado === "aprobado" && esFv) {
+        const c = await sql`SELECT proveedor_confirmado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
+        if (!c[0]?.proveedor_confirmado) return NextResponse.json({ ok: false, error: "Antes de aprobar tenés que confirmar el stock con el proveedor." }, { status: 409 });
+      }
       if (esFv) {
         if (b.estado === "aprobado") await sql`UPDATE fv_pedidos SET estado='aprobado', aprobado_at=now() WHERE numero=${ref}`;
         else if (b.estado === "pagado") await sql`UPDATE fv_pedidos SET estado='pagado', pagado_at=now() WHERE numero=${ref}`;
