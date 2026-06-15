@@ -1,16 +1,17 @@
 "use client";
 import { createContext, useContext, useState, useCallback, useRef, Suspense } from "react";
 import ClientesClient from "./clientes/ClientesClient";
+import ProveedoresClient from "./proveedores/ProveedoresClient";
 import VentasClient from "./ventas/VentasClient";
 import ProductosClient from "./productos/ProductosClient";
 import CotizadorEmbed from "./cotizadores/CotizadorEmbed";
 import ConfigClient from "./config/ConfigClient";
 
-export type WinKey = "clientes" | "ventas" | "productos" | "cot-bomba" | "cot-fv" | "presup-edit" | "config";
+export type WinKey = "clientes" | "proveedores" | "ventas" | "productos" | "cot-bomba" | "cot-fv" | "presup-edit" | "config";
 type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean; payload?: any };
 
 const TITULOS: Record<WinKey, string> = {
-  clientes: "👥 Clientes / CRM", ventas: "🧾 Ventas / Presupuestos", productos: "📦 Productos",
+  clientes: "👥 Clientes / CRM", proveedores: "🏭 Proveedores", ventas: "🧾 Ventas / Presupuestos", productos: "📦 Productos",
   "cot-bomba": "🔧 Cotizador de bombas", "cot-fv": "☀️ Cotizador fotovoltaico",
   "presup-edit": "✏️ Editar presupuesto",
   config: "⚙️ Configuración",
@@ -21,6 +22,7 @@ export const useWindows = () => useContext(Ctx)!;
 
 function Body({ k, payload }: { k: WinKey; payload?: any }) {
   if (k === "clientes") return <ClientesClient openClienteId={payload?.clienteId} />;
+  if (k === "proveedores") return <ProveedoresClient />;
   if (k === "ventas") return <VentasClient />;
   if (k === "productos") return <ProductosClient />;
   if (k === "config") return <ConfigClient />;

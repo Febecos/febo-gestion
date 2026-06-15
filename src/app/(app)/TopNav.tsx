@@ -5,6 +5,7 @@ import { useWindows, WinKey } from "./WindowManager";
 
 const MODULOS: { key: WinKey; label: string; icon: string }[] = [
   { key: "clientes", label: "Clientes", icon: "👥" },
+  { key: "proveedores", label: "Proveedores", icon: "🏭" },
   { key: "ventas", label: "Ventas", icon: "🧾" },
   { key: "productos", label: "Productos", icon: "📦" },
   { key: "cot-bomba", label: "Cotizar bomba", icon: "🔧" },
