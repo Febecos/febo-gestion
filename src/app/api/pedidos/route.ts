@@ -15,8 +15,11 @@ export async function GET(_req: NextRequest) {
     let fv: any[] = [];
     try {
       fv = await sql`
-        SELECT numero, estado, public_token, payload, metodo_pago
-        FROM fv_pedidos ORDER BY numero DESC LIMIT 300` as any[];
+        SELECT fp.numero, fp.estado, fp.public_token, fp.payload, fp.metodo_pago,
+               pr.public_token AS presup_token
+        FROM fv_pedidos fp
+        LEFT JOIN presupuestos pr ON pr.numero = fp.payload->>'presupuesto_numero'
+        ORDER BY fp.numero DESC LIMIT 300` as any[];
     } catch { fv = []; }
 
     const lista = [
@@ -34,7 +37,8 @@ export async function GET(_req: NextRequest) {
           cliente: pl.revendedor?.nombre || pl.cliente?.nombre || "—",
           detalle: (pl.items?.length ? `${pl.items.length} ítem(s)` : "FV"),
           total: Number(pl.totales?.total) || 0, moneda: pl.totales?.moneda || "USD",
-          estado: p.estado || "—", fecha: null, token: p.public_token,
+          estado: p.estado || "—", fecha: null,
+          token: p.presup_token || p.public_token,
           presup: pl.presupuesto_numero || null,
         };
       }),
