@@ -5,6 +5,8 @@ async function ensureCols(sql: any) {
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proveedor_confirmado boolean DEFAULT false`.catch(() => {});
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proveedor_confirmado_at timestamptz`.catch(() => {});
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proforma_archivo jsonb`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_numero text`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_token text`.catch(() => {});
 }
 
 // GET /api/pedidos/[ref]  → detalle completo de un pedido (FV: fv_pedidos por numero; bomba: pedidos por id)
@@ -16,7 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
     try { const c = await sql`SELECT data FROM fv_config WHERE id=1`; dolar = Number((c[0] as any)?.data?.dolar) || 0; } catch {}
 
     await ensureCols(sql);
-    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago, proveedor_confirmado, proveedor_confirmado_at, proforma_archivo FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
+    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago, proveedor_confirmado, proveedor_confirmado_at, proforma_archivo, factura_numero, factura_token FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
     if (fv.length) {
       const p = fv[0];
       // nombre canónico del cliente desde el presupuesto/CRM
@@ -32,6 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
         proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
+        factura_numero: p.factura_numero, factura_token: p.factura_token,
       }});
     }
 
@@ -122,6 +125,37 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       });
       const d = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON del admin" }));
       return NextResponse.json(d, { status: r.ok ? 200 : (r.status || 502) });
+    }
+    if (b.accion === "facturar") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const row = (await sql`SELECT payload, proveedor_confirmado, factura_numero, factura_token FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      if (!row.proveedor_confirmado) return NextResponse.json({ ok: false, error: "Confirmá el stock con el proveedor antes de facturar." }, { status: 409 });
+      if (row.factura_numero) return NextResponse.json({ ok: true, factura_numero: row.factura_numero, factura_token: row.factura_token, ya: true });
+
+      const pl = row.payload || {}; const items = pl.items || []; const tot = pl.totales || {};
+      const rev = pl.revendedor || pl.cliente || {};
+      let cliente_id: number | null = null;
+      if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; cliente_id = pr[0]?.cliente_id ?? null; }
+
+      await sql`CREATE TABLE IF NOT EXISTS fg_counters (clave TEXT PRIMARY KEY, ultimo_numero INT NOT NULL DEFAULT 0)`;
+      await sql`INSERT INTO fg_counters (clave, ultimo_numero) VALUES ('FA', 0) ON CONFLICT (clave) DO NOTHING`;
+      const nr = await sql`UPDATE fg_counters SET ultimo_numero = ultimo_numero + 1 WHERE clave='FA' RETURNING ultimo_numero` as any[];
+      const facturaNum = "FA-" + String(nr[0].ultimo_numero).padStart(6, "0");
+
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS vendedor TEXT`.catch(() => {});
+      const comp = (await sql`
+        INSERT INTO fg_comprobantes (tipo, estado, numero, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token)
+        VALUES ('factura','proforma',${facturaNum},${cliente_id},${rev.nombre || null}, now(), ${tot.neto || tot.total || 0}, ${tot.total || 0}, ${tot.moneda || "USD"}, ${"Pedido " + ref}, gen_random_uuid()::text)
+        RETURNING id, token` as any[])[0];
+
+      let orden = 0;
+      for (const it of items) {
+        await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
+          VALUES (${comp.id}, ${(it.descripcion || it.codigo || "").slice(0, 300)}, ${it.cantidad || 1}, ${it.pvp_sin_iva_usd ?? null}, ${it.subtotal ?? null}, ${orden++})`;
+      }
+      await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_token=${comp.token} WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: comp.token });
     }
     return NextResponse.json({ ok: false, error: "acción inválida" }, { status: 400 });
   } catch (e: any) {
