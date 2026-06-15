@@ -66,12 +66,15 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     }
     // Mail al proveedor: reusa el endpoint del admin (genera Excel "Pedido GSA" + email). 1 llamada por proveedor.
     if (b.accion === "proveedor") {
-      const tok = process.env.FV_ADMIN_TOKEN;
-      if (!tok) return NextResponse.json({ ok: false, error: "Falta FV_ADMIN_TOKEN en el servidor de gestión" }, { status: 500 });
+      const internal = process.env.INTERNAL_SERVICE_SECRET;
+      const fvTok = process.env.FV_ADMIN_TOKEN;
+      if (!internal && !fvTok) return NextResponse.json({ ok: false, error: "Falta INTERNAL_SERVICE_SECRET en el servidor de gestión" }, { status: 500 });
       if (!b.proveedor || !b.email_destinatario || !b.items?.length) return NextResponse.json({ ok: false, error: "proveedor, email e ítems requeridos" }, { status: 400 });
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (internal) headers["Authorization"] = "Bearer " + internal;
+      else headers["X-Admin-Token"] = fvTok!;
       const r = await fetch("https://febecos.com/api/admin?action=pedido-proveedor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Admin-Token": tok },
+        method: "POST", headers,
         body: JSON.stringify({ fv_numero: ref, proveedor: b.proveedor, email_destinatario: b.email_destinatario, mensaje: b.mensaje || "", items: b.items }),
       });
       const d = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON del admin" }));
