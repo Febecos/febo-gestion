@@ -48,7 +48,9 @@ export async function GET(req: NextRequest) {
            OR (coalesce(p.cliente_cuit,'') <> '' AND cc.cuit = p.cliente_cuit)
            OR (coalesce(p.cliente_email,'') <> '' AND lower(cc.email) = lower(p.cliente_email))
            OR (coalesce(p.cliente_telefono,'') <> '' AND length(regexp_replace(coalesce(cc.whatsapp,''),'\D','','g')) >= 8
-               AND right(regexp_replace(cc.whatsapp,'\D','','g'),10) = right(regexp_replace(p.cliente_telefono,'\D','','g'),10)))
+               AND right(regexp_replace(cc.whatsapp,'\D','','g'),10) = right(regexp_replace(p.cliente_telefono,'\D','','g'),10))
+           OR (coalesce(p.cliente_razon_social,'') <> '' AND lower(cc.razon_social) = lower(p.cliente_razon_social))
+           OR (coalesce(p.cliente_nombre,'') <> '' AND lower(cc.nombre) = lower(p.cliente_nombre)))
         ORDER BY (cc.id = p.cliente_id) DESC, (cc.cuit = p.cliente_cuit) DESC NULLS LAST, cc.id ASC
         LIMIT 1
       ) c ON true

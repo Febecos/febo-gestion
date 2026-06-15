@@ -43,6 +43,23 @@ async function main() {
     RETURNING p.id`;
   console.log(`  por teléfono: ${r3.length}`);
 
+  // por razón social / nombre (para Consumidor Final y otros sin cuit/email/tel)
+  const r4 = await sql`
+    UPDATE presupuestos p SET cliente_id = sub.cid
+    FROM (
+      SELECT pp.id AS pid, (
+        SELECT c.id FROM clientes c
+        WHERE (c.crm_eliminado IS NULL OR c.crm_eliminado = false)
+          AND ( (coalesce(pp.cliente_razon_social,'') <> '' AND lower(c.razon_social) = lower(pp.cliente_razon_social))
+             OR (coalesce(pp.cliente_nombre,'') <> '' AND lower(c.nombre) = lower(pp.cliente_nombre)) )
+        ORDER BY c.id ASC LIMIT 1
+      ) AS cid
+      FROM presupuestos pp WHERE pp.cliente_id IS NULL
+    ) sub
+    WHERE p.id = sub.pid AND sub.cid IS NOT NULL
+    RETURNING p.id`;
+  console.log(`  por razón social/nombre: ${r4.length}`);
+
   const tot = await sql`SELECT count(*)::int n, count(cliente_id)::int con FROM presupuestos`;
   console.log(`✓ ${tot[0].con}/${tot[0].n} presupuestos con cliente_id`);
 }

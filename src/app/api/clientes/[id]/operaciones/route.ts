@@ -10,11 +10,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const id = Number(params.id);
     if (!id) return NextResponse.json({ ok: false, error: "id inválido" }, { status: 400 });
 
-    // Datos del cliente para relacionar con presupuestos (no hay FK: se matchea por CUIT/email/teléfono)
-    const cl = await sql`SELECT cuit, email, whatsapp FROM clientes WHERE id = ${id} LIMIT 1`;
+    // Datos del cliente para relacionar con presupuestos (no hay FK: se matchea por CUIT/email/teléfono/nombre)
+    const cl = await sql`SELECT cuit, email, whatsapp, razon_social, nombre FROM clientes WHERE id = ${id} LIMIT 1`;
     const cuit = (cl[0]?.cuit || "").trim();
     const email = (cl[0]?.email || "").trim().toLowerCase();
     const tel10 = (cl[0]?.whatsapp || "").replace(/\D/g, "").slice(-10);
+    const razon = (cl[0]?.razon_social || "").trim();
+    const nom = (cl[0]?.nombre || "").trim();
 
     // Presupuestos REALES (tabla `presupuestos`, la de revendedores/coti) del cliente.
     // Siempre corre: el match por cliente_id vale aunque el cliente no tenga cuit/email/tel
@@ -28,6 +30,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
            OR (${cuit} <> '' AND cliente_cuit = ${cuit})
            OR (${email} <> '' AND lower(cliente_email) = ${email})
            OR (${tel10} <> '' AND length(${tel10}) >= 8 AND right(regexp_replace(coalesce(cliente_telefono,''),'\D','','g'),10) = ${tel10})
+           OR (${razon} <> '' AND lower(cliente_razon_social) = lower(${razon}))
+           OR (${nom} <> '' AND lower(cliente_nombre) = lower(${nom}))
         ORDER BY created_at DESC` as any[];
 
     // PEDIDOS REALES (fv_pedidos) del cliente → número propio PED-NNNN (no el PREV del presupuesto).
