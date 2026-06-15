@@ -137,7 +137,33 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         else if (b.estado === "cancelado") await sql`UPDATE fv_pedidos SET estado='cancelado', cancelado_at=now() WHERE numero=${ref}`;
         else await sql`UPDATE fv_pedidos SET estado=${b.estado} WHERE numero=${ref}`;
       } else await sql`UPDATE pedidos SET estado=${b.estado} WHERE id::text=${ref} OR numero=${ref}`;
-      return NextResponse.json({ ok: true, estado: b.estado });
+
+      // Al APROBAR un pedido FV → avisar al cliente para el pago (email vía selector/Resend).
+      let aviso_cliente: any = undefined;
+      if (b.estado === "aprobado" && esFv && b.avisar !== false) {
+        try {
+          const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+          const pl = row?.payload || {}; const rev = pl.revendedor || pl.cliente || {};
+          const email = String(rev.email || "").trim();
+          if (!email) { aviso_cliente = { ok: false, error: "El cliente no tiene email cargado" }; }
+          else {
+            let link = "";
+            if (pl.presupuesto_numero) {
+              const pr = await sql`SELECT public_token FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[];
+              if (pr[0]?.public_token) link = `https://fv.febecos.com/ver-presupuesto?token=${pr[0].public_token}`;
+            }
+            const internal = process.env.INTERNAL_SERVICE_SECRET; const fvTok = process.env.FV_ADMIN_TOKEN;
+            const headers: Record<string, string> = { "Content-Type": "application/json" };
+            if (internal) headers["Authorization"] = "Bearer " + internal; else if (fvTok) headers["X-Admin-Token"] = fvTok;
+            const r = await fetch("https://febecos.com/api/admin?action=notificar-pago-cliente", {
+              method: "POST", headers,
+              body: JSON.stringify({ email, nombre: rev.nombre || "", pedido_numero: ref, total: pl.totales?.total, moneda: pl.totales?.moneda || "USD", link }),
+            });
+            aviso_cliente = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON" }));
+          }
+        } catch (e: any) { aviso_cliente = { ok: false, error: e.message }; }
+      }
+      return NextResponse.json({ ok: true, estado: b.estado, aviso_cliente });
     }
     if (b.accion === "comprobante") {
       // b.archivos = [{nombre, tipo, b64}]

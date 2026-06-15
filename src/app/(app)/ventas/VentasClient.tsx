@@ -214,8 +214,15 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const accion = async (body: any, msg?: string) => {
     if (msg && !confirm(msg)) return;
     setBusy(true);
-    try { const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!d.ok) throw new Error(d.error); await load(); onChanged(); }
+    try { const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!d.ok) throw new Error(d.error); await load(); onChanged(); return d; }
     catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
+  };
+  const aprobar = async () => {
+    const d = await accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido y avisar al cliente para el pago?");
+    if (!d) return;
+    const av = d.aviso_cliente;
+    if (av && av.ok) alert("✅ Pedido aprobado. Aviso de pago enviado al cliente.");
+    else if (av && !av.ok) alert("✅ Pedido aprobado, pero NO se pudo avisar al cliente:\n" + (av.error || "error") + "\n\nRevisá el email del cliente en la solapa Detalle.");
   };
 
   return (
@@ -555,7 +562,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               </div>}
           {ped.estado === "pendiente_confirmacion" && <>
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
-            <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor"} onClick={() => accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido y avisar al cliente para el pago?")} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ped.proveedor_confirmado ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
+            <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor"} onClick={aprobar} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ped.proveedor_confirmado ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
           </>}
           {ped.estado === "aprobado" && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "pagado" }, "¿Marcar como pagado?")} className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">💰 Marcar pagado</button>}
           {ped.estado === "pagado" && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}
