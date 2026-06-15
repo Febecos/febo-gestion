@@ -281,7 +281,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               <tbody>
                 {items.map((it: any, i: number) => (
                   <tr key={i} className="border-t border-gray-100 align-top">
-                    <td className="px-2 py-1.5"><div className="font-semibold text-febo-azul">{it.codigo} {it.proveedor && chip(it.proveedor, "#64748b")}</div><div className="text-xs text-gray-500">{it.descripcion}</div></td>
+                    <td className="px-2 py-1.5"><div className="font-semibold text-febo-azul">{it.codigo} {(it.emisor || it.proveedor) && chip(it.emisor || it.proveedor, "#64748b")}</div><div className="text-xs text-gray-500">{it.descripcion}</div></td>
                     <td className="px-2 py-1.5 text-center font-bold">{it.cantidad}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{nf(v(it.costo_usd))}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{nf(v(it.pvp_sin_iva_usd))}</td>
@@ -341,7 +341,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             const pagos: any[] = Array.isArray(ped.pago_proveedor) ? ped.pago_proveedor : (ped.pago_proveedor ? [ped.pago_proveedor] : []);
             // proveedores presentes en el pedido + su costo
             const costoProv: Record<string, number> = {};
-            items.forEach((it: any) => { const k = it.proveedor || "Sin proveedor"; costoProv[k] = (costoProv[k] || 0) + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1); });
+            items.forEach((it: any) => { const k = it.emisor || it.proveedor || "Sin proveedor"; costoProv[k] = (costoProv[k] || 0) + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1); });
             const provs = Object.keys(costoProv);
             const provSel = pp.proveedor || provs[0] || "Sin proveedor";
             const costoP = costoProv[provSel] || 0;
@@ -453,7 +453,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           {/* Pedido a proveedor — checkboxes por ítem, parcial, anti-doble envío */}
           {tab === "prov" && !cancelado && (() => {
             const grupos: Record<string, any[]> = {};
-            items.forEach((it: any, idx: number) => { const k = it.proveedor || "Sin proveedor"; (grupos[k] = grupos[k] || []).push({ ...it, _idx: idx }); });
+            items.forEach((it: any, idx: number) => { const k = it.emisor || it.proveedor || "Sin proveedor"; (grupos[k] = grupos[k] || []).push({ ...it, _idx: idx }); });
             const enviados = ped.pedidos_proveedor || [];
             // Ítems ya pedidos (por código) por proveedor → quedan bloqueados salvo desbloqueo (admin)
             const orderedCodes: Record<string, Set<string>> = {};
@@ -503,7 +503,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         <div className="font-semibold text-sm">{chip(prov, "#7c3aed")} <span className="text-gray-500 text-xs ml-1">{pendientes} pendiente(s) de {its.length}</span>{yaEnv && <span className="text-emerald-600 text-xs ml-2">✅ enviado</span>}</div>
                         <div className="flex gap-2">
                           {hayBloqueados && !unlockedProv[prov] && <button onClick={() => desbloquear(prov)} className="px-2.5 py-1.5 rounded-lg border border-gray-300 text-xs font-semibold text-gray-600 hover:bg-gray-50" title="Solo administrador">🔓 Desbloquear</button>}
-                          <button disabled={busy || pendientes === 0} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${pendientes === 0 ? "bg-gray-300 cursor-not-allowed" : yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{pendientes === 0 ? "✅ Todo pedido" : yaEnv ? "📤 Enviar pendientes" : (prov === "Multiradio" ? "📤 Generar Excel y Enviar" : "📤 Enviar pedido")}</button>
+                          <button disabled={busy || pendientes === 0} onClick={() => enviarProv(prov, its)} className={`px-3 py-1.5 rounded-lg text-white text-xs font-semibold ${pendientes === 0 ? "bg-gray-300 cursor-not-allowed" : yaEnv ? "bg-amber-500 hover:bg-amber-600" : "bg-violet-600 hover:bg-violet-700"}`}>{pendientes === 0 ? "✅ Todo pedido" : yaEnv ? "📤 Enviar pendientes" : (/^multi/i.test(prov) ? "📤 Generar Excel y Enviar" : "📤 Enviar pedido")}</button>
                         </div>
                       </div>
                       <table className="w-full text-xs mb-2">

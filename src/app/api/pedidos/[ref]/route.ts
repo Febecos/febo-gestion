@@ -11,6 +11,20 @@ async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
 }
 const hoy = () => new Date().toISOString().slice(0, 10);
 
+// Enriquece los ítems con el `emisor` (Multiradio/Multisolar/Multipoint) buscándolo en
+// fg_productos por código. Así un pedido se puede dividir por emisor (proforma/cuenta).
+async function enrichEmisor(sql: any, items: any[]): Promise<any[]> {
+  if (!Array.isArray(items) || !items.length) return items || [];
+  const faltan = items.filter((it) => !it.emisor && it.codigo).map((it) => String(it.codigo));
+  if (!faltan.length) return items;
+  let map: Record<string, string> = {};
+  try {
+    const rows = await sql`SELECT codigo, emisor FROM fg_productos WHERE emisor IS NOT NULL AND codigo = ANY(${faltan})` as any[];
+    for (const r of rows) map[String(r.codigo)] = r.emisor;
+  } catch {}
+  return items.map((it) => (it.emisor || !map[String(it.codigo)]) ? it : { ...it, emisor: map[String(it.codigo)] });
+}
+
 async function ensureCols(sql: any) {
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proveedor_confirmado boolean DEFAULT false`.catch(() => {});
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proveedor_confirmado_at timestamptz`.catch(() => {});
@@ -40,9 +54,11 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         cliente_id = pr[0]?.cliente_id ?? null;
       }
       const provSent = await sql`SELECT proveedor, items, total_costo_usd, email_destinatario, gsa_numero, estado, created_at FROM pedidos_proveedores WHERE fv_numero=${ref} ORDER BY created_at`.catch(() => []) as any[];
+      const payloadEnriq = p.payload || {};
+      payloadEnriq.items = await enrichEmisor(sql, payloadEnriq.items || []);
       return NextResponse.json({ ok: true, pedido: {
         origen: "fv", numero: p.numero, estado: p.estado || "pendiente_confirmacion",
-        public_token: p.public_token, payload: p.payload || {}, dolar, fecha: p.recibido, cliente_id,
+        public_token: p.public_token, payload: payloadEnriq, dolar, fecha: p.recibido, cliente_id,
         pedidos_proveedor: provSent,
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
@@ -87,9 +103,9 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         await sql`UPDATE fv_pedidos SET proveedor_confirmado=true, proveedor_confirmado_at=now(), proforma_archivo=${JSON.stringify(b.archivos || [])}::jsonb WHERE numero=${ref}`;
         // Cta cte proveedor: nace lo que le debemos (costo USD) al confirmar stock, por proveedor.
         const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
-        const items = row?.payload?.items || [];
+        const items = await enrichEmisor(sql, row?.payload?.items || []);
         const porProv: Record<string, number> = {};
-        for (const it of items) { const k = it.proveedor || "Sin proveedor"; porProv[k] = (porProv[k] || 0) + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1); }
+        for (const it of items) { const k = it.emisor || it.proveedor || "Sin proveedor"; porProv[k] = (porProv[k] || 0) + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1); }
         for (const [prov, costo] of Object.entries(porProv)) {
           if (costo <= 0) continue;
           const pr = await resolveProveedor(sql, prov);
