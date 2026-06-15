@@ -312,6 +312,41 @@ const linkPresup = (tipo: string, token: string) =>
   tipo === "fv" ? `https://fv.febecos.com/ver-presupuesto?token=${token}` : `${COTI_BASE}/p/${token}`;
 const esPedidoEstado = (e: string) => ["pedido", "convertido"].includes((e || "").toLowerCase());
 
+function CtaCteCliente({ clienteId }: { clienteId: number }) {
+  const [movs, setMovs] = useState<any[]>([]); const [saldo, setSaldo] = useState(0); const [dolar, setDolar] = useState(0); const [open, setOpen] = useState(false); const [loaded, setLoaded] = useState(false);
+  useEffect(() => { fetch(`/api/ctacte?ambito=cliente&cliente_id=${clienteId}`).then((r) => r.json()).then((d) => { if (d.ok) { setMovs(d.movimientos || []); setSaldo(d.saldo || 0); setDolar(d.dolar || 0); } setLoaded(true); }).catch(() => setLoaded(true)); }, [clienteId]);
+  if (!loaded || (movs.length === 0 && Math.abs(saldo) < 0.01)) return null;
+  let acum = 0;
+  return (
+    <div className="mb-3 rounded-lg border border-gray-200 bg-white">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm">
+        <span className="font-semibold text-febo-azul">💳 Cuenta corriente</span>
+        <span className="flex items-center gap-2">
+          <b className={saldo > 0.01 ? "text-red-600" : "text-emerald-600"}>USD {saldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}{dolar > 0 ? " · $ " + Math.round(saldo * dolar).toLocaleString("es-AR") : ""}</b>
+          <span className="text-gray-400 text-xs">{saldo > 0.01 ? "(nos debe)" : "(al día)"}</span>
+          <span className="text-gray-400">{open ? "▲" : "▼"}</span>
+        </span>
+      </button>
+      {open && <div className="border-t border-gray-100 px-3 py-2 overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-[10px] uppercase text-gray-400"><tr><th className="text-left py-1">Fecha</th><th className="text-left py-1">Concepto</th><th className="text-right py-1">Debe</th><th className="text-right py-1">Haber</th><th className="text-right py-1">Saldo</th></tr></thead>
+          <tbody>
+            {movs.map((m, i) => { const d = Number(m.debe) || 0, h = Number(m.haber) || 0; acum += d - h; return (
+              <tr key={i} className="border-t border-gray-100">
+                <td className="py-1 text-gray-500 whitespace-nowrap">{m.fecha ? new Date(m.fecha).toLocaleDateString("es-AR") : "—"}</td>
+                <td className="py-1">{m.concepto}{m.comprobante ? " · " + m.comprobante : ""}</td>
+                <td className="py-1 text-right tabular-nums text-gray-600">{d ? d.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : ""}</td>
+                <td className="py-1 text-right tabular-nums text-gray-600">{h ? h.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : ""}</td>
+                <td className="py-1 text-right tabular-nums font-semibold">{acum.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+              </tr>
+            ); })}
+          </tbody>
+        </table>
+      </div>}
+    </div>
+  );
+}
+
 function OperacionesTab({ clienteId }: { clienteId: number }) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -346,6 +381,7 @@ function OperacionesTab({ clienteId }: { clienteId: number }) {
 
   return (
     <div>
+      <CtaCteCliente clienteId={clienteId} />
       <div className="flex flex-wrap items-center gap-3 mb-3">
         <span style={{ background: (estadoChip[1] as string) + "1a", color: estadoChip[1] as string }} className="rounded-lg px-3 py-1.5 text-sm font-semibold">{estadoChip[0]}</span>
         <div className="ml-auto grid grid-cols-2 sm:grid-cols-4 gap-x-5 gap-y-1 text-sm">

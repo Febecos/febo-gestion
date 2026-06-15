@@ -693,18 +693,27 @@ function Operaciones() {
 function CuentasCorrientes() {
   const [amb, setAmb] = useState<"clientes" | "proveedores">("clientes");
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
+  const [dolar, setDolar] = useState(0); const [owner, setOwner] = useState(false);
   const [sel, setSel] = useState<{ tipo: string; key: string | number; nombre: string } | null>(null);
-  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?listar=" + amb).then((r) => r.json()).then((d) => { setRows(d.ok ? d.cuentas : []); setLoading(false); }); }, [amb]);
+  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?listar=" + amb).then((r) => r.json()).then((d) => { setRows(d.ok ? d.cuentas : []); setDolar(d.dolar || 0); setLoading(false); }); }, [amb]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setOwner(!!d.es_owner)).catch(() => {}); }, []);
   const totalSaldo = rows.reduce((a, r) => a + Number(r.saldo || 0), 0);
+  const ars = (usd: number) => dolar > 0 ? ` · $ ${Math.round(usd * dolar).toLocaleString("es-AR")}` : "";
+  const resetear = async () => {
+    if (!confirm("¿PONER EN CERO toda la cuenta corriente (clientes y proveedores)? Esto borra todos los movimientos. Usar solo después de las pruebas.")) return;
+    const r = await fetch("/api/ctacte?reset=1", { method: "DELETE" }); const d = await r.json();
+    if (d.ok) { alert("✅ Cuenta corriente en cero."); load(); } else alert("Error: " + d.error);
+  };
   return (
     <div>
-      <div className="flex gap-1 mb-3 text-sm">
+      <div className="flex gap-1 mb-3 text-sm items-center">
         {(["clientes", "proveedores"] as const).map((k) => (
           <button key={k} onClick={() => setAmb(k)} className={`px-4 py-1.5 rounded-lg font-semibold ${amb === k ? "bg-febo-azul text-white" : "bg-gray-100 text-gray-600"}`}>{k === "clientes" ? "👤 Clientes" : "🏭 Proveedores"}</button>
         ))}
+        {owner && <button onClick={resetear} className="ml-auto px-3 py-1.5 rounded-lg border border-red-200 text-red-500 text-xs font-semibold hover:bg-red-50" title="Borra todos los movimientos (post-pruebas)">🧹 Poner en cero (pruebas)</button>}
       </div>
-      <div className="text-sm text-gray-500 mb-3">{rows.length} cuenta(s) con saldo · {amb === "clientes" ? "saldo > 0 = el cliente nos debe" : "saldo > 0 = le debemos al proveedor"} · Total: <b className="text-febo-azul">USD {totalSaldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b></div>
+      <div className="text-sm text-gray-500 mb-3">{rows.length} cuenta(s) con saldo · {amb === "clientes" ? "saldo > 0 = el cliente nos debe" : "saldo > 0 = le debemos al proveedor"} · Total: <b className="text-febo-azul">USD {totalSaldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}{ars(totalSaldo)}</b></div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
@@ -719,7 +728,7 @@ function CuentasCorrientes() {
                 <td className="px-4 py-2 font-semibold">{r.nombre}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-gray-500">{Number(r.debe).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-gray-500">{Number(r.haber).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
-                <td className={`px-4 py-2 text-right tabular-nums font-bold ${Number(r.saldo) > 0.01 ? "text-red-600" : "text-emerald-600"}`}>{Number(r.saldo).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+                <td className={`px-4 py-2 text-right tabular-nums font-bold ${Number(r.saldo) > 0.01 ? "text-red-600" : "text-emerald-600"}`}>{Number(r.saldo).toLocaleString("es-AR", { minimumFractionDigits: 2 })}<span className="block text-[10px] font-normal text-gray-400">{dolar > 0 ? "$ " + Math.round(Number(r.saldo) * dolar).toLocaleString("es-AR") : ""}</span></td>
               </tr>
             ))}
           </tbody>
@@ -731,9 +740,9 @@ function CuentasCorrientes() {
 }
 
 function CtaCteDetalle({ ambito, keyVal, nombre, onClose }: { ambito: string; keyVal: string | number; nombre: string; onClose: () => void }) {
-  const [movs, setMovs] = useState<any[]>([]); const [saldo, setSaldo] = useState(0); const [loading, setLoading] = useState(true);
+  const [movs, setMovs] = useState<any[]>([]); const [saldo, setSaldo] = useState(0); const [loading, setLoading] = useState(true); const [dolar, setDolar] = useState(0);
   const qs = ambito === "cliente" ? "ambito=cliente&cliente_id=" + keyVal : "ambito=proveedor&proveedor=" + encodeURIComponent(String(keyVal));
-  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?" + qs).then((r) => r.json()).then((d) => { setMovs(d.ok ? d.movimientos : []); setSaldo(d.saldo || 0); setLoading(false); }); }, [qs]);
+  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?" + qs).then((r) => r.json()).then((d) => { setMovs(d.ok ? d.movimientos : []); setSaldo(d.saldo || 0); setDolar(d.dolar || 0); setLoading(false); }); }, [qs]);
   useEffect(() => { load(); }, [load]);
   let acum = 0;
   return (
@@ -744,7 +753,7 @@ function CtaCteDetalle({ ambito, keyVal, nombre, onClose }: { ambito: string; ke
           <button onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">✕</button>
         </div>
         <div className="px-5 py-2 border-b border-gray-200 bg-gray-50 text-sm">
-          Saldo: <b className={saldo > 0.01 ? "text-red-600" : "text-emerald-600"}>USD {saldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</b>
+          Saldo: <b className={saldo > 0.01 ? "text-red-600" : "text-emerald-600"}>USD {saldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}{dolar > 0 ? " · $ " + Math.round(saldo * dolar).toLocaleString("es-AR") : ""}</b>
           <span className="text-gray-400 ml-2">{ambito === "cliente" ? (saldo > 0.01 ? "(nos debe)" : "(al día)") : (saldo > 0.01 ? "(le debemos)" : "(al día)")}</span>
         </div>
         <div className="flex-1 overflow-auto p-4">
