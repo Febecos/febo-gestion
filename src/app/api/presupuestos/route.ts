@@ -15,6 +15,10 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(500, Number(sp.get("limit")) || 200);
     const like = `%${q}%`;
 
+    // Asegurar columnas de vendedor (pueden no existir si aún no se guardó ningún FV)
+    await sql`ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS vendedor TEXT`.catch(() => {});
+    await sql`ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS vendedor_email TEXT`.catch(() => {});
+
     const rows = await sql`
       SELECT
         p.id, p.numero, COALESCE(p.tipo,'bomba') AS tipo, p.estado,
