@@ -70,9 +70,9 @@ export async function numeroDesdeTalonario(sql: any, id: number): Promise<{
 
   const tipo = tipoPorCodigo(t.tipo_codigo);
   const letra = tipo?.letra || "";
-  const prefijo = PREFIJO[tipo?.grupo || "factura"] ?? "FA";
-  const pv = String(t.sucursal || "0001").replace(/\D/g, "").padStart(4, "0").slice(-4);
+  // Número = PtoVta(5) - Número(8), formato AFIP. El punto de venta sale del talonario (config).
+  const pv = String(t.sucursal || "1").replace(/\D/g, "").padStart(5, "0").slice(-5);
   const num8 = String(emitido).padStart(8, "0");
-  const numero = [prefijo, letra, `${pv}-${num8}`].filter(Boolean).join(" ");
+  const numero = `${pv}-${num8}`;
   return { numero, emitido, letra, tipo_codigo: t.tipo_codigo, electronica: !!t.electronica, talonario_id: t.id };
 }
