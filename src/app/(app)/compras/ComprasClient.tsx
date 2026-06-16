@@ -15,6 +15,7 @@ export default function ComprasClient() {
   const [emails, setEmails] = useState<Record<string, string>>({}); const [msgs, setMsgs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [pend, setPend] = useState<any[]>([]); const [editId, setEditId] = useState<number | null>(null);
+  const [sel, setSel] = useState(0);
 
   const buscar = useCallback(() => {
     const p = new URLSearchParams({ limit: "200" });
@@ -27,6 +28,13 @@ export default function ComprasClient() {
   useEffect(() => { loadPend(); }, [loadPend]);
 
   const productosFiltrados = (data.productos || []).filter((p: any) => stockF === "todos" || (stockF === "stock" ? p.en_stock : p.a_confirmar));
+  useEffect(() => { setSel(0); }, [q, cat, stockF, data]);
+  const onKeyNav = (e: React.KeyboardEvent) => {
+    if (!productosFiltrados.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setSel((s) => Math.min(s + 1, productosFiltrados.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); const p = productosFiltrados[sel]; if (p) add(p); }
+  };
   const add = (p: any) => { const k = (p.emisor || p.proveedor); if (cart.some((it) => it.codigo === p.codigo && (it.emisor || it.proveedor) === k)) return; setCart([...cart, { codigo: p.codigo, descripcion: p.descripcion, costo_usd: p.costo_usd || 0, proveedor: p.proveedor, emisor: p.emisor, cantidad: 1 }]); };
   const setCant = (i: number, v: any) => setCart(cart.map((it, j) => j === i ? { ...it, cantidad: Number(v) || 0 } : it));
   const quitar = (i: number) => setCart(cart.filter((_, j) => j !== i));
@@ -78,7 +86,7 @@ export default function ComprasClient() {
         {/* Buscador */}
         <div className="flex-1 min-w-0 flex flex-col">
           <div className="flex gap-2 mb-2">
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Código, descripción o fabricante…" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKeyNav} autoFocus placeholder="Código, descripción o fabricante… (↑↓ y Enter para agregar)" className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm" />
             <select value={cat} onChange={(e) => setCat(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-2 text-sm">
               <option value="">Todas las categorías</option>
               {(data.categorias || []).map((c: any) => <option key={c.categoria} value={c.categoria}>{c.categoria} ({c.n})</option>)}
@@ -94,8 +102,8 @@ export default function ComprasClient() {
               <thead className="bg-gray-50 text-gray-500 text-xs uppercase sticky top-0"><tr><th className="text-left px-3 py-2">Producto</th><th className="text-left px-3 py-2">Emisor</th><th className="text-right px-3 py-2">Costo USD</th><th></th></tr></thead>
               <tbody>
                 {productosFiltrados.length === 0 ? <tr><td colSpan={4} className="text-center py-8 text-gray-400">Buscá productos arriba</td></tr> :
-                productosFiltrados.map((p: any) => (
-                  <tr key={p.id} className="border-t border-gray-100 hover:bg-blue-50">
+                productosFiltrados.map((p: any, i: number) => (
+                  <tr key={p.id} onMouseEnter={() => setSel(i)} className={`border-t border-gray-100 ${i === sel ? "bg-blue-100" : "hover:bg-blue-50"}`}>
                     <td className="px-3 py-1.5"><div className="font-semibold text-febo-azul">{p.codigo} {p.en_stock ? chip("en stock", "#16a34a") : chip("a confirmar", "#d97706")}</div><div className="text-[11px] text-gray-500">{(p.descripcion || "").slice(0, 70)}</div></td>
                     <td className="px-3 py-1.5 text-xs text-gray-600">{p.emisor || p.proveedor || "—"}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums">{p.costo_usd ? Number(p.costo_usd).toFixed(2) : "—"}</td>
