@@ -95,6 +95,7 @@ function ProvModal({ prov, onClose, onSaved }: { prov: Prov | null; onClose: () 
             {F("nombre_fantasia", "Nombre de fantasía", true)}
             {F("rubro", "Rubro / qué provee")}
             {F("condicion_iva", "Condición IVA")}
+            {F("alias", "Alias (nombres en listas/pedidos, separá con coma)", true)}
             {F("contacto", "Persona de contacto")}
             {F("telefono", "Teléfono / WhatsApp")}
             {F("email", "Email", true)}
@@ -108,7 +109,10 @@ function ProvModal({ prov, onClose, onSaved }: { prov: Prov | null; onClose: () 
           {!esNuevo && p.id && <ComprasProv prov={p} />}
           {!esNuevo && p.id && <CtaCteProv provId={p.id} />}
         </div>
-        <div className="border-t border-gray-200 p-3 flex justify-end bg-gray-50">
+        <div className="border-t border-gray-200 p-3 flex justify-between bg-gray-50">
+          {!esNuevo
+            ? <button onClick={async () => { if (!confirm("¿Eliminar este proveedor? (usalo para borrar duplicados). Si tiene cuenta corriente, reseteala antes o quedará huérfana.")) return; const r = await fetch("/api/proveedores?id=" + p.id, { method: "DELETE" }); const d = await r.json(); if (d.ok) { onSaved(); onClose(); } else alert("Error: " + d.error); }} className="text-red-500 text-sm hover:underline">🗑 Eliminar</button>
+            : <span />}
           {esNuevo
             ? <button disabled={saving} onClick={guardar} className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold">{saving ? "Guardando…" : "💾 Crear proveedor"}</button>
             : <button onClick={onClose} className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold">Listo</button>}
