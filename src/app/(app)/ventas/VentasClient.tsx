@@ -59,7 +59,7 @@ export default function VentasClient() {
 }
 
 // ---------- PRESUPUESTOS (tabla real, coti) ----------
-type Presup = { id: number; numero: string; tipo: string; estado: string; cliente_display: string; cliente_nombre: string; cliente_apellido: string; cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string; precio_ofrecido: number; revendedor_nombre: string; public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string; pedido_numero?: string | null; factura_numero?: string | null; vendedor?: string | null; vendedor_email?: string | null };
+type Presup = { id: number; numero: string; tipo: string; estado: string; cliente_display: string; cliente_nombre: string; cliente_apellido: string; cliente_razon_social: string; bomba_codigo: string; bomba_descripcion: string; precio_ofrecido: number; revendedor_nombre: string; public_token: string; revendedor_token: string; cliente_id: number | null; created_at: string; pedido_numero?: string | null; factura_numero?: string | null; vendedor?: string | null; vendedor_email?: string | null; moneda?: string | null; tc?: number | null };
 const tienePedido = (r: Presup) => !!r.pedido_numero || ["pedido", "convertido", "pagado", "anulado"].includes((r.estado || "").toLowerCase());
 
 function Presupuestos() {
