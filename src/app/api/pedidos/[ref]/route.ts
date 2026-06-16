@@ -4,6 +4,16 @@ import { movCtaCte, delMov, delMovPrefijo } from "@/lib/ctacte";
 import { resolveProveedor } from "@/lib/proveedores";
 import { numeroDesdeTalonario, letraFacturaPara, leyendasFactura, condicionIvaReceptor } from "@/lib/talonarios";
 import { tipoPorCodigo } from "@/lib/talonarios-tipos";
+import { tipoCbteAfip, docTipoReceptor, condicionIvaReceptorId, alicIvaId } from "@/lib/afip-codigos";
+
+// Llama al selector (febecos.com/api/admin) con auth interno. action="x" o "x&p=v".
+async function callSelector(action: string, body?: any): Promise<any> {
+  const internal = process.env.INTERNAL_SERVICE_SECRET; const fvTok = process.env.FV_ADMIN_TOKEN;
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (internal) headers["Authorization"] = "Bearer " + internal; else if (fvTok) headers["X-Admin-Token"] = fvTok;
+  const r = await fetch("https://febecos.com/api/admin?action=" + action, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
+  return r.json().catch(() => ({ ok: false, error: "respuesta no-JSON del admin" }));
+}
 
 async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
   const pn = payload?.presupuesto_numero;
@@ -259,8 +269,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; cliente_id = pr[0]?.cliente_id ?? null; }
 
       // ── Validación AFIP: la letra de factura depende de la condición fiscal del cliente ──
-      let condicion: string | null = null;
-      if (cliente_id) { const cl = await sql`SELECT condicion_fiscal FROM clientes WHERE id=${cliente_id} LIMIT 1` as any[]; condicion = cl[0]?.condicion_fiscal || null; }
+      let condicion: string | null = null; let clienteCuit: string = rev.cuit || "";
+      if (cliente_id) { const cl = await sql`SELECT condicion_fiscal, cuit FROM clientes WHERE id=${cliente_id} LIMIT 1` as any[]; condicion = cl[0]?.condicion_fiscal || null; clienteCuit = cl[0]?.cuit || clienteCuit; }
       const letraReq = letraFacturaPara(condicion);
       if (!letraReq) return NextResponse.json({ ok: false, error: "El cliente no tiene condición fiscal cargada: no se puede emitir factura. Cargala en la ficha del cliente." }, { status: 409 });
 
@@ -280,19 +290,6 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         if (!cand) return NextResponse.json({ ok: false, error: `No hay talonario de Factura ${letraReq} cargado (lo requiere la condición del cliente). Cargalo en Configuración → Talonarios.` }, { status: 409 });
         talId = cand.id;
       }
-      let facturaNum: string;
-      let letraFac: string | null = null;
-      if (talId) {
-        const n = await numeroDesdeTalonario(sql, talId);
-        if (!n) return NextResponse.json({ ok: false, error: "talonario inválido" }, { status: 400 });
-        facturaNum = n.numero; letraFac = n.letra || null;
-      } else {
-        await sql`CREATE TABLE IF NOT EXISTS fg_counters (clave TEXT PRIMARY KEY, ultimo_numero INT NOT NULL DEFAULT 0)`;
-        await sql`INSERT INTO fg_counters (clave, ultimo_numero) VALUES ('FA', 0) ON CONFLICT (clave) DO NOTHING`;
-        const nr = await sql`UPDATE fg_counters SET ultimo_numero = ultimo_numero + 1 WHERE clave='FA' RETURNING ultimo_numero` as any[];
-        facturaNum = "FA-" + String(nr[0].ultimo_numero).padStart(6, "0");
-      }
-
       // ── Moneda de la factura: USD o ARS (pesos). TC editable al cerrar. ──
       const facturaMoneda = (b.moneda === "ARS" || b.moneda === "$") ? "ARS" : "USD";
       let tc = 1;
@@ -301,12 +298,48 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         if (!tc) { try { const cfg = await sql`SELECT data FROM fv_config WHERE id=1` as any[]; tc = Number(cfg[0]?.data?.dolar) || 0; } catch {} }
         if (!tc) return NextResponse.json({ ok: false, error: "Para facturar en pesos falta el tipo de cambio (TC)." }, { status: 409 });
       }
-      const conv = (n: any) => facturaMoneda === "ARS" ? Math.round((Number(n) || 0) * tc) : (Number(n) || 0);
+      const conv = (n: any) => facturaMoneda === "ARS" ? Math.round((Number(n) || 0) * tc) : +(Number(n) || 0).toFixed(2);
       const ivaDetalle = Array.isArray(tot.iva_detalle)
         ? tot.iva_detalle.map((d: any) => ({ ...d, monto: conv(d.monto ?? d.importe) }))
         : (tot.iva_detalle && typeof tot.iva_detalle === "object"
             ? Object.fromEntries(Object.entries(tot.iva_detalle).map(([k, v]) => [k, conv(v)]))
             : null);
+
+      // ── Numeración + (si el talonario es ELECTRÓNICO) emisión AFIP/ARCA CAE (WSFEv1) ──
+      const tipoTal = tipoPorCodigo((facturaTals.find((x) => x.id === talId) || {}).tipo_codigo || "");
+      const esElectronica = !!tipoTal?.electronica;
+      let facturaNum: string; let letraFac: string | null = tipoTal?.letra || letraReq || null;
+      let afip: any = null;
+      if (esElectronica) {
+        const talFull = (await sql`SELECT sucursal FROM fg_talonarios WHERE id=${talId} LIMIT 1` as any[])[0];
+        const ptoVta = Number(String(talFull?.sucursal || "1").replace(/\D/g, "")) || 1;
+        const cbteTipo = tipoCbteAfip(tipoTal!.grupo, tipoTal!.letra || "");
+        if (!cbteTipo) return NextResponse.json({ ok: false, error: "Tipo de comprobante AFIP no mapeado." }, { status: 400 });
+        const condId = condicionIvaReceptorId(condicion);
+        if (!condId) return NextResponse.json({ ok: false, error: "Condición IVA del receptor no mapeada para AFIP." }, { status: 409 });
+        const doc = docTipoReceptor(clienteCuit);
+        if (tipoTal!.letra === "A" && doc.tipo !== 80) return NextResponse.json({ ok: false, error: "Factura A requiere CUIT válido del receptor." }, { status: 409 });
+        const esFacturaC = tipoTal!.letra === "C";
+        const byPct: Record<string, number> = {};
+        for (const it of items) { const pct = String(Number(it.iva_pct ?? 21)); byPct[pct] = (byPct[pct] || 0) + conv(it.subtotal); }
+        const ivaArr = esFacturaC ? [] : Object.entries(byPct).map(([pct, base]) => ({ id: alicIvaId(+pct), base: +Number(base).toFixed(2), importe: +(Number(base) * (+pct) / 100).toFixed(2) }));
+        const impIVA = +ivaArr.reduce((a, x) => a + x.importe, 0).toFixed(2);
+        const neto = conv(tot.neto || tot.total || 0); const total = conv(tot.total || 0);
+        let monId = "PES", monCotiz = 1, canMis: string | null = null;
+        if (facturaMoneda === "USD") { monId = "DOL"; canMis = "S"; try { const cz = await callSelector("wsfe-cotizacion&mon=DOL"); monCotiz = Number(cz?.cotiz) || tc || 1; } catch { monCotiz = tc || 1; } }
+        const d = new Date(); const p2 = (n: number) => String(n).padStart(2, "0");
+        const yyyymmdd = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
+        const fechaISO = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+        const res = await callSelector("wsfe-emitir", { ptoVta, cbteTipo, concepto: 1, docTipo: doc.tipo, docNro: doc.nro, fecha: yyyymmdd, fechaISO, neto, iva: ivaArr, impIVA, impTotal: total, monId, monCotiz, canMisMonExt: canMis, condicionIvaReceptorId: condId, esFacturaC });
+        if (!res?.ok) return NextResponse.json({ ok: false, error: "AFIP: " + (res?.error || "no se pudo emitir el CAE") }, { status: 502 });
+        afip = res;
+        const pref = tipoTal!.grupo === "nc" ? "NC" : tipoTal!.grupo === "nd" ? "ND" : "FA";
+        facturaNum = `${pref} ${letraFac} ${String(ptoVta).padStart(5, "0")}-${String(res.cbteNro).padStart(8, "0")}`;
+      } else {
+        const n = await numeroDesdeTalonario(sql, talId);
+        if (!n) return NextResponse.json({ ok: false, error: "talonario inválido" }, { status: 400 });
+        facturaNum = n.numero; letraFac = n.letra || null;
+      }
 
       const leyendas = leyendasFactura(condicion);
       const condRecept = condicionIvaReceptor(condicion);
@@ -317,9 +350,13 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS condicion_iva_receptor TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS iva_detalle jsonb`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tc NUMERIC`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS afip_cae TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS afip_cae_vto TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS afip_qr TEXT`.catch(() => {});
+      const estadoComp = afip ? "emitida" : "proforma";
       const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle)
-        VALUES ('factura','proforma',${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb)
+        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, afip_cae, afip_cae_vto, afip_qr)
+        VALUES ('factura',${estadoComp},${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${afip?.cae || null}, ${afip?.caeVto || null}, ${afip?.qr || null})
         RETURNING id, token` as any[])[0];
 
       let orden = 0;

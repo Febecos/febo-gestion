@@ -203,7 +203,13 @@ export default function ComprobantePublico({ params }: { params: { token: string
         )}
 
         {esFactura && c.afip_cae && (
-          <div className="cae">C.A.E. Nº: {c.afip_cae}{c.afip_cae_vto ? " · Vto. CAE: " + fmtF(c.afip_cae_vto) : ""}{c.afip_validada ? " · Autorizado por AFIP" : ""}</div>
+          <div className="cae" style={{ display: "flex", alignItems: "center", gap: 14 }}>
+            {c.afip_qr && <img src={`https://api.qrserver.com/v1/create-qr-code/?size=110x110&data=${encodeURIComponent(c.afip_qr)}`} alt="QR AFIP" style={{ width: 90, height: 90 }} />}
+            <div>
+              <div style={{ fontWeight: 700 }}>Comprobante autorizado por ARCA (AFIP)</div>
+              <div>C.A.E. Nº: <b>{c.afip_cae}</b>{c.afip_cae_vto ? <> · Vto. CAE: {String(c.afip_cae_vto).replace(/^(\d{4})(\d{2})(\d{2})$/, "$3/$2/$1")}</> : ""}</div>
+            </div>
+          </div>
         )}
 
         <div className="foot">Documento generado por FEBO-GESTION · febecos.com</div>
