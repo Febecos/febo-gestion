@@ -12,6 +12,12 @@ const COTI = "https://coti.febecos.com";
 const linkPresup = (tipo: string, token: string) =>
   tipo === "fv" ? `https://fv.febecos.com/ver-presupuesto?token=${token}` : `${COTI}/p/${token}`;
 
+// Etiqueta linda de la condición fiscal (igual que el CRM): toma el valor del CRM y lo formatea.
+const COND_LABEL: Record<string, string> = {
+  responsable_inscripto: "Responsable Inscripto", monotributista: "Monotributista", monotributo: "Monotributista",
+  consumidor_final: "Consumidor Final", exento: "Exento", no_categorizado: "No Categorizado", exterior: "Exterior",
+};
+const fmtCond = (c: string) => COND_LABEL[(c || "").toLowerCase()] || (c || "").replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
 const fmt = (v: number, m = "$") => `${m} ` + Math.round(Number(v) || 0).toLocaleString("es-AR");
 const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—");
 const chip = (txt: string, col: string) => <span style={{ background: col + "22", color: col }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{txt}</span>;
@@ -302,7 +308,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               {(cli.razon_social) && <Cell l="Razón social" v={cli.razon_social} />}
               {(cli.localidad || rev.localidad) && <Cell l="Localidad" v={cli.localidad || rev.localidad} />}
               <Cell l="CUIT/CUIL" v={cuitCli || <span className="text-red-500">falta</span>} />
-              <Cell l="Condición fiscal" v={condCli ? <span>{condCli} {letraReq && <span className="ml-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 rounded">Factura {letraReq}</span>}</span> : <span className="text-red-500 font-semibold">⚠️ sin condición — no se puede facturar</span>} />
+              <Cell l="Condición fiscal" v={condCli ? <span>{fmtCond(condCli)} {letraReq && <span className="ml-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 rounded">Factura {letraReq}</span>}</span> : <span className="text-red-500 font-semibold">⚠️ sin condición — no se puede facturar</span>} />
               {domCli && <Cell l="Domicilio" v={domCli} />}
               <Cell l="Nota del revendedor" v={pl.notas || "—"} />
             </div>
