@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import PedidosProveedorPanel from "./PedidosProveedorPanel";
 
 // Pantalla unificada de Pedido a proveedor / Compra.
 // Vendedor CARGA (queda pendiente). Solo el OWNER confirma y envía al proveedor.
@@ -16,6 +17,7 @@ export default function ComprasClient() {
   const [busy, setBusy] = useState(false);
   const [pend, setPend] = useState<any[]>([]); const [editId, setEditId] = useState<number | null>(null);
   const [sel, setSel] = useState(0);
+  const [vista, setVista] = useState<"nuevo" | "pedidos">("nuevo");
 
   const buscar = useCallback(() => {
     const p = new URLSearchParams({ limit: "200" });
@@ -24,7 +26,7 @@ export default function ComprasClient() {
   }, [q, cat]);
   useEffect(() => { const t = setTimeout(buscar, 250); return () => clearTimeout(t); }, [buscar]);
   useEffect(() => { fetch("/api/proveedores").then((r) => r.json()).then((d) => { if (d.ok) setProvs(d.proveedores); }); fetch("/api/me").then((r) => r.json()).then((d) => setOwner(!!d.es_owner)); }, []);
-  const loadPend = useCallback(() => { fetch("/api/compras").then((r) => r.json()).then((d) => { if (d.ok) setPend(d.compras); }).catch(() => {}); }, []);
+  const loadPend = useCallback(() => { fetch("/api/compras?estado=pendiente").then((r) => r.json()).then((d) => { if (d.ok) setPend(d.compras); }).catch(() => {}); }, []);
   useEffect(() => { loadPend(); }, [loadPend]);
 
   const productosFiltrados = (data.productos || []).filter((p: any) => stockF === "todos" || (stockF === "stock" ? p.en_stock : p.a_confirmar));
@@ -82,6 +84,12 @@ export default function ComprasClient() {
 
   return (
     <div className="flex flex-col h-full gap-3">
+      <div className="flex gap-1 text-sm">
+        {([["nuevo", "➕ Nuevo pedido"], ["pedidos", "📋 Pedidos a proveedores"]] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setVista(k)} className={`px-4 py-1.5 rounded-lg font-semibold ${vista === k ? "bg-febo-azul text-white" : "bg-gray-100 text-gray-600"}`}>{l}</button>
+        ))}
+      </div>
+      {vista === "pedidos" ? <div className="flex-1 min-h-0"><PedidosProveedorPanel /></div> : <>
       <div className="flex gap-4 flex-1 min-h-0">
         {/* Buscador */}
         <div className="flex-1 min-w-0 flex flex-col">
@@ -144,7 +152,7 @@ export default function ComprasClient() {
       {/* Pendientes / historial */}
       <div className="border border-gray-200 rounded-xl bg-white" style={{ maxHeight: "38%" }}>
         <div className="px-3 py-2 border-b border-gray-200 font-semibold text-febo-azul flex items-center justify-between">
-          <span>Pedidos a proveedor {owner ? "" : "· (el envío lo confirma el administrador)"}</span>
+          <span>Borradores pendientes de confirmar {owner ? "" : "· (el envío lo confirma el administrador)"}</span>
           <button onClick={loadPend} className="text-xs text-febo-azul hover:underline">🔄 Actualizar</button>
         </div>
         <div className="overflow-auto" style={{ maxHeight: "calc(38vh - 40px)" }}>
@@ -173,6 +181,7 @@ export default function ComprasClient() {
           </table>
         </div>
       </div>
+      </>}
     </div>
   );
 }
