@@ -27,6 +27,7 @@ const MARKUP = 1.30; // markup 30% (catálogo Multiradio). TODO: configurable / 
 export async function GET(req: NextRequest) {
   try {
     const sql = getDb();
+    await sql`ALTER TABLE fg_productos ADD COLUMN IF NOT EXISTS emisor TEXT`.catch(() => {});
     const sp = req.nextUrl.searchParams;
     const q = (sp.get("q") || "").trim().toLowerCase();
     const categoria = (sp.get("categoria") || "").trim();
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
     try { const cfg = await sql`SELECT data FROM fv_config WHERE id = 1`; if (cfg[0]?.data?.dolar) dolar = Number(cfg[0].data.dolar); } catch {}
 
     const rows = await sql`
-      SELECT id, codigo, descripcion, descripcion_alt, categoria, origen, marca, fabricante, proveedor,
+      SELECT id, codigo, descripcion, descripcion_alt, categoria, origen, marca, fabricante, proveedor, emisor,
              precio, costo_usd, iva_pct, disponibilidad, sin_precio, stock, activo
       FROM fg_productos
       WHERE activo = true

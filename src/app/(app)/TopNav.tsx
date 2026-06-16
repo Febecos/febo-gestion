@@ -10,9 +10,10 @@ const MODULOS: { key: WinKey; label: string; icon: string }[] = [
   { key: "productos", label: "Productos", icon: "📦" },
   { key: "cot-bomba", label: "Cotizar bomba", icon: "🔧" },
   { key: "cot-fv", label: "Cotizar FV", icon: "☀️" },
+  { key: "compras", label: "Compras", icon: "🛒" },
 ];
 const SOON = [
-  { label: "Compras", icon: "🛒" }, { label: "Tesorería", icon: "💰" }, { label: "Reportes", icon: "📊" },
+  { label: "Tesorería", icon: "💰" }, { label: "Reportes", icon: "📊" },
 ];
 
 export default function TopNav() {
