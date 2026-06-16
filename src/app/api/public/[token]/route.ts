@@ -15,13 +15,13 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
       const qr = "https://www.afip.gob.ar/fe/qr/?p=" + Buffer.from(JSON.stringify(qrData), "utf8").toString("base64");
       const comprobante = {
         id: 0, tipo: "factura", letra: "B", numero: "00001-00000001",
-        fecha: "2026-06-16", vencimiento: "2026-06-16", moneda: "ARS",
-        subtotal: 100, total: 121, iva_detalle: { "21": 21 },
+        fecha: "2026-06-16", vencimiento: "2026-06-16", moneda: "ARS", copia: "ORIGINAL",
+        subtotal_bruto: 121, total: 121,
         condicion_iva_receptor: "Consumidor Final",
         leyendas: [], afip_cae: "86240266365982", afip_cae_vto: "20260626", afip_qr: qr,
         cliente_nombre: "Consumidor Final", cliente_cuit: null,
       };
-      const items = [{ descripcion: "Producto de prueba (homologación)", cantidad: 1, precio_unitario: 100, descuento_pct: 0, total: 100 }];
+      const items = [{ descripcion: "Producto de prueba (homologación)", cantidad: 1, precio_unitario: 121, descuento_pct: 0, total: 121 }];
       const empresa = { cuit: "20217301565", razon_social: "Sandler Guillermo Javier", domicilio: "Rojas 441", localidad: "CABA", provincia: "", cod_postal: "", condicion_iva: "Responsable Inscripto", inicio_actividades: "10/2017" };
       return NextResponse.json({ ok: true, comprobante, items, cliente: null, empresa });
     }

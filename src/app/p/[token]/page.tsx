@@ -81,17 +81,22 @@ export default function ComprobantePublico({ params }: { params: { token: string
   // Neto gravado (después de descuento)
   const neto = Number(c.neto ?? c.subtotal ?? (subtotalBruto - descMonto));
 
-  // Detalle de IVA: acepta objeto {"21":monto,"10.5":monto} o array [{pct,monto}]
-  let ivaLines: { pct: string; monto: number }[] = [];
-  const idet = c.iva_detalle;
-  if (Array.isArray(idet)) ivaLines = idet.map((x: any) => ({ pct: String(x.pct ?? x.alicuota ?? ""), monto: Number(x.monto ?? x.importe ?? 0) }));
-  else if (idet && typeof idet === "object") ivaLines = Object.entries(idet).map(([pct, monto]) => ({ pct, monto: Number(monto) }));
-  ivaLines = ivaLines.filter((l) => l.monto > 0).sort((a, b) => Number(b.pct) - Number(a.pct));
-  const ivaTotal = ivaLines.reduce((a, l) => a + l.monto, 0);
-  const totalDoc = Number(c.total) || (neto + ivaTotal);
-
   const emisorCond = emp.condicion_iva || "Responsable Inscripto";
   const letra = (c.letra || "").toUpperCase();
+  // Solo las Facturas A y M discriminan IVA. B (consumidor final/exento) y C (monotributo) NO: el precio ya lo incluye.
+  const discriminaIva = letra === "A" || letra === "M";
+
+  // Detalle de IVA: acepta objeto {"21":monto,"10.5":monto} o array [{pct,monto}]
+  let ivaLines: { pct: string; monto: number }[] = [];
+  if (discriminaIva) {
+    const idet = c.iva_detalle;
+    if (Array.isArray(idet)) ivaLines = idet.map((x: any) => ({ pct: String(x.pct ?? x.alicuota ?? ""), monto: Number(x.monto ?? x.importe ?? 0) }));
+    else if (idet && typeof idet === "object") ivaLines = Object.entries(idet).map(([pct, monto]) => ({ pct, monto: Number(monto) }));
+    ivaLines = ivaLines.filter((l) => l.monto > 0).sort((a, b) => Number(b.pct) - Number(a.pct));
+  }
+  const ivaTotal = ivaLines.reduce((a, l) => a + l.monto, 0);
+  // A/M: total = neto gravado + IVA. B/C: total = bruto - descuento (IVA ya incluido en los precios).
+  const totalDoc = Number(c.total) || (discriminaIva ? neto + ivaTotal : subtotalBruto - descMonto);
   const codigo = CODIGO[letra] || "";
   const condReceptor = c.condicion_iva_receptor || (cli?.condicion_fiscal ? (COND[cli.condicion_fiscal] || cli.condicion_fiscal) : "");
 
@@ -234,7 +239,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
             <tr>
               <th>SubTotal</th>
               {tieneDesc && <th>Descuento {descPct ? descPct.toLocaleString("es-AR") + " %" : ""}</th>}
-              {tieneDesc && <th>SubTotal</th>}
+              {tieneDesc && discriminaIva && <th>SubTotal</th>}
               {ivaLines.map((l, i) => <th key={i}>IVA {l.pct.replace(".", ",")} %</th>)}
               {ivaLines.length === 0 && totalDoc - neto > 0.01 && <th>IVA</th>}
               <th className="tot">Total</th>
@@ -244,7 +249,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
             <tr>
               <td>{fmt(subtotalBruto)}</td>
               {tieneDesc && <td className="desc">-{fmt(descMonto)}</td>}
-              {tieneDesc && <td>{fmt(neto)}</td>}
+              {tieneDesc && discriminaIva && <td>{fmt(neto)}</td>}
               {ivaLines.map((l, i) => <td key={i}>{fmt(l.monto)}</td>)}
               {ivaLines.length === 0 && totalDoc - neto > 0.01 && <td>{fmt(totalDoc - neto)}</td>}
               <td className="tot">{fmt(totalDoc)}</td>
