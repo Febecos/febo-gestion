@@ -25,9 +25,12 @@ export async function POST(req: NextRequest) {
     }
     if (!email) return NextResponse.json({ ok: false, error: "El cliente no tiene email cargado en su ficha del CRM. Cargalo en la ficha del cliente (o indicá un email para enviar)." }, { status: 409 });
 
+    // Dominio público del visor (oculta gestion.febecos.com). Configurable por env;
+    // si no está, cae al host de la request.
     const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "gestion.febecos.com";
     const proto = req.headers.get("x-forwarded-proto") || "https";
-    const link = `${proto}://${host}/p/${token}`;
+    const base = (process.env.VISOR_BASE_URL || `${proto}://${host}`).replace(/\/+$/, "");
+    const link = `${base}/p/${token}`;
 
     const internal = process.env.INTERNAL_SERVICE_SECRET; const fvTok = process.env.FV_ADMIN_TOKEN;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
