@@ -75,8 +75,20 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     try { compras = await sql`SELECT count(*)::int n FROM compras_clientes WHERE cliente_id = ${id}`; } catch {}
     const nP = presu[0].n, nC = comprob[0].n, nX = compras[0].n;
     if (nP + nC + nX > 0) {
-      const partes = [nP && `${nP} presupuesto(s)`, nC && `${nC} comprobante(s)`, nX && `${nX} compra(s)`].filter(Boolean).join(", ");
-      return NextResponse.json({ ok: false, error: `No se puede eliminar: el cliente tiene ${partes} enlazado(s).` }, { status: 409 });
+      // ¿Hay un GEMELO activo (mismo email/CUIT/WhatsApp)? Si sí, es un duplicado: se puede
+      // borrar porque las operaciones (que matchean por email/tel) quedan con el gemelo.
+      const gemelo = await sql`
+        SELECT count(*)::int n FROM clientes
+        WHERE id <> ${id} AND (crm_eliminado IS NULL OR crm_eliminado = false)
+          AND ( (${cuit} <> '' AND cuit = ${cuit})
+             OR (${email} <> '' AND lower(email) = ${email})
+             OR (${tel10} <> '' AND length(${tel10}) >= 8 AND right(regexp_replace(coalesce(whatsapp,''),'\D','','g'),10) = ${tel10}) )`;
+      const esDuplicado = gemelo[0].n > 0;
+      // Las compras y comprobantes se enlazan por cliente_id (no se heredan): si los tiene, no borrar.
+      if (!esDuplicado || nC > 0 || nX > 0) {
+        const partes = [nP && `${nP} presupuesto(s)`, nC && `${nC} comprobante(s)`, nX && `${nX} compra(s)`].filter(Boolean).join(", ");
+        return NextResponse.json({ ok: false, error: `No se puede eliminar: el cliente tiene ${partes} enlazado(s).` + (nC + nX > 0 ? "" : " (No hay otro contacto con el mismo email/CUIT para heredar los presupuestos.)") }, { status: 409 });
+      }
     }
 
     await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS crm_eliminado BOOLEAN DEFAULT false`;

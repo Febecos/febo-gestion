@@ -203,25 +203,13 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
 
   async function eliminar() {
     if (!cliente) return;
-    // Chequear ANTES si tiene operaciones enlazadas → si tiene, avisar y NO permitir eliminar.
-    try {
-      const ro = await fetch(`/api/clientes/${cliente.id}/operaciones`);
-      const od = await ro.json();
-      if (od.ok) {
-        const nP = (od.presupuestos || []).length;
-        const nPed = (od.resumen?.pedidos_count) || 0;
-        const nFac = (od.comprobantes || []).filter((c: any) => c.tipo === "factura").length + (od.compras || []).length;
-        if (nP + nFac > 0) {
-          const partes = [nP && `${nP} presupuesto(s)`, nPed && `${nPed} pedido(s)`, nFac && `${nFac} factura(s)/compra(s)`].filter(Boolean).join(", ");
-          alert(`⚠️ No se puede eliminar este contacto.\n\nTiene operaciones enlazadas: ${partes}.\n\nUn cliente con presupuestos, pedidos o facturas no se borra (para no perder el historial).`);
-          return;
-        }
-      }
-    } catch { /* si falla el chequeo, el backend igual bloquea (409) */ }
+    // El backend decide: permite borrar si es un DUPLICADO (hay otro contacto con el mismo
+    // email/CUIT/WhatsApp que hereda las operaciones); bloquea si es el único con historial.
     const motivo = prompt("¿Por qué eliminás este contacto del CRM?");
     if (motivo === null) return;
     const r = await fetch(`/api/clientes/${cliente.id}?motivo=${encodeURIComponent(motivo)}`, { method: "DELETE" });
-    const d = await r.json(); if (d.ok) onSaved(); else alert("Error: " + d.error);
+    const d = await r.json();
+    if (d.ok) onSaved(); else alert("⚠️ " + (d.error || "No se pudo eliminar."));
   }
 
   const [tab, setTab] = useState<"datos" | "operaciones">(initialTab || "datos");
