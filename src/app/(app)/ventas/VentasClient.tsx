@@ -63,7 +63,7 @@ type Presup = { id: number; numero: string; tipo: string; estado: string; client
 const tienePedido = (r: Presup) => !!r.pedido_numero || ["pedido", "convertido", "pagado", "anulado"].includes((r.estado || "").toLowerCase());
 
 function Presupuestos() {
-  const { open } = useWindows();
+  const { open, openFicha } = useWindows();
   const [rows, setRows] = useState<Presup[]>([]);
   const [tipo, setTipo] = useState(""); const [q, setQ] = useState("");
   const [estado, setEstado] = useState(""); const [vendedor, setVendedor] = useState("");
@@ -141,7 +141,7 @@ function Presupuestos() {
                       {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token, r.numero)} title="Editar/Operar FV (modo interno)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                     </>}
                   {r.public_token && <a href={linkPresup(r.tipo, r.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
-                  {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id, tab: "operaciones" })} title="Ventas y cuenta del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
+                  {r.cliente_id && <button onClick={() => openFicha(r.cliente_id as number, "operaciones")} title="Ventas y cuenta del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
                 </td>
               </tr>
             ))}

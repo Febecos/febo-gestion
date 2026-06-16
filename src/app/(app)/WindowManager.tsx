@@ -1,6 +1,6 @@
 "use client";
 import { createContext, useContext, useState, useCallback, useRef, Suspense } from "react";
-import ClientesClient from "./clientes/ClientesClient";
+import ClientesClient, { ClienteFichaModal } from "./clientes/ClientesClient";
 import ProveedoresClient from "./proveedores/ProveedoresClient";
 import ComprasClient from "./compras/ComprasClient";
 import VentasClient from "./ventas/VentasClient";
@@ -18,7 +18,7 @@ const TITULOS: Record<WinKey, string> = {
   config: "⚙️ Configuración",
 };
 
-const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void; setTitle: (k: WinKey, title: string) => void } | null>(null);
+const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void; setTitle: (k: WinKey, title: string) => void; openFicha: (clienteId: number, tab?: "datos" | "operaciones") => void } | null>(null);
 export const useWindows = () => useContext(Ctx)!;
 
 function Body({ k, payload }: { k: WinKey; payload?: any }) {
@@ -43,6 +43,8 @@ function Body({ k, payload }: { k: WinKey; payload?: any }) {
 
 export default function WindowManager({ children }: { children: React.ReactNode }) {
   const [wins, setWins] = useState<Win[]>([]);
+  const [ficha, setFicha] = useState<{ clienteId: number; tab?: "datos" | "operaciones" } | null>(null);
+  const openFicha = useCallback((clienteId: number, tab?: "datos" | "operaciones") => setFicha({ clienteId, tab }), []);
   const zTop = useRef(10);
   const idSeq = useRef(1);
   const deskRef = useRef<HTMLDivElement>(null);
@@ -92,7 +94,7 @@ export default function WindowManager({ children }: { children: React.ReactNode 
   const minimizadas = wins.filter((w) => w.min);
 
   return (
-    <Ctx.Provider value={{ open, setTitle }}>
+    <Ctx.Provider value={{ open, setTitle, openFicha }}>
       <div className="h-screen flex flex-col">
         {children}
         <div className="flex flex-1 overflow-hidden">
@@ -135,6 +137,7 @@ export default function WindowManager({ children }: { children: React.ReactNode 
         </div>
         </div>
       </div>
+      {ficha && <ClienteFichaModal clienteId={ficha.clienteId} tab={ficha.tab} onClose={() => setFicha(null)} />}
     </Ctx.Provider>
   );
 }

@@ -216,7 +216,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
   const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
   const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm";
   return (
-    <div className="fixed inset-0 bg-black/45 z-50 overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/45 z-[120] overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-3xl mx-auto my-8 p-7 relative" onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-4 right-5 text-2xl text-gray-400">✕</button>
         <h2 className="text-lg font-bold mb-1">{esNuevo ? "＋ Nuevo cliente" : "✏️ " + (f.nombre || "Cliente")}</h2>
@@ -470,4 +470,26 @@ function TablaPresup({ rows, vacio }: { rows: any[]; vacio: string }) {
       </table>
     </div>
   );
+}
+
+// Modal de ficha de cliente AUTÓNOMO: se abre como overlay encima de cualquier ventana
+// (Ventas, Proveedores, etc.) sin cambiar la ventana de fondo. ESC/✕ cierran y seguís donde estabas.
+export function ClienteFichaModal({ clienteId, tab, onClose }: { clienteId: number; tab?: "datos" | "operaciones"; onClose: () => void }) {
+  const [cli, setCli] = useState<Cliente | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let vivo = true;
+    fetch(`/api/clientes/${clienteId}`).then((r) => r.json()).then((d) => {
+      if (!vivo) return; if (d.ok) setCli(d.cliente); else setErr(d.error || "No encontrado");
+    }).catch((e) => vivo && setErr(e.message));
+    return () => { vivo = false; };
+  }, [clienteId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  if (err) return <div className="fixed inset-0 bg-black/45 z-[120] flex items-center justify-center" onClick={onClose}><div className="bg-white rounded-xl p-6 text-sm text-gray-600" onClick={(e) => e.stopPropagation()}>⚠️ {err}</div></div>;
+  if (!cli) return null;
+  return <ClienteModal cliente={cli} initialTab={tab} onClose={onClose} onSaved={onClose} />;
 }
