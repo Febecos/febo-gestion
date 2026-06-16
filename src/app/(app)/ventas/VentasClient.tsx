@@ -201,13 +201,25 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [facMoneda, setFacMoneda] = useState("USD"); const [facTc, setFacTc] = useState("");
   useEffect(() => { fetch("/api/talonarios?facturacion=1").then((r) => r.json()).then((d) => { if (d.ok) { setTals(d.talonarios); const def = d.talonarios.find((t: any) => t.defecto) || d.talonarios[0]; if (def) setTalSel(String(def.id)); } }).catch(() => {}); }, []);
   const [tab, setTab] = useState<"detalle" | "prov" | "pago">("detalle");
-  const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || ""); } }), [refId]);
+  const [monedaInit, setMonedaInit] = useState(false);
+  const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => {
+    if (d.ok) {
+      setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || "");
+      // Si el presupuesto se hizo en $ → arrancar pedido y factura en pesos con su TC (una sola vez).
+      if (!monedaInit) {
+        const tt = d.pedido.payload?.totales || {};
+        if (tt.moneda === "ARS" || tt.moneda === "$") { setPesos(true); setFacMoneda("ARS"); if (tt.tc) setFacTc(String(tt.tc)); }
+        setMonedaInit(true);
+      }
+    }
+  }), [refId, monedaInit]);
   useEffect(() => { load(); }, [load]);
   if (!ped) return null;
   const pl = ped.payload || {}; const items = pl.items || []; const tot = pl.totales || {};
   const rev = pl.revendedor || pl.cliente || {}; const dolar = Number(ped.dolar) || 0;
-  const enP = pesos && dolar > 0; const sym = enP ? "$" : "USD";
-  const v = (usd: number) => usd == null ? null : (enP ? Math.round(usd * dolar) : usd);
+  const tcMostrar = Number(tot.tc) || dolar; // TC del presupuesto si quedó fijado; si no, el del día
+  const enP = pesos && tcMostrar > 0; const sym = enP ? "$" : "USD";
+  const v = (usd: number) => usd == null ? null : (enP ? Math.round(usd * tcMostrar) : usd);
   const nf = (n: number | null) => n == null || isNaN(Number(n)) ? "—" : Number(n).toLocaleString("es-AR", { minimumFractionDigits: enP ? 0 : 2, maximumFractionDigits: enP ? 0 : 2 });
   const money = (usd: number) => { const x = v(usd); return x == null ? "—" : `${sym} ${nf(x)}`; };
   const costoTot = items.reduce((a: number, it: any) => a + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1), 0);
