@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { esOwner } from "@/lib/owner";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // Interruptor del monitor mensual de normativa ARCA (cron en el selector lee arca_watch.activo).
 async function ensure(sql: any) {
   await sql`CREATE TABLE IF NOT EXISTS arca_watch (id INT PRIMARY KEY DEFAULT 1, last_summary TEXT, last_run TIMESTAMPTZ, last_items JSONB, activo BOOLEAN DEFAULT false)`;

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { esOwner } from "@/lib/owner";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // Datos fiscales/legales del emisor (FEBECOS) según AFIP/ARCA. Fila única.
 async function ensure(sql: any) {
   await sql`CREATE TABLE IF NOT EXISTS fg_empresa (

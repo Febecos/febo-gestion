@@ -6,6 +6,9 @@ import { numeroDesdeTalonario, letraFacturaPara, leyendasFactura, condicionIvaRe
 import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 import { tipoCbteAfip, docTipoReceptor, condicionIvaReceptorId, alicIvaId } from "@/lib/afip-codigos";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // Llama al selector (febecos.com/api/admin) con auth interno. action="x" o "x&p=v".
 async function callSelector(action: string, body?: any): Promise<any> {
   const internal = process.env.INTERNAL_SERVICE_SECRET; const fvTok = process.env.FV_ADMIN_TOKEN;

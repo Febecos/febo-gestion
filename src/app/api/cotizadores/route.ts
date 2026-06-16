@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { getDb } from "@/lib/db";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // GET /api/cotizadores  → URLs de los cotizadores (bombas/FV) con el TOKEN del usuario
 // logueado, para que abran su perfil (precios). El token se resuelve server-side por
 // email (de la sesión) contra solicitudes_revendedor — nunca queda en el código/bundle.

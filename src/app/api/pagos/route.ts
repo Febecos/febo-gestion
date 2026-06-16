@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // GET /api/pagos  → pagos registrados (`fg_pagos`), con datos del comprobante.
 export async function GET(_req: NextRequest) {
   try {

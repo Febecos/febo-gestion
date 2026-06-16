@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // GET /api/public/[token]  → comprobante + ítems + datos del cliente, SOLO por token.
 // Público (sin sesión): el token aleatorio es la credencial.
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {

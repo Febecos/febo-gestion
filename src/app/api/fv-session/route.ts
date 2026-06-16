@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // GET /api/fv-session  → token efímero para abrir el visor/cotizador FV en modo INTERNO
 // (con todos los botones). Protegido por la sesión de gestión (middleware fg_token).
 // Server↔server: usa INTERNAL_SERVICE_SECRET, que NUNCA llega al navegador.

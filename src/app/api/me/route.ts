@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // GET /api/me → datos del usuario logueado (de la cookie fg_token). Sirve para
 // mostrar/ocultar opciones por rol (ej. Configuración solo para el owner).
 export async function GET(req: NextRequest) {

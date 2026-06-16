@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+// Lista en vivo: nunca cachear (sin esto, Next.js sirve una respuesta estática y
+// los pedidos nuevos NO aparecen hasta un nuevo build).
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // GET /api/pedidos  → pedidos UNIFICADOS: bombas (`pedidos`) + fotovoltaico (`fv_pedidos`).
 // Normaliza ambos a una sola forma para listarlos juntos.
 export async function GET(_req: NextRequest) {

@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // GET /api/clientes/[id]/operaciones
 // Devuelve todas las operaciones del cliente (presupuestos/pedidos/facturas/remitos)
 // + un resumen de cuenta corriente (facturado / pagado / saldo) y estado derivado.

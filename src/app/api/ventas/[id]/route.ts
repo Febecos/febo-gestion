@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { Pool } from "@neondatabase/serverless";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // GET /api/ventas/:id  → comprobante + items + pagos
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {

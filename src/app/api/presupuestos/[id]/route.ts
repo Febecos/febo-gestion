@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
+// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+export const dynamic = "force-dynamic";
+
 // GET /api/presupuestos/[id]  → un presupuesto real (para editar en gestión)
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   try {
