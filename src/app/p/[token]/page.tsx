@@ -127,12 +127,12 @@ export default function ComprobantePublico({ params }: { params: { token: string
         table.items td { padding:5px 9px; border-bottom:1px solid #eef2f7; vertical-align:top; }
         table.items td.r, table.items th.r { text-align:right; white-space:nowrap; }
         .letras { margin-top:12px; font-size:11.5px; font-style:italic; color:#374151; }
-        .totales { display:flex; justify-content:flex-end; margin-top:8px; }
-        .totales .t { width:320px; }
-        .totales .row { display:flex; justify-content:space-between; padding:3px 0; font-size:12.5px; }
-        .totales .desc { color:#b91c1c; }
-        .totales .sep { border-top:1px solid #e5e7eb; margin-top:4px; padding-top:6px; }
-        .totales .grand { border-top:2px solid var(--azul); margin-top:6px; padding-top:8px; font-size:17px; font-weight:800; color:var(--azul); }
+        table.totband { width:100%; border-collapse:collapse; margin-top:10px; }
+        table.totband th { background:#f1f5f9; border:1px solid #cbd5e1; text-align:center; padding:5px 8px; font-size:10px; font-weight:700; color:#334155; text-transform:none; }
+        table.totband td { border:1px solid #cbd5e1; text-align:center; padding:6px 8px; font-size:12px; white-space:nowrap; }
+        table.totband td.desc { color:#b91c1c; }
+        table.totband th.tot, table.totband td.tot { background:var(--azul); color:#fff; font-weight:800; }
+        table.totband td.tot { font-size:13.5px; }
         .leyendas { margin-top:14px; font-size:10px; color:#4b5563; border-top:1px solid #e5e7eb; padding-top:8px; line-height:1.5; }
         .cae { margin-top:16px; padding:10px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; font-size:12px; color:#166534; display:flex; align-items:center; gap:14px; }
         .foot { margin-top:24px; text-align:center; font-size:10px; color:#9ca3af; }
@@ -229,16 +229,28 @@ export default function ComprobantePublico({ params }: { params: { token: string
 
         <div className="letras">{importeEnLetras(totalDoc, moneda)}</div>
 
-        <div className="totales">
-          <div className="t">
-            <div className="row"><span>SubTotal</span><span>{fmt(subtotalBruto)}</span></div>
-            {tieneDesc && <div className="row desc"><span>Descuento {descPct ? descPct.toLocaleString("es-AR") + " %" : ""}</span><span>-{fmt(descMonto)}</span></div>}
-            {tieneDesc && <div className="row sep"><span>SubTotal Neto</span><span>{fmt(neto)}</span></div>}
-            {ivaLines.map((l, i) => <div className="row" key={i}><span>IVA {l.pct.replace(".", ",")} %</span><span>{fmt(l.monto)}</span></div>)}
-            {ivaLines.length === 0 && totalDoc - neto > 0.01 && <div className="row"><span>IVA</span><span>{fmt(totalDoc - neto)}</span></div>}
-            <div className="row grand"><span>TOTAL</span><span>{fmt(totalDoc)}</span></div>
-          </div>
-        </div>
+        <table className="totband">
+          <thead>
+            <tr>
+              <th>SubTotal</th>
+              {tieneDesc && <th>Descuento {descPct ? descPct.toLocaleString("es-AR") + " %" : ""}</th>}
+              {tieneDesc && <th>SubTotal</th>}
+              {ivaLines.map((l, i) => <th key={i}>IVA {l.pct.replace(".", ",")} %</th>)}
+              {ivaLines.length === 0 && totalDoc - neto > 0.01 && <th>IVA</th>}
+              <th className="tot">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{fmt(subtotalBruto)}</td>
+              {tieneDesc && <td className="desc">-{fmt(descMonto)}</td>}
+              {tieneDesc && <td>{fmt(neto)}</td>}
+              {ivaLines.map((l, i) => <td key={i}>{fmt(l.monto)}</td>)}
+              {ivaLines.length === 0 && totalDoc - neto > 0.01 && <td>{fmt(totalDoc - neto)}</td>}
+              <td className="tot">{fmt(totalDoc)}</td>
+            </tr>
+          </tbody>
+        </table>
 
         {Array.isArray(c.leyendas) && c.leyendas.length > 0 && (
           <div className="leyendas">{c.leyendas.map((l: string, i: number) => <div key={i}>{l}</div>)}</div>
