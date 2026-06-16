@@ -27,7 +27,7 @@ const COLORES: Record<string, string> = {
 const fmtMonto = (v: number) => (v ? "$ " + Math.round(v).toLocaleString("es-AR") : "—");
 const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "descuento_pct"] as const;
 
-export default function ClientesClient({ openClienteId }: { openClienteId?: number } = {}) {
+export default function ClientesClient({ openClienteId, openClienteTab }: { openClienteId?: number; openClienteTab?: "datos" | "operaciones" } = {}) {
   const [rows, setRows] = useState<Cliente[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState(""); const [tipo, setTipo] = useState("");
@@ -133,12 +133,12 @@ export default function ClientesClient({ openClienteId }: { openClienteId?: numb
         </div>
       )}
 
-      {(edit || nuevo) && <ClienteModal cliente={edit} onClose={() => { setEdit(null); setNuevo(false); }} onSaved={() => { setEdit(null); setNuevo(false); load(); }} />}
+      {(edit || nuevo) && <ClienteModal cliente={edit} initialTab={edit && openClienteId === edit.id ? openClienteTab : undefined} onClose={() => { setEdit(null); setNuevo(false); }} onSaved={() => { setEdit(null); setNuevo(false); load(); }} />}
     </div>
   );
 }
 
-function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; onClose: () => void; onSaved: () => void }) {
+function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Cliente | null; onClose: () => void; onSaved: () => void; initialTab?: "datos" | "operaciones" }) {
   const esNuevo = !cliente;
   const [f, setF] = useState<any>(() => ({
     tipo: cliente?.tipo || "contacto",
@@ -224,7 +224,7 @@ function ClienteModal({ cliente, onClose, onSaved }: { cliente: Cliente | null; 
     const d = await r.json(); if (d.ok) onSaved(); else alert("Error: " + d.error);
   }
 
-  const [tab, setTab] = useState<"datos" | "operaciones">("datos");
+  const [tab, setTab] = useState<"datos" | "operaciones">(initialTab || "datos");
   const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
   const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm";
   return (

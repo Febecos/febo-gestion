@@ -141,7 +141,7 @@ function Presupuestos() {
                       {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token, r.numero)} title="Editar/Operar FV (modo interno)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                     </>}
                   {r.public_token && <a href={linkPresup(r.tipo, r.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
-                  {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id })} title="Ficha del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
+                  {r.cliente_id && <button onClick={() => open("clientes", { clienteId: r.cliente_id, tab: "operaciones" })} title="Ventas y cuenta del cliente" className="text-gray-400 hover:text-febo-azul">👤</button>}
                 </td>
               </tr>
             ))}

@@ -22,7 +22,7 @@ const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void; setTitle: 
 export const useWindows = () => useContext(Ctx)!;
 
 function Body({ k, payload }: { k: WinKey; payload?: any }) {
-  if (k === "clientes") return <ClientesClient openClienteId={payload?.clienteId} />;
+  if (k === "clientes") return <ClientesClient openClienteId={payload?.clienteId} openClienteTab={payload?.tab} />;
   if (k === "proveedores") return <ProveedoresClient />;
   if (k === "compras") return <ComprasClient />;
   if (k === "ventas") return <VentasClient />;
