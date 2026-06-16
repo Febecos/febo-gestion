@@ -109,12 +109,14 @@ export default function ComprobantePublico({ params }: { params: { token: string
     <div className="doc-wrap">
       <style>{`
         :root { --azul:#0b3d6b; }
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         body { background:#e5e7eb; }
         .doc-wrap { max-width: 820px; margin: 0 auto; padding: 24px 16px 60px; }
+        .spacer { flex: 1 1 auto; min-height: 16px; }
         .toolbar { display:flex; gap:8px; justify-content:flex-end; margin-bottom:16px; }
         .btn { background:var(--azul); color:#fff; border:0; border-radius:8px; padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; }
         .btn.sec { background:#fff; color:#334155; border:1px solid #cbd5e1; }
-        .sheet { background:#fff; border:1px solid #d1d5db; border-radius:12px; padding:30px 34px; color:#1f2937; font-size:12px; position:relative; }
+        .sheet { background:#fff; border:1px solid #d1d5db; border-radius:12px; padding:30px 34px; color:#1f2937; font-size:12px; position:relative; display:flex; flex-direction:column; min-height:1120px; }
         .head { display:grid; grid-template-columns: 1fr 70px 1.05fr; align-items:flex-start; border-bottom:2px solid var(--azul); padding-bottom:14px; column-gap:10px; }
         .logo img { max-height:62px; max-width:200px; }
         .emisor { font-size:11px; line-height:1.45; }
@@ -150,14 +152,12 @@ export default function ComprobantePublico({ params }: { params: { token: string
         table.totband td.tot { font-size:13.5px; }
         .leyendas { margin-top:14px; font-size:10px; color:#4b5563; border:1px solid #e5e7eb; border-radius:10px; padding:8px 11px; line-height:1.5; }
         .cae { margin-top:16px; padding:10px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; font-size:12px; color:#166534; display:flex; align-items:center; gap:14px; }
-        .foot { margin-top:24px; text-align:center; font-size:9.5px; color:#9ca3af; }
-        @media screen { .doc-wrap { min-height:0; } }
+        .foot { margin-top:14px; text-align:center; font-size:9.5px; color:#9ca3af; }
         @media print {
           html, body { background:#fff; }
           .toolbar { display:none !important; }
           .doc-wrap { max-width:none; padding:0; }
-          .sheet { border:0; border-radius:0; padding:0; font-size:11px; }
-          .foot { position:fixed; bottom:4mm; left:0; right:0; margin:0; }
+          .sheet { border:0; border-radius:0; padding:0; font-size:11px; min-height:262mm; }
           @page { size: A4; margin: 12mm; }
         }
       `}</style>
@@ -246,6 +246,8 @@ export default function ComprobantePublico({ params }: { params: { token: string
           </tbody>
         </table>
         </div>
+
+        <div className="spacer" />
 
         <div className="letras">{importeEnLetras(totalDoc, moneda)}</div>
 
