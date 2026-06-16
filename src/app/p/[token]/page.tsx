@@ -130,7 +130,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
       <div className="sheet">
         <div className="head">
           <div>
-            <div className="logo"><img src="/images/febecos-logo.png" alt="FEBECOS" /></div>
+            <div className="logo"><img src="/images/febecos-logo-factura.png" alt="FEBECOS" onError={(e) => { (e.target as HTMLImageElement).src = "/images/febecos-logo.png"; }} /></div>
             <div className="emisor" style={{ marginTop: 8 }}>
               <div className="rs">{emp.razon_social || "Sandler Guillermo Javier"}</div>
               {(emp.domicilio || emp.localidad) && <div>{[emp.domicilio, emp.localidad, emp.provincia, emp.cod_postal].filter(Boolean).join(" - ")}</div>}
