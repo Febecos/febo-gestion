@@ -149,7 +149,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
             <div className="n">Nº: {c.numero || ""}</div>
             <div>Fecha Emisión: {fmtF(c.fecha)}</div>
             <div>Fecha Vencimiento: {fmtF(c.vencimiento || c.fecha)}</div>
-            <div>Hoja 1 de 1</div>
+            <div>Hoja 1 de {Math.max(1, Math.ceil(items.length / 22))}</div>
           </div>
         </div>
 

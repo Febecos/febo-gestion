@@ -198,6 +198,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [emailCli, setEmailCli] = useState(""); const [editEmail, setEditEmail] = useState(false);
   const [pp, setPp] = useState({ proveedor: "", tc: "", medio: "pesos", monto: "", provUsd: "", fecha: "", nota: "" });
   const [tals, setTals] = useState<any[]>([]); const [talSel, setTalSel] = useState<string>("");
+  const [facMoneda, setFacMoneda] = useState("USD"); const [facTc, setFacTc] = useState("");
   useEffect(() => { fetch("/api/talonarios?facturacion=1").then((r) => r.json()).then((d) => { if (d.ok) { setTals(d.talonarios); const def = d.talonarios.find((t: any) => t.defecto) || d.talonarios[0]; if (def) setTalSel(String(def.id)); } }).catch(() => {}); }, []);
   const [tab, setTab] = useState<"detalle" | "prov" | "pago">("detalle");
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => { if (d.ok) { setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || ""); } }), [refId]);
@@ -574,9 +575,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 {puedeFacturar && talsLetra.length > 0 && <select value={talEfectivo} onChange={(e) => setTalSel(e.target.value)} title="Talonario" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white">
                   {talsLetra.map((t) => <option key={t.id} value={t.id}>{t.tipo_nombre} · {String(t.sucursal || "1").replace(/\D/g, "").padStart(5, "0")}-{String(t.proximo_numero).padStart(8, "0")}{t.defecto ? " ★" : ""}</option>)}
                 </select>}
+                {puedeFacturar && <select value={facMoneda} onChange={(e) => setFacMoneda(e.target.value)} title="Moneda de la factura" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white"><option value="USD">USD</option><option value="ARS">$ Pesos</option></select>}
+                {puedeFacturar && facMoneda === "ARS" && <input type="number" value={facTc} onChange={(e) => setFacTc(e.target.value)} placeholder={"TC " + (dolar || "")} title="Tipo de cambio (editable)" className="border border-gray-300 rounded-lg px-2 py-2 text-sm w-24" />}
                 <button disabled={busy || !puedeFacturar}
                   title={cancelado ? "Pedido cancelado" : !ped.proveedor_confirmado ? "Confirmá el stock con el proveedor antes de facturar" : !letraReq ? "El cliente no tiene condición fiscal: cargala en Detalle/ficha del cliente" : talsLetra.length === 0 ? `No hay talonario de Factura ${letraReq} cargado (Configuración → Talonarios)` : `Emitir Factura ${letraReq}`}
-                  onClick={() => accion({ accion: "facturar", talonario_id: talEfectivo ? Number(talEfectivo) : undefined }, `¿Generar la Factura ${letraReq}?`)}
+                  onClick={() => { const tcUsar = Number(facTc) || dolar || 0; if (facMoneda === "ARS" && !tcUsar) { alert("Ingresá el tipo de cambio para facturar en pesos."); return; } accion({ accion: "facturar", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: facMoneda, tc: facMoneda === "ARS" ? tcUsar : undefined }, `¿Generar la Factura ${letraReq} en ${facMoneda === "ARS" ? "PESOS (TC " + tcUsar + ")" : "USD"}?`); }}
                   className={`px-3 py-2 rounded-lg text-sm font-semibold ${puedeFacturar ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar{letraReq ? " " + letraReq : ""}</button>
               </div>}
           {ped.estado === "pendiente_confirmacion" && <>

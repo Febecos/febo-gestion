@@ -293,6 +293,21 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         facturaNum = "FA-" + String(nr[0].ultimo_numero).padStart(6, "0");
       }
 
+      // ── Moneda de la factura: USD o ARS (pesos). TC editable al cerrar. ──
+      const facturaMoneda = (b.moneda === "ARS" || b.moneda === "$") ? "ARS" : "USD";
+      let tc = 1;
+      if (facturaMoneda === "ARS") {
+        tc = Number(b.tc) || 0;
+        if (!tc) { try { const cfg = await sql`SELECT data FROM fv_config WHERE id=1` as any[]; tc = Number(cfg[0]?.data?.dolar) || 0; } catch {} }
+        if (!tc) return NextResponse.json({ ok: false, error: "Para facturar en pesos falta el tipo de cambio (TC)." }, { status: 409 });
+      }
+      const conv = (n: any) => facturaMoneda === "ARS" ? Math.round((Number(n) || 0) * tc) : (Number(n) || 0);
+      const ivaDetalle = Array.isArray(tot.iva_detalle)
+        ? tot.iva_detalle.map((d: any) => ({ ...d, monto: conv(d.monto ?? d.importe) }))
+        : (tot.iva_detalle && typeof tot.iva_detalle === "object"
+            ? Object.fromEntries(Object.entries(tot.iva_detalle).map(([k, v]) => [k, conv(v)]))
+            : null);
+
       const leyendas = leyendasFactura(condicion);
       const condRecept = condicionIvaReceptor(condicion);
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS vendedor TEXT`.catch(() => {});
@@ -301,16 +316,16 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS leyendas jsonb`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS condicion_iva_receptor TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS iva_detalle jsonb`.catch(() => {});
-      const ivaDetalle = tot.iva_detalle || null;
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tc NUMERIC`.catch(() => {});
       const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, leyendas, condicion_iva_receptor, iva_detalle)
-        VALUES ('factura','proforma',${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${tot.neto || tot.total || 0}, ${tot.total || 0}, ${tot.moneda || "USD"}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb)
+        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle)
+        VALUES ('factura','proforma',${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb)
         RETURNING id, token` as any[])[0];
 
       let orden = 0;
       for (const it of items) {
         await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
-          VALUES (${comp.id}, ${(it.descripcion || it.codigo || "").slice(0, 300)}, ${it.cantidad || 1}, ${it.pvp_sin_iva_usd ?? null}, ${it.subtotal ?? null}, ${orden++})`;
+          VALUES (${comp.id}, ${(it.descripcion || it.codigo || "").slice(0, 300)}, ${it.cantidad || 1}, ${conv(it.pvp_sin_iva_usd)}, ${conv(it.subtotal)}, ${orden++})`;
       }
       await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_token=${comp.token} WHERE numero=${ref}`;
       // Cta cte cliente: la factura genera la deuda (debe).
