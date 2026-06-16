@@ -54,7 +54,8 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const sql = getDb(); await ensure(sql);
-    const { id, accion } = await req.json();
+    const body = await req.json();
+    const { id, accion } = body;
     if (!id) return NextResponse.json({ ok: false, error: "id requerido" }, { status: 400 });
     const c = (await sql`SELECT * FROM fg_compras WHERE id=${id}` as any[])[0];
     if (!c) return NextResponse.json({ ok: false, error: "compra no encontrada" }, { status: 404 });
@@ -93,9 +94,36 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
-    if (accion === "anular") {
-      await sql`UPDATE fg_compras SET estado='anulado' WHERE id=${id}`;
+    if (accion === "editar") {
+      // Solo editable mientras está PENDIENTE.
+      if (c.estado !== "pendiente") return NextResponse.json({ ok: false, error: "El pedido ya fue " + c.estado + ": no se puede editar." }, { status: 409 });
+      const items = (body.items || []).filter((it: any) => it.codigo && Number(it.cantidad) > 0);
+      if (!items.length) return NextResponse.json({ ok: false, error: "el pedido necesita al menos un ítem" }, { status: 400 });
+      const total = items.reduce((a: number, it: any) => a + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1), 0);
+      await sql`UPDATE fg_compras SET items=${JSON.stringify(items)}::jsonb, total_costo_usd=${+total.toFixed(2)},
+        email_destinatario=${body.email ?? c.email_destinatario}, mensaje=${body.mensaje ?? c.mensaje} WHERE id=${id}`;
       return NextResponse.json({ ok: true });
+    }
+
+    if (accion === "anular") {
+      // Email destino editable (para pruebas); por defecto el del pedido.
+      const emailAnula = (body.email && String(body.email).includes("@")) ? body.email : c.email_destinatario;
+      // Si ya estaba enviado, avisar al proveedor con un email de ANULACIÓN.
+      let aviso: any = undefined;
+      if (c.estado === "enviado" && emailAnula) {
+        const internal = process.env.INTERNAL_SERVICE_SECRET; const fvTok = process.env.FV_ADMIN_TOKEN;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (internal) headers["Authorization"] = "Bearer " + internal; else if (fvTok) headers["X-Admin-Token"] = fvTok;
+        try {
+          const r = await fetch("https://febecos.com/api/admin?action=anular-pedido-proveedor", {
+            method: "POST", headers,
+            body: JSON.stringify({ email: emailAnula, proveedor: c.proveedor_nombre, gsa_numero: c.gsa_numero, items: c.items }),
+          });
+          aviso = await r.json().catch(() => ({ ok: false }));
+        } catch (e: any) { aviso = { ok: false, error: e.message }; }
+      }
+      await sql`UPDATE fg_compras SET estado='anulado' WHERE id=${id}`;
+      return NextResponse.json({ ok: true, aviso });
     }
     return NextResponse.json({ ok: false, error: "acción inválida" }, { status: 400 });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }

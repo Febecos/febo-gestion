@@ -14,7 +14,7 @@ export default function ComprasClient() {
   const [cart, setCart] = useState<any[]>([]);
   const [emails, setEmails] = useState<Record<string, string>>({}); const [msgs, setMsgs] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const [pend, setPend] = useState<any[]>([]);
+  const [pend, setPend] = useState<any[]>([]); const [editId, setEditId] = useState<number | null>(null);
 
   const buscar = useCallback(() => {
     const p = new URLSearchParams({ limit: "200" });
@@ -38,13 +38,32 @@ export default function ComprasClient() {
   const cargar = async () => {
     if (!cart.length) return; setBusy(true);
     try {
-      for (const [nombre, its] of Object.entries(grupos)) {
-        const prov = matchProv(nombre);
-        await fetch("/api/compras", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proveedor_id: prov?.id || null, proveedor_nombre: prov?.razon_social || nombre, email: emails[nombre] || prov?.email || "", mensaje: msgs[nombre] || "", items: its }) });
+      if (editId) {
+        const nombre = Object.keys(grupos)[0];
+        await fetch("/api/compras", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: editId, accion: "editar", items: cart, email: emails[nombre] || "", mensaje: msgs[nombre] || "" }) });
+        alert("✅ Pedido actualizado (sigue pendiente).");
+      } else {
+        for (const [nombre, its] of Object.entries(grupos)) {
+          const prov = matchProv(nombre);
+          await fetch("/api/compras", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proveedor_id: prov?.id || null, proveedor_nombre: prov?.razon_social || nombre, email: emails[nombre] || prov?.email || "", mensaje: msgs[nombre] || "", items: its }) });
+        }
+        alert("✅ Pedido(s) cargado(s) como PENDIENTE. El administrador los confirma y envía al proveedor.");
       }
-      setCart([]); setEmails({}); setMsgs({}); loadPend();
-      alert("✅ Pedido(s) cargado(s) como PENDIENTE. El administrador los confirma y envía al proveedor.");
+      setCart([]); setEmails({}); setMsgs({}); setEditId(null); loadPend();
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
+  };
+  const editar = (c: any) => {
+    if (cart.length && !editId) { alert("Terminá o vaciá el pedido actual antes de editar otro."); return; }
+    setCart((c.items || []).map((it: any) => ({ ...it })));
+    const k = (c.items?.[0]?.emisor || c.items?.[0]?.proveedor || c.proveedor_nombre);
+    setEmails({ [k]: c.email_destinatario || "" }); setMsgs({ [k]: c.mensaje || "" });
+    setEditId(c.id);
+  };
+  const anular = async (c: any) => {
+    const email = c.estado === "enviado" ? (prompt("Email para el aviso de ANULACIÓN al proveedor:", c.email_destinatario || "") || c.email_destinatario) : null;
+    if (!confirm("¿Anular este pedido?" + (c.estado === "enviado" ? " Se enviará un aviso de anulación al proveedor." : ""))) return;
+    const r = await fetch("/api/compras", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: c.id, accion: "anular", email }) });
+    const d = await r.json(); if (d.ok) { if (d.aviso) alert(d.aviso.ok ? "Anulado. Aviso enviado al proveedor." : "Anulado, pero el aviso falló: " + (d.aviso.error || "")); loadPend(); } else alert("Error: " + d.error);
   };
   const confirmar = async (id: number) => {
     if (!confirm("¿Confirmar y ENVIAR este pedido al proveedor?")) return;
@@ -90,7 +109,7 @@ export default function ComprasClient() {
 
         {/* Carrito */}
         <div className="w-[420px] shrink-0 flex flex-col border border-gray-200 rounded-xl bg-white">
-          <div className="px-3 py-2 border-b border-gray-200 font-semibold text-febo-azul">🛒 Nuevo pedido ({cart.length})</div>
+          <div className="px-3 py-2 border-b border-gray-200 font-semibold text-febo-azul flex items-center justify-between">{editId ? <span>✏️ Editando pedido #{editId}</span> : <span>🛒 Nuevo pedido ({cart.length})</span>}{editId && <button onClick={() => { setCart([]); setEmails({}); setMsgs({}); setEditId(null); }} className="text-xs text-gray-400 hover:underline">cancelar edición</button>}</div>
           <div className="flex-1 overflow-auto p-2 space-y-3">
             {cart.length === 0 ? <div className="text-gray-400 text-sm text-center py-8">Agregá productos. Se arma un pedido por proveedor.</div> :
             Object.entries(grupos).map(([nombre, its]) => {
@@ -109,7 +128,7 @@ export default function ComprasClient() {
             })}
           </div>
           <div className="p-2 border-t border-gray-200">
-            <button disabled={busy || !cart.length} onClick={cargar} className="w-full px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">{busy ? "Cargando…" : `📝 Cargar pedido (${Object.keys(grupos).length} prov.) — queda pendiente`}</button>
+            <button disabled={busy || !cart.length} onClick={cargar} className="w-full px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">{busy ? "Guardando…" : editId ? "💾 Guardar cambios" : `📝 Cargar pedido (${Object.keys(grupos).length} prov.) — queda pendiente`}</button>
           </div>
         </div>
       </div>
@@ -134,9 +153,11 @@ export default function ComprasClient() {
                   <td className="px-3 py-1.5 text-gray-600 text-xs">{c.creado_por || "—"}</td>
                   <td className="px-3 py-1.5 text-center">{chip(e[0], e[1])}</td>
                   <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                    {c.estado === "pendiente" && <button onClick={() => editar(c)} className="px-2 py-1 rounded border border-gray-300 text-gray-600 text-xs font-semibold mr-1">✏️ Editar</button>}
                     {c.estado === "pendiente" && owner && <button onClick={() => confirmar(c.id)} className="px-2 py-1 rounded bg-emerald-600 text-white text-xs font-semibold mr-1">✅ Confirmar y enviar</button>}
-                    {c.estado === "pendiente" && !owner && <span className="text-[11px] text-amber-600">esperando confirmación</span>}
-                    {c.estado === "enviado" && <button onClick={() => recibir(c.id)} className="px-2 py-1 rounded border border-febo-azul text-febo-azul text-xs font-semibold">📥 Recibir</button>}
+                    {c.estado === "pendiente" && !owner && <span className="text-[11px] text-amber-600 mr-1">esperando confirmación</span>}
+                    {c.estado === "enviado" && <button onClick={() => recibir(c.id)} className="px-2 py-1 rounded border border-febo-azul text-febo-azul text-xs font-semibold mr-1">📥 Recibir</button>}
+                    {(c.estado === "pendiente" || c.estado === "enviado") && <button onClick={() => anular(c)} className="text-red-400 hover:text-red-600 text-xs">Anular</button>}
                   </td>
                 </tr>
               ); })}
