@@ -320,11 +320,24 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         const doc = docTipoReceptor(clienteCuit);
         if (tipoTal!.letra === "A" && doc.tipo !== 80) return NextResponse.json({ ok: false, error: "Factura A requiere CUIT válido del receptor." }, { status: 409 });
         const esFacturaC = tipoTal!.letra === "C";
+        // Neto declarado a AFIP (ya con descuento general aplicado, si lo hubiera).
+        const neto = conv(tot.neto || tot.total || 0);
+        // Bases de IVA por alícuota a partir del subtotal por ítem (sin IVA).
         const byPct: Record<string, number> = {};
         for (const it of items) { const pct = String(Number(it.iva_pct ?? 21)); byPct[pct] = (byPct[pct] || 0) + conv(it.subtotal); }
-        const ivaArr = esFacturaC ? [] : Object.entries(byPct).map(([pct, base]) => ({ id: alicIvaId(+pct), base: +Number(base).toFixed(2), importe: +(Number(base) * (+pct) / 100).toFixed(2) }));
+        const pcts = Object.keys(byPct);
+        const brutoBases = pcts.reduce((a, p) => a + byPct[p], 0);
+        // Si hay descuento general (neto < Σ bases), se prorratea en cada alícuota para que
+        // Σ BaseImp == ImpNeto (lo exige AFIP) y el IVA se calcule SOBRE el precio con descuento.
+        const factor = brutoBases > 0 ? neto / brutoBases : 1;
+        const baseByPct: Record<string, number> = {}; let accBase = 0;
+        for (const p of pcts) { const b = +(byPct[p] * factor).toFixed(2); baseByPct[p] = b; accBase += b; }
+        // Ajuste de redondeo: el residuo va al bucket de mayor base → Σ base == neto exacto.
+        if (pcts.length) { const diff = +(neto - accBase).toFixed(2); if (Math.abs(diff) >= 0.01) { const big = pcts.reduce((a, b) => (baseByPct[b] > baseByPct[a] ? b : a)); baseByPct[big] = +(baseByPct[big] + diff).toFixed(2); } }
+        const ivaArr = esFacturaC ? [] : pcts.map((pct) => ({ id: alicIvaId(+pct), base: baseByPct[pct], importe: +(baseByPct[pct] * (+pct) / 100).toFixed(2) }));
         const impIVA = +ivaArr.reduce((a, x) => a + x.importe, 0).toFixed(2);
-        const neto = conv(tot.neto || tot.total || 0); const total = conv(tot.total || 0);
+        // ImpTotal debe ser EXACTAMENTE ImpNeto + ImpIVA (requisito AFIP); no usar tot.total redondeado aparte.
+        const total = esFacturaC ? neto : +(neto + impIVA).toFixed(2);
         let monId = "PES", monCotiz = 1, canMis: string | null = null;
         if (facturaMoneda === "USD") { monId = "DOL"; canMis = "S"; try { const cz = await callSelector("wsfe-cotizacion&mon=DOL"); monCotiz = Number(cz?.cotiz) || tc || 1; } catch { monCotiz = tc || 1; } }
         const d = new Date(); const p2 = (n: number) => String(n).padStart(2, "0");
