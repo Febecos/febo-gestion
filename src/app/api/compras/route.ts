@@ -71,7 +71,7 @@ export async function PATCH(req: NextRequest) {
         try {
           const er = await fetch("https://febecos.com/api/admin?action=pedido-proveedor", {
             method: "POST", headers,
-            body: JSON.stringify({ fv_numero: "COMPRA-" + id, proveedor: c.proveedor_nombre, email_destinatario: c.email_destinatario, mensaje: c.mensaje || "Compra para stock", items: c.items }),
+            body: JSON.stringify({ fv_numero: "COMPRA-" + id, proveedor: c.proveedor_nombre, email_destinatario: c.email_destinatario, mensaje: c.mensaje || "", items: c.items }),
           });
           envio = await er.json().catch(() => ({ ok: false, error: "respuesta no-JSON" }));
         } catch (e: any) { envio = { ok: false, error: e.message }; }
