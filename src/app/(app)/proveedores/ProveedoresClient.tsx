@@ -187,8 +187,8 @@ function ComprasProv({ prov }: { prov: any }) {
                 <td className="py-1 text-gray-500 whitespace-nowrap">{c.created_at ? new Date(c.created_at).toLocaleDateString("es-AR") : "—"}</td>
                 <td className="py-1">{(c.items || []).length} ítem(s){c.gsa_numero ? " · GSA " + c.gsa_numero : ""}</td>
                 <td className="py-1 text-right tabular-nums">{Number(c.total_costo_usd || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
-                <td className="py-1 text-center">{c.estado === "recibido" ? <span className="text-emerald-600">✔ recibido</span> : <span className="text-amber-600">enviado</span>}</td>
-                <td className="py-1 text-right">{c.estado !== "recibido" && <button onClick={() => recibir(c.id)} className="text-febo-azul hover:underline">📥 Recibir</button>}</td>
+                <td className="py-1 text-center">{c.estado === "recibido" ? <span className="text-emerald-600">✔ recibido</span> : c.estado === "enviado" ? <span className="text-blue-600">📤 enviado</span> : c.estado === "pendiente" ? <span className="text-amber-600">⏳ pendiente</span> : <span className="text-gray-400">{c.estado}</span>}{c.creado_por ? <div className="text-[10px] text-gray-400">{c.creado_por}</div> : null}</td>
+                <td className="py-1 text-right">{c.estado === "enviado" && <button onClick={() => recibir(c.id)} className="text-febo-azul hover:underline">📥 Recibir</button>}{c.estado === "pendiente" && <span className="text-[10px] text-amber-600">confirma el owner</span>}</td>
               </tr>
             ))}
           </tbody>
