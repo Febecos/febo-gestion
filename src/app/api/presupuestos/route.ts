@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
     // Asegurar columnas de vendedor (pueden no existir si aún no se guardó ningún FV)
     await sql`ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS vendedor TEXT`.catch(() => {});
     await sql`ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS vendedor_email TEXT`.catch(() => {});
+    await sql`ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS moneda TEXT`.catch(() => {});
+    await sql`ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS tc NUMERIC`.catch(() => {});
 
     const rows = await sql`
       SELECT
@@ -25,7 +27,7 @@ export async function GET(req: NextRequest) {
         p.cliente_nombre, p.cliente_apellido, p.cliente_cuit, p.cliente_email,
         p.cliente_razon_social, p.cliente_telefono,
         p.bomba_codigo, p.bomba_descripcion,
-        p.precio_ofrecido, p.precio_publico, p.descuento_pct, p.tipo_precio,
+        p.precio_ofrecido, p.precio_publico, p.descuento_pct, p.tipo_precio, p.moneda, p.tc,
         p.revendedor_nombre, p.revendedor_email, p.revendedor_token, p.public_token, p.created_at,
         p.vendedor, p.vendedor_email,
         c.id AS cliente_id,

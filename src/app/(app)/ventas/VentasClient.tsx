@@ -132,7 +132,7 @@ function Presupuestos() {
                   {r.factura_numero && <span className="ml-1 text-[10px] font-semibold text-emerald-600" title="Facturado">🧾 {r.factura_numero}</span>}
                 </td>
                 <td className="px-4 py-2 text-gray-600">{fmtF(r.created_at)}</td>
-                <td className="px-4 py-2 text-right font-semibold">{fmt(r.precio_ofrecido, r.tipo === "fv" ? "USD" : "$")}</td>
+                <td className="px-4 py-2 text-right font-semibold">{(r.moneda === "ARS" || r.moneda === "$") && Number(r.tc) > 0 ? `$ ${Math.round(Number(r.precio_ofrecido) * Number(r.tc)).toLocaleString("es-AR")}` : fmt(r.precio_ofrecido, r.tipo === "fv" ? "USD" : "$")}</td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
                   {tienePedido(r)
                     ? <span title="Con pedido generado: no se edita" className="text-gray-300 mr-2">🔒</span>
