@@ -1,13 +1,21 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const TITULO: Record<string, string> = { presupuesto: "PRESUPUESTO", pedido: "PEDIDO", factura: "FACTURA", remito: "REMITO" };
+// Normaliza alias de tipo (nc/nd → nombre completo)
+const TIPO_ALIAS: Record<string, string> = { nc: "nota_credito", nd: "nota_debito", nota_de_credito: "nota_credito", nota_de_debito: "nota_debito" };
+const TITULO: Record<string, string> = { presupuesto: "PRESUPUESTO", pedido: "PEDIDO", factura: "FACTURA", remito: "REMITO", nota_credito: "NOTA DE CRÉDITO", nota_debito: "NOTA DE DÉBITO" };
 const COND: Record<string, string> = {
   responsable_inscripto: "Responsable Inscripto", monotributista: "Monotributista",
   consumidor_final: "Consumidor Final", exento: "Exento",
 };
-// Código de comprobante AFIP según letra (para "Cód. NN")
-const CODIGO: Record<string, string> = { A: "01", B: "06", C: "11", E: "19", M: "51" };
+// Documentos FISCALES (llevan letra, código AFIP, IVA discriminado A/M, CAE, leyendas).
+const ES_FISCAL = new Set(["factura", "nota_credito", "nota_debito"]);
+// Código de comprobante AFIP según tipo + letra (para "Cód. NN"). NC: 3/8/13 · ND: 2/7/12.
+const CODIGO_DOC: Record<string, Record<string, string>> = {
+  factura: { A: "01", B: "06", C: "11", M: "51", E: "19" },
+  nota_credito: { A: "03", B: "08", C: "13", M: "53", E: "21" },
+  nota_debito: { A: "02", B: "07", C: "12", M: "52", E: "20" },
+};
 const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
 const cuitFmt = (c: any) => { const d = String(c || "").replace(/\D/g, ""); return d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : (c || ""); };
 
@@ -76,8 +84,9 @@ export default function ComprobantePublico({ params }: { params: { token: string
   if (!d) return <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>Cargando…</div>;
 
   const c = d.comprobante, cli = d.cliente, emp = d.empresa || {}, items = d.items || [];
-  const titulo = TITULO[c.tipo] || String(c.tipo).toUpperCase();
-  const esFactura = c.tipo === "factura";
+  const tipoDoc = TIPO_ALIAS[String(c.tipo || "").toLowerCase()] || String(c.tipo || "").toLowerCase();
+  const titulo = TITULO[tipoDoc] || String(c.tipo || "").toUpperCase();
+  const esFactura = ES_FISCAL.has(tipoDoc);   // factura / nota de crédito / nota de débito
   const moneda = c.moneda || "USD";
   const sym = moneda === "USD" ? "USD" : "$";
   const fmt = (v: any) => `${sym} ${Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -107,7 +116,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
   const ivaTotal = ivaLines.reduce((a, l) => a + l.monto, 0);
   // A/M: total = neto gravado + IVA. B/C: total = bruto - descuento (IVA ya incluido en los precios).
   const totalDoc = Number(c.total) || (discriminaIva ? neto + ivaTotal : subtotalBruto - descMonto);
-  const codigo = CODIGO[letra] || "";
+  const codigo = (CODIGO_DOC[tipoDoc] || {})[letra] || "";
   const condReceptor = c.condicion_iva_receptor || (cli?.condicion_fiscal ? (COND[cli.condicion_fiscal] || cli.condicion_fiscal) : "");
 
   return (
@@ -188,8 +197,8 @@ export default function ComprobantePublico({ params }: { params: { token: string
             {esFactura && letra ? <><div className="L">{letra}</div>{codigo && <div className="cod">Cód. {codigo}</div>}<div className="orig">{c.copia || "ORIGINAL"}</div></> : null}
           </div>
           <div className="doctype">
-            {esFactura && !c.afip_cae && <div className="noval">Documento No Válido como Factura</div>}
-            <div className="t">{esFactura ? (c.afip_cae ? "FACTURA" : "FACTURA PROFORMA") : titulo}</div>
+            {esFactura && !c.afip_cae && <div className="noval">Documento No Válido como Comprobante</div>}
+            <div className="t">{esFactura ? titulo + (c.afip_cae ? "" : " PROFORMA") : titulo}</div>
             <div className="n">Nº: {c.numero || ""}</div>
             <div>Fecha Emisión: {fmtF(c.fecha)}</div>
             <div>Fecha Vencimiento: {fmtF(c.vencimiento || c.fecha)}</div>
