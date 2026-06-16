@@ -50,6 +50,11 @@ export default function ComprobantePublico({ params }: { params: { token: string
     fetch("/api/public/" + params.token).then((r) => r.json()).then((j) => {
       if (!j.ok) { setErr(j.error || "No encontrado"); return; }
       setD(j);
+      try {
+        const c = j.comprobante || {};
+        const t = (TITULO[c.tipo] || "Comprobante") + (c.numero ? " " + c.numero : "");
+        document.title = t;
+      } catch {}
       if (new URLSearchParams(window.location.search).get("print") === "1") setTimeout(() => window.print(), 700);
     }).catch((e) => setErr(e.message));
   }, [params.token]);
@@ -109,43 +114,50 @@ export default function ComprobantePublico({ params }: { params: { token: string
         .toolbar { display:flex; gap:8px; justify-content:flex-end; margin-bottom:16px; }
         .btn { background:var(--azul); color:#fff; border:0; border-radius:8px; padding:10px 18px; font-size:14px; font-weight:600; cursor:pointer; }
         .btn.sec { background:#fff; color:#334155; border:1px solid #cbd5e1; }
-        .sheet { background:#fff; border:1px solid #d1d5db; border-radius:6px; padding:30px 34px; color:#1f2937; font-size:12px; position:relative; }
-        .original { position:absolute; top:14px; right:18px; font-size:10px; font-weight:700; letter-spacing:1px; color:#6b7280; }
-        .head { display:grid; grid-template-columns: 1fr 64px 1fr; align-items:flex-start; border-bottom:2px solid var(--azul); padding-bottom:14px; }
+        .sheet { background:#fff; border:1px solid #d1d5db; border-radius:12px; padding:30px 34px; color:#1f2937; font-size:12px; position:relative; }
+        .head { display:grid; grid-template-columns: 1fr 70px 1.05fr; align-items:flex-start; border-bottom:2px solid var(--azul); padding-bottom:14px; column-gap:10px; }
         .logo img { max-height:62px; max-width:200px; }
         .emisor { font-size:11px; line-height:1.45; }
         .emisor .rs { font-size:15px; font-weight:800; color:var(--azul); }
         .letra { text-align:center; }
-        .letra .L { display:inline-block; border:2px solid #111; border-radius:6px; width:46px; height:46px; line-height:44px; font-size:30px; font-weight:800; }
+        .letra .L { display:inline-block; border:2px solid #111; border-radius:10px; width:46px; height:46px; line-height:44px; font-size:30px; font-weight:800; }
         .letra .cod { font-size:9px; color:#555; margin-top:2px; }
+        .letra .orig { font-size:9px; font-weight:700; letter-spacing:1px; color:#6b7280; margin-top:5px; }
         .doctype { text-align:right; font-size:11px; line-height:1.5; }
         .doctype .t { font-size:18px; font-weight:800; color:#111827; }
         .doctype .n { font-size:14px; font-weight:700; }
-        .noval { display:inline-block; font-size:10px; font-weight:700; color:#374151; border:1px solid #9ca3af; border-radius:4px; padding:3px 8px; margin-bottom:6px; }
-        .parties { margin:12px 0; border:1px solid #e5e7eb; border-radius:6px; padding:9px 11px; }
+        .doctype .fiscal { border-top:1px solid #cbd5e1; margin-top:8px; padding-top:6px; font-size:10.5px; color:#374151; line-height:1.5; }
+        .noval { display:inline-block; font-size:10px; font-weight:700; color:#374151; border:1px solid #9ca3af; border-radius:6px; padding:3px 8px; margin-bottom:6px; }
+        .parties { margin:12px 0; border:1px solid #e5e7eb; border-radius:10px; padding:9px 11px; }
         .parties .lbl { font-size:9px; text-transform:uppercase; color:#9ca3af; font-weight:700; margin-bottom:3px; }
         .parties .v { line-height:1.5; }
-        .venta { display:grid; grid-template-columns:1fr 1fr; gap:2px 24px; font-size:11px; color:#374151; margin:10px 0; }
+        .venta { display:grid; grid-template-columns:1fr 1fr; gap:2px 24px; font-size:11px; color:#374151; margin:10px 0; border:1px solid #e5e7eb; border-radius:10px; padding:8px 11px; }
         .venta .k { color:#6b7280; }
-        table.items { width:100%; border-collapse:collapse; margin-top:6px; }
+        .tablebox { border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; margin-top:8px; }
+        table.items { width:100%; border-collapse:collapse; }
         table.items th { background:var(--azul); color:#fff; text-align:left; padding:6px 9px; font-size:10px; text-transform:uppercase; }
         table.items td { padding:5px 9px; border-bottom:1px solid #eef2f7; vertical-align:top; }
+        table.items tr:last-child td { border-bottom:0; }
         table.items td.r, table.items th.r { text-align:right; white-space:nowrap; }
         .letras { margin-top:12px; font-size:11.5px; font-style:italic; color:#374151; }
-        table.totband { width:100%; border-collapse:collapse; margin-top:10px; }
-        table.totband th { background:#f1f5f9; border:1px solid #cbd5e1; text-align:center; padding:5px 8px; font-size:10px; font-weight:700; color:#334155; text-transform:none; }
-        table.totband td { border:1px solid #cbd5e1; text-align:center; padding:6px 8px; font-size:12px; white-space:nowrap; }
+        .totbox { border:1px solid #cbd5e1; border-radius:10px; overflow:hidden; margin-top:10px; }
+        table.totband { width:100%; border-collapse:collapse; }
+        table.totband th { background:#f1f5f9; border-right:1px solid #cbd5e1; border-bottom:1px solid #cbd5e1; text-align:center; padding:5px 8px; font-size:10px; font-weight:700; color:#334155; text-transform:none; }
+        table.totband td { border-right:1px solid #cbd5e1; text-align:center; padding:6px 8px; font-size:12px; white-space:nowrap; }
+        table.totband th:last-child, table.totband td:last-child { border-right:0; }
         table.totband td.desc { color:#b91c1c; }
         table.totband th.tot, table.totband td.tot { background:var(--azul); color:#fff; font-weight:800; }
         table.totband td.tot { font-size:13.5px; }
-        .leyendas { margin-top:14px; font-size:10px; color:#4b5563; border-top:1px solid #e5e7eb; padding-top:8px; line-height:1.5; }
-        .cae { margin-top:16px; padding:10px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; font-size:12px; color:#166534; display:flex; align-items:center; gap:14px; }
-        .foot { margin-top:24px; text-align:center; font-size:10px; color:#9ca3af; }
+        .leyendas { margin-top:14px; font-size:10px; color:#4b5563; border:1px solid #e5e7eb; border-radius:10px; padding:8px 11px; line-height:1.5; }
+        .cae { margin-top:16px; padding:10px 12px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; font-size:12px; color:#166534; display:flex; align-items:center; gap:14px; }
+        .foot { margin-top:24px; text-align:center; font-size:9.5px; color:#9ca3af; }
+        @media screen { .doc-wrap { min-height:0; } }
         @media print {
-          body { background:#fff; }
+          html, body { background:#fff; }
           .toolbar { display:none !important; }
           .doc-wrap { max-width:none; padding:0; }
           .sheet { border:0; border-radius:0; padding:0; font-size:11px; }
+          .foot { position:fixed; bottom:4mm; left:0; right:0; margin:0; }
           @page { size: A4; margin: 12mm; }
         }
       `}</style>
@@ -156,7 +168,6 @@ export default function ComprobantePublico({ params }: { params: { token: string
       </div>
 
       <div className="sheet">
-        <div className="original">{c.copia || "ORIGINAL"}</div>
         <div className="head">
           <div>
             <div className="logo"><img src="/images/febecos-logo-factura.png" alt="FEBECOS" onError={(e) => { (e.target as HTMLImageElement).src = "/images/febecos-logo.png"; }} /></div>
@@ -166,13 +177,10 @@ export default function ComprobantePublico({ params }: { params: { token: string
               <div>{[`(${emp.cod_postal || "1405"})`, emp.localidad || "Buenos Aires", emp.provincia || "C.A.B.A.", "Argentina"].filter(Boolean).join(" - ")}</div>
               {(emp.telefono || "549 11 2575 0323") && <div>Tel: {emp.telefono || "549 11 2575 0323"}</div>}
               <div>E-mail: {emp.email || "ventas@febecos.com"}</div>
-              <div>CUIT: {cuitFmt(emp.cuit) || "20-21730156-5"}</div>
-              <div>Inicio de actividades: {emp.inicio_actividades || "10/2017"}</div>
-              <div>Condición Fiscal: {emisorCond}</div>
             </div>
           </div>
           <div className="letra">
-            {esFactura && letra ? <><div className="L">{letra}</div>{codigo && <div className="cod">Cód. {codigo}</div>}</> : null}
+            {esFactura && letra ? <><div className="L">{letra}</div>{codigo && <div className="cod">Cód. {codigo}</div>}<div className="orig">{c.copia || "ORIGINAL"}</div></> : null}
           </div>
           <div className="doctype">
             {esFactura && !c.afip_cae && <div className="noval">Documento No Válido como Factura</div>}
@@ -181,6 +189,11 @@ export default function ComprobantePublico({ params }: { params: { token: string
             <div>Fecha Emisión: {fmtF(c.fecha)}</div>
             <div>Fecha Vencimiento: {fmtF(c.vencimiento || c.fecha)}</div>
             <div>Hoja 1 de {Math.max(1, Math.ceil(items.length / 22))}</div>
+            <div className="fiscal">
+              <div>CUIT: {cuitFmt(emp.cuit) || "20-21730156-5"}</div>
+              <div>Inicio de actividades: {emp.inicio_actividades || "10/2017"}</div>
+              <div>Condición Fiscal: {emisorCond}</div>
+            </div>
           </div>
         </div>
 
@@ -203,6 +216,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
           </div>
         )}
 
+        <div className="tablebox">
         <table className="items">
           <thead>
             <tr>
@@ -231,9 +245,11 @@ export default function ComprobantePublico({ params }: { params: { token: string
             )}
           </tbody>
         </table>
+        </div>
 
         <div className="letras">{importeEnLetras(totalDoc, moneda)}</div>
 
+        <div className="totbox">
         <table className="totband">
           <thead>
             <tr>
@@ -256,6 +272,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
             </tr>
           </tbody>
         </table>
+        </div>
 
         {Array.isArray(c.leyendas) && c.leyendas.length > 0 && (
           <div className="leyendas">{c.leyendas.map((l: string, i: number) => <div key={i}>{l}</div>)}</div>
@@ -271,7 +288,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
           </div>
         )}
 
-        <div className="foot">Documento generado por FEBO-GESTION · febecos.com</div>
+        <div className="foot">Comprobante emitido con <b>Sistema FEBO-GESTIÓN</b> · Gestión comercial y facturación electrónica</div>
       </div>
     </div>
   );
