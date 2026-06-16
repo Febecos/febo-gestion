@@ -59,11 +59,16 @@ export default function ComprobantePublico({ params }: { params: { token: string
     }).catch((e) => setErr(e.message));
   }, [params.token]);
   const enviarEmail = async () => {
+    const def = d?.cliente?.email || "";
+    const to = window.prompt("Enviar comprobante a este email (podés cambiarlo para una prueba):", def);
+    if (to === null) return;
+    const email = to.trim();
+    if (!email) { alert("Indicá un email."); return; }
     setSending(true);
     try {
-      const r = await fetch("/api/comprobante-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: params.token }) });
+      const r = await fetch("/api/comprobante-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: params.token, email }) });
       const j = await r.json();
-      alert(j.ok ? "✅ Enviado a " + (j.email || "el cliente") : "No se pudo enviar: " + (j.error || "error"));
+      alert(j.ok ? "✅ Enviado a " + (j.email || email) : "No se pudo enviar: " + (j.error || "error"));
     } catch (e: any) { alert("Error: " + e.message); } finally { setSending(false); }
   };
 

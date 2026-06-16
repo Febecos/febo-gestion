@@ -233,6 +233,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     if (b.accion === "email_cliente") {
       const email = String(b.email || "").trim();
       if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(jsonb_set(coalesce(payload,'{}'::jsonb), '{revendedor}', coalesce(payload->'revendedor','{}'::jsonb)), '{revendedor,email}', to_jsonb(${email}::text)) WHERE numero=${ref}`;
+      // Por norma: el email también queda en la ficha del CRM (de ahí lo lee el envío de factura).
+      if (email) {
+        const fvRow2 = await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
+        const cid = await clienteIdDe(sql, fvRow2[0]?.payload);
+        if (cid) await sql`UPDATE clientes SET email=${email} WHERE id=${cid}`;
+      }
       return NextResponse.json({ ok: true });
     }
     if (b.accion === "nota") {
