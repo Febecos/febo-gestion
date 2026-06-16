@@ -159,8 +159,11 @@ function Pedidos() {
   const [sel, setSel] = useState<string | null>(null);
   const load = () => fetch("/api/pedidos").then((r) => r.json()).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); });
   useEffect(() => { load(); }, []);
+  // Refrescar al volver a la ventana (ej. tras generar un pedido en el cotizador)
+  useEffect(() => { const onFocus = () => load(); window.addEventListener("focus", onFocus); return () => window.removeEventListener("focus", onFocus); }, []);
   return (
     <>
+    <div className="flex justify-end mb-2"><button onClick={load} className="text-sm text-febo-azul hover:underline">🔄 Actualizar</button></div>
     <Tabla loading={loading} count={rows.length} unidad="pedidos"
       cols={["Origen", "Número", "Cliente", "Detalle", "Estado", "Fecha", "Total", ""]}>
       {rows.map((p, i) => (
