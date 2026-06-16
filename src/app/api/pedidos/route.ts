@@ -36,7 +36,7 @@ export async function GET(_req: NextRequest) {
           origen: "fv", ref: p.numero, numero: p.numero,
           cliente: pl.revendedor?.nombre || pl.cliente?.nombre || "—",
           detalle: (pl.items?.length ? `${pl.items.length} ítem(s)` : "FV"),
-          total: Number(pl.totales?.total) || 0, moneda: pl.totales?.moneda || "USD",
+          total: Number(pl.totales?.total) || 0, moneda: pl.totales?.moneda || "USD", tc: pl.totales?.tc || null,
           estado: p.estado || "—", fecha: null,
           token: p.presup_token || p.public_token,
           presup: pl.presupuesto_numero || null,

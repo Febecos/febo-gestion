@@ -174,8 +174,8 @@ function Pedidos() {
           <td className="px-4 py-2 text-gray-600">{p.detalle}</td>
           <td className="px-4 py-2">{chip(p.estado, EST_COL[p.estado] || "#888")}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(p.fecha)}</td>
-          <td className="px-4 py-2 text-right font-semibold">{fmt(p.total, p.moneda)}</td>
-          <td className="px-4 py-2 text-right">{p.token && <a onClick={(e) => e.stopPropagation()} href={`${COTI}/p/${p.token}`} target="_blank" rel="noreferrer" title="Ver presupuesto" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
+          <td className="px-4 py-2 text-right font-semibold">{(p.moneda === "ARS" || p.moneda === "$") && Number(p.tc) > 0 ? `$ ${Math.round(Number(p.total) * Number(p.tc)).toLocaleString("es-AR")}` : fmt(p.total, p.moneda)}</td>
+          <td className="px-4 py-2 text-right">{p.token && <a onClick={(e) => e.stopPropagation()} href={linkPresup(p.origen === "fv" ? "fv" : "bomba", p.token)} target="_blank" rel="noreferrer" title="Ver presupuesto" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
         </tr>
       ))}
     </Tabla>
