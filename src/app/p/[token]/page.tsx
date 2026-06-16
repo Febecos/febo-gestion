@@ -7,6 +7,7 @@ const COND: Record<string, string> = {
   consumidor_final: "Consumidor Final", exento: "Exento",
 };
 const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
+const cuitFmt = (c: any) => { const d = String(c || "").replace(/\D/g, ""); return d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : (c || ""); };
 
 // ── Número a letras (es-AR), para el "SON ..." ──
 function enLetras(n: number): string {
@@ -100,7 +101,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
         .doctype { text-align:right; font-size:11.5px; line-height:1.5; }
         .doctype .t { font-size:18px; font-weight:800; color:#111827; }
         .doctype .n { font-size:14px; font-weight:700; }
-        .noval { text-align:center; font-size:11px; font-weight:700; color:#9a3412; background:#fff7ed; border:1px solid #fed7aa; border-radius:4px; padding:4px; margin:10px 0; letter-spacing:.5px; }
+        .noval { display:inline-block; font-size:10px; font-weight:700; color:#374151; border:1px solid #9ca3af; border-radius:4px; padding:3px 8px; margin-bottom:6px; }
         .parties { display:flex; gap:24px; margin:14px 0; }
         .parties .box { flex:1; border:1px solid #e5e7eb; border-radius:6px; padding:8px 10px; }
         .parties .lbl { font-size:9px; text-transform:uppercase; color:#9ca3af; font-weight:700; margin-bottom:3px; }
@@ -133,32 +134,31 @@ export default function ComprobantePublico({ params }: { params: { token: string
             <div className="emisor" style={{ marginTop: 8 }}>
               <div className="rs">{emp.razon_social || "Sandler Guillermo Javier"}</div>
               {(emp.domicilio || emp.localidad) && <div>{[emp.domicilio, emp.localidad, emp.provincia, emp.cod_postal].filter(Boolean).join(" - ")}</div>}
-              <div>CUIT: {emp.cuit || "20-21730156-5"} · {emisorCond}</div>
-              {emp.iibb && <div>IIBB: {emp.iibb}</div>}
+              <div>CUIT: {cuitFmt(emp.cuit) || "20-21730156-5"} · {emisorCond}</div>
+              {emp.iibb && cuitFmt(emp.iibb) !== cuitFmt(emp.cuit) && <div>IIBB: {emp.iibb}</div>}
               {emp.inicio_actividades && <div>Inicio de actividades: {emp.inicio_actividades}</div>}
               <div>ventas@febecos.com</div>
             </div>
           </div>
           <div className="letra">
-            {esFactura && c.letra ? <><div className="L">{c.letra}</div><div className="cod">COMP. {c.letra}</div></> : null}
+            {esFactura && c.letra ? <div className="L">{c.letra}</div> : null}
           </div>
           <div className="doctype">
-            <div className="t">{esFactura ? (c.afip_cae ? "FACTURA" : "FACTURA PROFORMA") : titulo}</div>
+            {esFactura && !c.afip_cae && <div className="noval">Documento No Válido como Factura</div>}
+            <div className="t">{esFactura ? (c.afip_cae ? "Factura" : "Factura Proforma") : titulo}</div>
             <div className="n">Nº: {c.numero || ""}</div>
             <div>Fecha Emisión: {fmtF(c.fecha)}</div>
             <div>Fecha Vencimiento: {fmtF(c.vencimiento || c.fecha)}</div>
-            {c.estado && <div style={{ color: "#6b7280" }}>Estado: {c.estado}</div>}
+            <div>Hoja 1 de 1</div>
           </div>
         </div>
-
-        {esFactura && !c.afip_cae && <div className="noval">DOCUMENTO NO VÁLIDO COMO FACTURA</div>}
 
         <div className="parties">
           <div className="box">
             <div className="lbl">Cliente</div>
             <div className="v">
               <strong>{cli?.razon_social || cli?.nombre || c.cliente_nombre || "—"}</strong><br />
-              {(cli?.cuit || c.cliente_cuit) ? <>CUIT: {cli?.cuit || c.cliente_cuit}<br /></> : null}
+              {(cli?.cuit || c.cliente_cuit) ? <>CUIT: {cuitFmt(cli?.cuit || c.cliente_cuit)}<br /></> : null}
               {c.condicion_iva_receptor ? <>Condición de IVA: {c.condicion_iva_receptor}<br /></> : (cli?.condicion_fiscal ? <>Condición de IVA: {COND[cli.condicion_fiscal] || cli.condicion_fiscal}<br /></> : null)}
               {cli?.domicilio ? <>{cli.domicilio}<br /></> : null}
               {[cli?.localidad, cli?.provincia, cli?.cod_postal].filter(Boolean).join(", ")}
