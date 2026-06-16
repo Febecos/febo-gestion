@@ -460,7 +460,12 @@ function TablaPresup({ rows, vacio }: { rows: any[]; vacio: string }) {
         </thead>
         <tbody>
           {rows.map((p: any) => {
-            const tp = tipoP(p.tipo); const m = p.tipo === "fv" ? "USD" : "$";
+            const tp = tipoP(p.tipo);
+            // Moneda de ORIGEN del presupuesto: si se emitió en pesos (moneda ARS/$ + tc) muestra $ convertido; si no, USD (fv) o $ (bomba).
+            const enPesos = (p.moneda === "ARS" || p.moneda === "$") && Number(p.tc) > 0;
+            const precioTxt = enPesos
+              ? `$ ${Math.round((Number(p.precio_ofrecido) || 0) * Number(p.tc)).toLocaleString("es-AR")}`
+              : `${p.tipo === "fv" ? "USD" : "$"} ${Math.round(Number(p.precio_ofrecido) || 0).toLocaleString("es-AR")}`;
             return (
               <tr key={p.id} className="border-t border-gray-100">
                 <td className="px-3 py-2 font-semibold">{p.numero}{p.presup_numero && <div className="text-[10px] font-normal text-gray-400">de {p.presup_numero}</div>}</td>
@@ -468,7 +473,7 @@ function TablaPresup({ rows, vacio }: { rows: any[]; vacio: string }) {
                 <td className="px-3 py-2 text-gray-600">{p.bomba_codigo || p.bomba_descripcion || "—"}</td>
                 <td className="px-3 py-2 text-gray-500">{p.created_at ? new Date(p.created_at).toLocaleDateString("es-AR") : "—"}</td>
                 <td className="px-3 py-2 text-gray-500">{p.estado || "—"}</td>
-                <td className="px-3 py-2 text-right font-semibold">{m} {Math.round(Number(p.precio_ofrecido) || 0).toLocaleString("es-AR")}</td>
+                <td className="px-3 py-2 text-right font-semibold">{precioTxt}</td>
                 <td className="px-3 py-2 text-right">{p.public_token && <a href={linkPresup(p.tipo, p.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
               </tr>
             );

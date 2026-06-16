@@ -26,7 +26,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     // (ej. "Consumidor Final"). Los demás criterios suman presupuestos no enlazados por ID.
     const presupuestos = await sql`
         SELECT id, numero, COALESCE(tipo,'bomba') AS tipo, estado,
-               bomba_codigo, bomba_descripcion, precio_ofrecido, precio_publico,
+               bomba_codigo, bomba_descripcion, precio_ofrecido, precio_publico, moneda, tc,
                public_token, revendedor_token, revendedor_nombre, created_at
         FROM presupuestos
         WHERE cliente_id = ${id}
@@ -46,7 +46,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         const fvped = await sql`
           SELECT fp.numero AS numero, fp.estado, fp.public_token AS pedido_token,
                  pr.public_token AS presup_token, pr.numero AS presup_numero,
-                 COALESCE(pr.tipo,'fv') AS tipo, pr.precio_ofrecido,
+                 COALESCE(pr.tipo,'fv') AS tipo, pr.precio_ofrecido, pr.moneda, pr.tc,
                  pr.bomba_codigo, pr.bomba_descripcion, pr.created_at
           FROM fv_pedidos fp
           JOIN presupuestos pr ON pr.numero = fp.payload->>'presupuesto_numero'
@@ -55,7 +55,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         pedidos = fvped.map((p) => ({
           id: p.numero, numero: p.numero, tipo: p.tipo,
           bomba_codigo: p.bomba_codigo, bomba_descripcion: p.bomba_descripcion,
-          precio_ofrecido: p.precio_ofrecido, created_at: p.created_at,
+          precio_ofrecido: p.precio_ofrecido, moneda: p.moneda, tc: p.tc, created_at: p.created_at,
           estado: p.estado || "pedido", public_token: p.presup_token, presup_numero: p.presup_numero,
         }));
       } catch { pedidos = []; }
