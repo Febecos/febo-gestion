@@ -8,7 +8,7 @@ export async function POST(req: NextRequest) {
     const { token, email: emailOverride } = await req.json();
     if (!token) return NextResponse.json({ ok: false, error: "token requerido" }, { status: 400 });
     const sql = getDb();
-    const c = (await sql`SELECT id, tipo, numero, total, moneda, cliente_id, cliente_nombre, leyendas FROM fg_comprobantes WHERE token=${token} LIMIT 1` as any[])[0];
+    const c = (await sql`SELECT id, tipo, numero, total, moneda, cliente_id, cliente_nombre, leyendas, afip_cae FROM fg_comprobantes WHERE token=${token} LIMIT 1` as any[])[0];
     if (!c) return NextResponse.json({ ok: false, error: "comprobante no encontrado" }, { status: 404 });
     let email = "", nombre = c.cliente_nombre || "", razonSocial = c.cliente_nombre || "", cuit = "";
     if (c.cliente_id) {
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     if (internal) headers["Authorization"] = "Bearer " + internal; else if (fvTok) headers["X-Admin-Token"] = fvTok;
     const r = await fetch("https://febecos.com/api/admin?action=enviar-comprobante", {
       method: "POST", headers,
-      body: JSON.stringify({ email, nombre, razon_social: razonSocial, cuit, numero: c.numero, tipo: c.tipo, total: c.total, moneda: c.moneda, link, leyendas: c.leyendas || [] }),
+      body: JSON.stringify({ email, nombre, razon_social: razonSocial, cuit, numero: c.numero, tipo: c.tipo, proforma: !c.afip_cae, total: c.total, moneda: c.moneda, link, leyendas: c.leyendas || [] }),
     });
     const d = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON" }));
     return NextResponse.json({ ...d, email }, { status: r.ok ? 200 : (r.status || 502) });
