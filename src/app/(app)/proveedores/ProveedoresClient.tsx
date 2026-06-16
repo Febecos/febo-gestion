@@ -57,7 +57,13 @@ function ProvModal({ prov, onClose, onSaved }: { prov: Prov | null; onClose: () 
       if (!d.ok || d.valido === false) throw new Error(d.error || "CUIT sin datos");
       const dom = d.domicilio || {};
       const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(", ");
-      setP((x: Prov) => ({ ...x, razon_social: x.razon_social || nom || "", domicilio: x.domicilio || dom.direccion || "", localidad: x.localidad || dom.localidad || "", provincia: x.provincia || dom.provincia || "", cod_postal: x.cod_postal || dom.codPostal || "", condicion_iva: x.condicion_iva || d.condicionFiscal || "" }));
+      const upd: Record<string, string> = { razon_social: nom || "", domicilio: dom.direccion || "", localidad: dom.localidad || "", provincia: dom.provincia || "", cod_postal: dom.codPostal || "", condicion_iva: d.condicionFiscal || "" };
+      // Completar solo lo vacío (no pisar lo cargado a mano)
+      const aplicar: Record<string, string> = {};
+      for (const [k, v] of Object.entries(upd)) if (v && !p[k]) aplicar[k] = v;
+      setP((x: Prov) => ({ ...x, ...aplicar }));
+      // Si estamos editando, persistir (el "Traer de ARCA" no dispara onBlur → no se guardaría)
+      if (!esNuevo) { for (const [k, v] of Object.entries(aplicar)) await patch(k, v); }
       setArca("✓ " + (nom || cuit));
     } catch (e: any) { setArca("✕ " + e.message); }
   }
