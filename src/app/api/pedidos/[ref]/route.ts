@@ -249,6 +249,16 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{envio}', ${JSON.stringify(b.envio || {})}::jsonb) WHERE numero=${ref}`;
       return NextResponse.json({ ok: true });
     }
+    // Enviar al cliente el link para que cargue sus datos de envío.
+    if (b.accion === "pedir_envio") {
+      const email = String(b.email || "").trim();
+      if (!email) return NextResponse.json({ ok: false, error: "El pedido no tiene email del cliente." }, { status: 409 });
+      let nombre = ""; let numero = ref;
+      if (esFv) { const row = await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[]; nombre = row[0]?.payload?.revendedor?.nombre || row[0]?.payload?.cliente?.nombre || ""; }
+      const r = await callSelector("enviar-link-envio", { email, nombre, numero, link: b.link });
+      if (!r?.ok) return NextResponse.json({ ok: false, error: r?.error || "No se pudo enviar el email" }, { status: 502 });
+      return NextResponse.json({ ok: true, email });
+    }
     // Datos de venta (Condiciones de Venta / Forma de Pago / Lugar de Entrega / Tipo de Transporte) → factura.
     if (b.accion === "datos_venta") {
       const dv = b.datos_venta || {};

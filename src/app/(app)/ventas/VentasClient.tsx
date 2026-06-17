@@ -604,6 +604,32 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             </div>
           </div>}
 
+          {/* Datos de envío del cliente (solapa Detalle) */}
+          {tab === "detalle" && (() => {
+            const env = pl.envio || {};
+            const completo = !!env.completado;
+            const link = `https://visor.febecos.com/envio/${ped.public_token || ""}`;
+            return (
+              <div className="border border-gray-200 rounded-lg p-3">
+                <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📦 Datos de envío {completo ? <span className="text-emerald-600">· ✅ cargados por el cliente</span> : <span className="text-amber-600">· ⏳ pendientes</span>}</div>
+                {completo && (
+                  <div className="text-xs text-gray-600 mb-2 leading-relaxed">
+                    <b>{env.nombre}</b>{env.dni ? ` · ${env.dni}` : ""}<br />
+                    {env.direccion}{[env.localidad, env.provincia, env.cp].filter(Boolean).length ? " · " + [env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") : ""}<br />
+                    {[env.telefono, env.email].filter(Boolean).join(" · ")}
+                    {(env.empresa || env.tipo_envio) && <><br />🚚 {[env.empresa, env.tipo_envio].filter(Boolean).join(" · ")}</>}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <button disabled={!ped.public_token} onClick={() => { navigator.clipboard.writeText(link); alert("Link copiado:\n" + link); }} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">🔗 Copiar link para el cliente</button>
+                  {ped.public_token && <a href={link} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">✏️ Abrir / editar formulario</a>}
+                  {emailCli && <button disabled={busy} onClick={() => accion({ accion: "pedir_envio", email: emailCli, link })} className="px-3 py-1.5 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold hover:bg-blue-50">✉️ Enviar link al cliente</button>}
+                </div>
+                <div className="text-[11px] text-gray-400 mt-1">El cliente carga sus datos desde el link (visor.febecos.com). Vos también podés editarlos abriendo el formulario.</div>
+              </div>
+            );
+          })()}
+
           {/* Nota interna (solapa Detalle) */}
           {tab === "detalle" && <div>
             <div className="text-[11px] font-bold text-gray-400 uppercase mb-1">Nota interna</div>

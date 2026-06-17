@@ -5,7 +5,7 @@ import { jwtVerify } from "jose";
 // con ADMIN_JWT_SECRET — el mismo del admin del selector (login compartido).
 // /p/[token] y /api/public/* son públicos: el token aleatorio del comprobante ES
 // la credencial (sin token no se accede). El resto exige sesión.
-const PUBLIC = ["/login", "/api/auth/login", "/api/auth/verify", "/p/", "/api/public/"];
+const PUBLIC = ["/login", "/api/auth/login", "/api/auth/verify", "/p/", "/api/public/", "/envio/"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
