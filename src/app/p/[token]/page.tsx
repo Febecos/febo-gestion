@@ -378,7 +378,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
       <div className="rsheet">
         <img src="/images/remito-fondo.png" alt="Remito" />
         {/* tapar el número preimpreso y escribir el nuestro */}
-        <div style={{ position: "absolute", top: "10.9%", left: "57%", width: "28%", height: "2.1%", background: "#fff" }} />
+        <div style={{ position: "absolute", top: "10.9%", left: "59.2%", width: "26%", height: "2.1%", background: "#fff" }} />
         {T(POS.numero, numeroTxt)}
         {T(POS.dia, dd)}{T(POS.mes, mm)}{T(POS.anio, yyyy)}
         {T(POS.senor, nombre)}
