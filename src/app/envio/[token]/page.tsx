@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const TIPOS = ["", "Puerta a puerta", "A sucursal de transporte", "Retira en depósito", "Flete propio"];
+const TIPOS = ["", "A domicilio", "Puerta a puerta", "A sucursal de transporte", "Retira en depósito", "Flete propio"];
 const PROVINCIAS = ["Buenos Aires", "Ciudad Autónoma de Buenos Aires", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego", "Tucumán"];
 
 export default function EnvioCliente({ params }: { params: { token: string } }) {
