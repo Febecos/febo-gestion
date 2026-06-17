@@ -18,6 +18,7 @@ const CODIGO_DOC: Record<string, Record<string, string>> = {
 };
 const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "");
 const cuitFmt = (c: any) => { const d = String(c || "").replace(/\D/g, ""); return d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : (c || ""); };
+const titleCase = (s: any) => String(s || "").toLowerCase().replace(/(^|[\s,.-])([a-záéíóúñü])/g, (_m, sep, ch) => sep + ch.toUpperCase());
 
 // ── Número a letras (es-AR), para el "SON ..." ──
 function enLetras(n: number): string {
@@ -90,6 +91,9 @@ export default function ComprobantePublico({ params }: { params: { token: string
   const moneda = c.moneda || "USD";
   const sym = moneda === "USD" ? "USD" : "$";
   const fmt = (v: any) => `${sym} ${Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+  // Remito: se imprime sobre el formulario preimpreso de ARCA (imagen de fondo + datos encima).
+  if (tipoDoc === "remito") return <RemitoForm c={c} cli={cli} items={items} admin={admin} onPrint={() => window.print()} />;
 
   // Subtotal BRUTO (suma de ítems, antes de descuento)
   const subtotalBruto = items.reduce((a: number, it: any) => a + (Number(it.total) || 0), 0) || Number(c.subtotal_bruto) || Number(c.subtotal) || 0;
@@ -305,6 +309,100 @@ export default function ComprobantePublico({ params }: { params: { token: string
         )}
 
         <div className="foot">Comprobante emitido con <b>Sistema FEBO-GESTIÓN</b> · Gestión comercial y facturación electrónica</div>
+      </div>
+    </div>
+  );
+}
+
+// ── REMITO sobre el formulario preimpreso de ARCA ──────────────────────────────
+// Dibuja los datos en posiciones % sobre la imagen del talonario. Calibrable con POS.
+const POS = {
+  numero: { top: 10.6, left: 57, w: 41, size: 15, bold: true, center: false },
+  dia: { top: 16.7, left: 71.5, w: 7, size: 12, center: true },
+  mes: { top: 16.7, left: 80.5, w: 7, size: 12, center: true },
+  anio: { top: 16.7, left: 89.5, w: 8, size: 12, center: true },
+  senor: { top: 25.7, left: 13.5, w: 84, size: 11 },
+  domicilio: { top: 29.4, left: 16, w: 52, size: 10 },
+  cuit: { top: 29.4, left: 73, w: 24, size: 10 },
+  facturaNro: { top: 32.6, left: 80, w: 17, size: 10 },
+  transporte: { top: 37.8, left: 28, w: 69, size: 10 },
+  domTransp: { top: 41.0, left: 16, w: 52, size: 10 },
+  cuitTransp: { top: 41.0, left: 76, w: 21, size: 10 },
+  // checkboxes IVA receptor (una X)
+  iva: {
+    responsable_inscripto: { top: 31.9, left: 30.6 },
+    consumidor_final: { top: 33.3, left: 30.6 },
+    exento: { top: 31.9, left: 47 },
+    no_responsable: { top: 33.3, left: 47 },
+    no_categorizado: { top: 31.9, left: 70.5 },
+    monotributista: { top: 33.3, left: 70.5 },
+  } as Record<string, { top: number; left: number }>,
+  itemsTop: 50.2, itemRowH: 2.08, cantLeft: 6, cantW: 13, detLeft: 20.5, detW: 76, itemSize: 9.5,
+};
+
+function RemitoForm({ c, cli, items, admin, onPrint }: { c: any; cli: any; items: any[]; admin: boolean; onPrint: () => void }) {
+  const fecha = c.fecha ? new Date(c.fecha) : null;
+  const dd = fecha ? String(fecha.getDate()).padStart(2, "0") : "";
+  const mm = fecha ? String(fecha.getMonth() + 1).padStart(2, "0") : "";
+  const yy = fecha ? String(fecha.getFullYear()).slice(-2) : "";
+  const nombre = titleCase(cli?.razon_social || cli?.nombre || c.cliente_nombre || "");
+  const dom = [cli?.domicilio, cli?.localidad, cli?.provincia].filter(Boolean).join(", ");
+  const cuit = cuitFmt(cli?.cuit || c.cliente_cuit || "");
+  const cond = (cli?.condicion_fiscal || "").toLowerCase();
+  const ivaPos = POS.iva[cond];
+  const facturaNro = String(c.notas || "").includes("·") ? String(c.notas).split("·").pop()!.trim().replace(/^FA[^0-9]*/i, "") : "";
+  const transp = c.tipo_transporte || "";
+  const domTransp = c.lugar_entrega || "";
+  const leyendas: string[] = Array.isArray(c.leyendas) ? c.leyendas : [];
+
+  const T = (p: any, txt: any) => (
+    <div style={{ position: "absolute", top: p.top + "%", left: p.left + "%", width: (p.w || 20) + "%", fontSize: (p.size || 10) + "px", fontWeight: p.bold ? 700 : 400, textAlign: p.center ? "center" : "left", lineHeight: 1, color: "#111", whiteSpace: "nowrap", overflow: "hidden" }}>{txt}</div>
+  );
+
+  return (
+    <div className="rwrap">
+      <style>{`
+        body { background:#e5e7eb; }
+        .rwrap { max-width: 820px; margin:0 auto; padding:16px 12px 50px; }
+        .rtool { display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px; }
+        .rbtn { background:#0b3d6b; color:#fff; border:0; border-radius:8px; padding:10px 18px; font-weight:600; cursor:pointer; }
+        .rsheet { position:relative; width:100%; }
+        .rsheet > img { width:100%; display:block; }
+        @media print {
+          body { background:#fff; }
+          .rtool { display:none !important; }
+          .rwrap { max-width:none; padding:0; }
+          @page { size:A4; margin:0; }
+          .rsheet { width:100%; }
+        }
+      `}</style>
+      <div className="rtool">
+        <button className="rbtn" onClick={onPrint}>🖨 Imprimir / Guardar PDF</button>
+      </div>
+      <div className="rsheet">
+        <img src="/images/remito-fondo.jpg" alt="Remito" />
+        {/* tapar el número preimpreso y escribir el nuestro */}
+        <div style={{ position: "absolute", top: "9.6%", left: "56%", width: "43%", height: "5%", background: "#fff" }} />
+        {T(POS.numero, c.numero || "")}
+        {T(POS.dia, dd)}{T(POS.mes, mm)}{T(POS.anio, yy)}
+        {T(POS.senor, nombre)}
+        {T(POS.domicilio, dom)}
+        {T(POS.cuit, cuit)}
+        {facturaNro && T(POS.facturaNro, facturaNro)}
+        {ivaPos && <div style={{ position: "absolute", top: ivaPos.top + "%", left: ivaPos.left + "%", fontSize: "11px", fontWeight: 700, color: "#111", lineHeight: 1 }}>X</div>}
+        {T(POS.transporte, transp)}
+        {T(POS.domTransp, domTransp)}
+        {/* ítems */}
+        {items.map((it, i) => (
+          <div key={i}>
+            <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "px", textAlign: "center", color: "#111", lineHeight: 1 }}>{it.cantidad}</div>
+            <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "px", color: "#111", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden" }}>{it.descripcion}</div>
+          </div>
+        ))}
+        {/* mensajes personalizados (leyendas) debajo de los ítems */}
+        {leyendas.map((l, i) => (
+          <div key={"l" + i} style={{ position: "absolute", top: (POS.itemsTop + (items.length + 1 + i) * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "px", fontStyle: "italic", color: "#333", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden" }}>{l}</div>
+        ))}
       </div>
     </div>
   );
