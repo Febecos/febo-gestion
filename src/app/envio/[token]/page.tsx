@@ -19,7 +19,24 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
     }).catch((e) => setErr(e.message));
   }, [params.token]);
 
+  const [sug, setSug] = useState<any[] | null>(null);
   const set = (k: string) => (ev: any) => setF({ ...f, [k]: ev.target.value });
+
+  // Al elegir/escribir una empresa que está en el maestro, autocompleta su teléfono.
+  const setEmpresa = (ev: any) => {
+    const val = ev.target.value;
+    const m = (d?.transportistas || []).find((t: any) => t.nombre.toLowerCase() === val.toLowerCase());
+    setF((prev: any) => ({ ...prev, empresa: val, telefono_transporte: m?.telefono && !prev.telefono_transporte ? m.telefono : prev.telefono_transporte }));
+  };
+  // Sugerir transportes que cubran la provincia del cliente (validado contra el maestro).
+  const buscarPorProvincia = () => {
+    const prov = String(f.provincia || "").trim().toLowerCase();
+    if (!prov) { alert("Completá tu provincia primero."); return; }
+    const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const list = (d?.transportistas || []).filter((t: any) => (t.provincias || []).some((p: string) => norm(p).includes(norm(prov)) || norm(prov).includes(norm(p))));
+    setSug(list);
+  };
+  const elegirSug = (t: any) => { setF((prev: any) => ({ ...prev, empresa: t.nombre, telefono_transporte: t.telefono || prev.telefono_transporte })); setSug(null); };
   const guardar = async () => {
     for (const [k, lbl] of [["nombre", "Nombre"], ["direccion", "Dirección"], ["localidad", "Localidad"], ["provincia", "Provincia"]] as const) {
       if (!String(f[k] || "").trim()) { alert("Completá: " + lbl); return; }
@@ -72,10 +89,22 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
 
         <div className="sec">🚚 Transporte (opcional)</div>
         <div className="grid">
-          <L l="Empresa de transporte">
-            <input value={f.empresa} onChange={set("empresa")} list="transportes" placeholder="Elegí de la lista o escribí uno nuevo" autoComplete="off" />
+          <L l="Empresa de transporte" full>
+            <input value={f.empresa} onChange={setEmpresa} list="transportes" placeholder="Elegí de la lista o escribí uno nuevo" autoComplete="off" />
             <datalist id="transportes">{(d.transportistas || []).map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
-            <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400 }}>Si no está en la lista, escribilo: lo agregamos a nuestra base.</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+              <button type="button" onClick={buscarPorProvincia} style={{ background: "#eef2ff", color: "#0b3d6b", border: "1px solid #c7d2fe", borderRadius: 8, padding: "5px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>🔎 Buscar transporte que llegue a mi provincia</button>
+              <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400 }}>Si no está, escribilo: lo agregamos a nuestra base.</span>
+            </div>
+            {sug !== null && (
+              <div style={{ marginTop: 6, border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, background: "#f8fafc" }}>
+                {sug.length === 0
+                  ? <span style={{ fontSize: 12, color: "#b45309" }}>No tenemos transportes registrados que cubran "{f.provincia}". Podés escribir uno y lo damos de alta.</span>
+                  : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                      {sug.map((t: any) => <button key={t.id} type="button" onClick={() => elegirSug(t)} style={{ background: "#fff", border: "1px solid #cbd5e1", borderRadius: 999, padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>🚚 {t.nombre}{t.telefono ? ` · ${t.telefono}` : ""}</button>)}
+                    </div>}
+              </div>
+            )}
           </L>
           <L l="Tipo de envío"><select value={f.tipo_envio} onChange={set("tipo_envio")}>{TIPOS.map((t) => <option key={t} value={t}>{t || "Seleccioná…"}</option>)}</select></L>
           <L l="Domicilio de la sucursal" full><input value={f.domicilio_transporte} onChange={set("domicilio_transporte")} placeholder="Si es a sucursal de transporte" /></L>

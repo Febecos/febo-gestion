@@ -4,12 +4,16 @@ import { getDb } from "@/lib/db";
 // Datos en vivo: no cachear.
 export const dynamic = "force-dynamic";
 
-// Lista de transportistas (maestro del admin). GET es público.
-async function listarTransportistas(): Promise<{ id: number; nombre: string }[]> {
+// Lista de transportistas (maestro del admin). GET es público. Incluye teléfono y provincias cubiertas.
+async function listarTransportistas(): Promise<{ id: number; nombre: string; telefono: string; provincias: string[] }[]> {
   try {
     const r = await fetch("https://febecos.com/api/transportistas?soloActivos=true");
     const j = await r.json();
-    return (j?.rows || []).map((x: any) => ({ id: x.id, nombre: x.nombre })).filter((x: any) => x.nombre);
+    return (j?.rows || []).map((x: any) => {
+      const ct = Array.isArray(x.contactos) ? x.contactos : [];
+      const tel = (ct.find((c: any) => ["phone", "whatsapp", "mobile", "tel"].includes(String(c.type || "").toLowerCase())) || {}).value || "";
+      return { id: x.id, nombre: x.nombre, telefono: tel, provincias: Array.isArray(x.provincias) ? x.provincias : [] };
+    }).filter((x: any) => x.nombre);
   } catch { return []; }
 }
 // Crea un transportista nuevo en el maestro (auth de servicio).
