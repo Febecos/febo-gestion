@@ -72,7 +72,11 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
 
         <div className="sec">🚚 Transporte (opcional)</div>
         <div className="grid">
-          <L l="Empresa de transporte"><input value={f.empresa} onChange={set("empresa")} placeholder="Ej: Expreso / Andreani / Vía Cargo" /></L>
+          <L l="Empresa de transporte">
+            <input value={f.empresa} onChange={set("empresa")} list="transportes" placeholder="Elegí de la lista o escribí uno nuevo" autoComplete="off" />
+            <datalist id="transportes">{(d.transportistas || []).map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
+            <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 400 }}>Si no está en la lista, escribilo: lo agregamos a nuestra base.</span>
+          </L>
           <L l="Tipo de envío"><select value={f.tipo_envio} onChange={set("tipo_envio")}>{TIPOS.map((t) => <option key={t} value={t}>{t || "Seleccioná…"}</option>)}</select></L>
           <L l="Domicilio de la sucursal" full><input value={f.domicilio_transporte} onChange={set("domicilio_transporte")} placeholder="Si es a sucursal de transporte" /></L>
           <L l="Teléfono del transporte"><input value={f.telefono_transporte} onChange={set("telefono_transporte")} /></L>

@@ -4,6 +4,25 @@ import { getDb } from "@/lib/db";
 // Datos en vivo: no cachear.
 export const dynamic = "force-dynamic";
 
+// Lista de transportistas (maestro del admin). GET es público.
+async function listarTransportistas(): Promise<{ id: number; nombre: string }[]> {
+  try {
+    const r = await fetch("https://febecos.com/api/transportistas?soloActivos=true");
+    const j = await r.json();
+    return (j?.rows || []).map((x: any) => ({ id: x.id, nombre: x.nombre })).filter((x: any) => x.nombre);
+  } catch { return []; }
+}
+// Crea un transportista nuevo en el maestro (auth de servicio).
+async function crearTransportista(nombre: string, telefono?: string): Promise<void> {
+  const internal = process.env.INTERNAL_SERVICE_SECRET; if (!internal) return;
+  try {
+    await fetch("https://febecos.com/api/transportistas", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + internal },
+      body: JSON.stringify({ nombre, source: "manual", contactos: telefono ? [{ type: "phone", value: telefono, is_primary: true }] : [] }),
+    });
+  } catch { /* best-effort */ }
+}
+
 // GET /api/public/envio/[token] → datos del pedido + envío cargado (por public_token de fv_pedidos).
 // Público: el token aleatorio del pedido es la credencial. Solo expone lo necesario para el form.
 export async function GET(_req: NextRequest, { params }: { params: { token: string } }) {
@@ -22,6 +41,7 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
       cliente_nombre: rev.nombre || "",
       completado: !!envio.completado,
       envio,
+      transportistas: await listarTransportistas(),
     });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
@@ -51,6 +71,13 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
       completado: true, completado_at: new Date().toISOString(), cargado_por: "cliente",
     };
     await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{envio}', ${JSON.stringify(envio)}::jsonb) WHERE public_token = ${token}`;
+
+    // Si el cliente indicó un transporte que NO está en el maestro, lo damos de alta.
+    if (envio.empresa) {
+      const lista = await listarTransportistas();
+      const existe = lista.some((t) => t.nombre.trim().toLowerCase() === envio.empresa.toLowerCase());
+      if (!existe) await crearTransportista(envio.empresa, envio.telefono_transporte);
+    }
     return NextResponse.json({ ok: true });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
