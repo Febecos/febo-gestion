@@ -318,10 +318,10 @@ export default function ComprobantePublico({ params }: { params: { token: string
 // Hoja A4 real (210×297mm), imagen de fondo y datos posicionados en % + fuentes en pt,
 // CALCADO del modelo 00005-00000596 (coordenadas extraídas del PDF original).
 const POS = {
-  numero: { top: 10.6, left: 59.5, w: 38, size: 19, bold: true, serif: true },
-  dia: { top: 16.3, left: 71.2, w: 6, size: 13, center: true },
-  mes: { top: 16.3, left: 79.8, w: 6, size: 13, center: true },
-  anio: { top: 16.3, left: 88, w: 9, size: 13, center: true },
+  numero: { top: 11.1, left: 59.8, w: 28, size: 13, bold: true, serif: true },
+  dia: { top: 16.2, left: 72.3, w: 5, size: 11 },
+  mes: { top: 16.2, left: 76.8, w: 5, size: 11 },
+  anio: { top: 16.2, left: 81.2, w: 9, size: 11 },
   senor: { top: 25.6, left: 15.6, w: 80, size: 10 },
   domicilio: { top: 27.9, left: 16.3, w: 55, size: 10 },
   cuit: { top: 28.1, left: 72.7, w: 25, size: 10 },
@@ -376,9 +376,9 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
       `}</style>
       <div className="rtool"><button className="rbtn" onClick={onPrint}>🖨 Imprimir / Guardar PDF</button></div>
       <div className="rsheet">
-        <img src="/images/remito-fondo.jpg" alt="Remito" />
+        <img src="/images/remito-fondo.png" alt="Remito" />
         {/* tapar el número preimpreso y escribir el nuestro */}
-        <div style={{ position: "absolute", top: "9.8%", left: "56.5%", width: "42%", height: "4.5%", background: "#fff" }} />
+        <div style={{ position: "absolute", top: "10.9%", left: "57%", width: "28%", height: "2.1%", background: "#fff" }} />
         {T(POS.numero, numeroTxt)}
         {T(POS.dia, dd)}{T(POS.mes, mm)}{T(POS.anio, yyyy)}
         {T(POS.senor, nombre)}
