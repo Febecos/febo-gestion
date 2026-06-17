@@ -386,7 +386,14 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS forma_pago TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
-      const dvF = pl.datos_venta || {};
+      // Datos de venta: lo guardado o, si falta, lo del presupuesto FV (condiciones).
+      const dvp = pl.datos_venta || {}; const cond = pl.condiciones || {};
+      const dvF = {
+        condiciones_venta: dvp.condiciones_venta || cond.pago || null,
+        forma_pago: dvp.forma_pago || cond.forma || null,
+        lugar_entrega: dvp.lugar_entrega || cond.lugar || null,
+        tipo_transporte: dvp.tipo_transporte || null,
+      };
       const estadoComp = afip ? "emitida" : "proforma";
       const comp = (await sql`
         INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, afip_cae, afip_cae_vto, afip_qr, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte)

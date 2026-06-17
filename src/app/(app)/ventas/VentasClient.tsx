@@ -215,8 +215,15 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => {
     if (d.ok) {
       setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || "");
+      // Datos de venta: lo guardado en el pedido o, si está vacío, lo que vino del presupuesto FV (condiciones).
       const dvp = d.pedido.payload?.datos_venta || {};
-      setDv({ condiciones_venta: dvp.condiciones_venta || "", forma_pago: dvp.forma_pago || "", lugar_entrega: dvp.lugar_entrega || "", tipo_transporte: dvp.tipo_transporte || "" });
+      const cond = d.pedido.payload?.condiciones || {};
+      setDv({
+        condiciones_venta: dvp.condiciones_venta || cond.pago || "",
+        forma_pago: dvp.forma_pago || cond.forma || "",
+        lugar_entrega: dvp.lugar_entrega || cond.lugar || "",
+        tipo_transporte: dvp.tipo_transporte || "",
+      });
       // Si el presupuesto se hizo en $ → arrancar pedido y factura en pesos con su TC (una sola vez).
       if (!monedaInit) {
         const tt = d.pedido.payload?.totales || {};
