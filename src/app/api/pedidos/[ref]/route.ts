@@ -259,6 +259,36 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (!r?.ok) return NextResponse.json({ ok: false, error: r?.error || "No se pudo enviar el email" }, { status: 502 });
       return NextResponse.json({ ok: true, email });
     }
+    // Despacho: generar REMITO. Habilitado solo tras FACTURADO + PAGADO.
+    if (b.accion === "remitir") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const row = (await sql`SELECT payload, factura_numero, estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      const plr = row.payload || {};
+      if (!row.factura_numero) return NextResponse.json({ ok: false, error: "Primero facturá el pedido." }, { status: 409 });
+      const pagado = ["pagado", "enviado"].includes(row.estado) || (plr.pagos_recibidos || []).length > 0;
+      if (!pagado) return NextResponse.json({ ok: false, error: "Falta registrar el pago del cliente antes de despachar." }, { status: 409 });
+      if (plr.remito_numero) return NextResponse.json({ ok: true, ya: true, remito_numero: plr.remito_numero, remito_token: plr.remito_token });
+      const cid = await clienteIdDe(sql, plr);
+      const env = plr.envio || {};
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
+      const n = ((await sql`SELECT count(*)::int c FROM fg_comprobantes WHERE tipo='remito'` as any[])[0]?.c || 0) + 1;
+      const numero = `R-${String(n).padStart(6, "0")}`;
+      const lugar = [env.direccion, env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") || plr.datos_venta?.lugar_entrega || null;
+      const transp = env.empresa || plr.datos_venta?.tipo_transporte || null;
+      const comp = (await sql`
+        INSERT INTO fg_comprobantes (tipo, estado, numero, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, lugar_entrega, tipo_transporte)
+        VALUES ('remito','emitido',${numero},${cid},${plr.revendedor?.nombre || null}, now(), 0, 0, 'ARS', ${"Despacho del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${lugar}, ${transp})
+        RETURNING id, token` as any[])[0];
+      let orden = 0;
+      for (const it of (plr.items || [])) {
+        await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
+          VALUES (${comp.id}, ${(it.descripcion || it.codigo || "").slice(0, 300)}, ${it.cantidad || 1}, 0, 0, ${orden++})`;
+      }
+      await sql`UPDATE fv_pedidos SET estado='enviado', payload = jsonb_set(jsonb_set(coalesce(payload,'{}'::jsonb), '{remito_numero}', to_jsonb(${numero}::text)), '{remito_token}', to_jsonb(${comp.token}::text)) WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true, remito_numero: numero, remito_token: comp.token });
+    }
     // Datos de venta (Condiciones de Venta / Forma de Pago / Lugar de Entrega / Tipo de Transporte) → factura.
     if (b.accion === "datos_venta") {
       const dv = b.datos_venta || {};

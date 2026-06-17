@@ -18,6 +18,8 @@ const COND_LABEL: Record<string, string> = {
   consumidor_final: "Consumidor Final", exento: "Exento", no_categorizado: "No Categorizado", exterior: "Exterior",
 };
 const fmtCond = (c: string) => COND_LABEL[(c || "").toLowerCase()] || (c || "").replace(/_/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+// Capitaliza la primera letra de cada palabra (nombre y apellido).
+const titleCase = (s: any) => String(s || "").toLowerCase().replace(/(^|[\s,.-])([a-záéíóúñü])/g, (_m, sep, ch) => sep + ch.toUpperCase());
 const fmt = (v: number, m = "$") => `${m} ` + Math.round(Number(v) || 0).toLocaleString("es-AR");
 const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—");
 const chip = (txt: string, col: string) => <span style={{ background: col + "22", color: col }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{txt}</span>;
@@ -246,6 +248,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const cancelado = ped.estado === "cancelado";
   // ── Datos fiscales del cliente + letra de factura AFIP ──
   const cli = ped.cliente || {};
+  // Nombre canónico del CRM (no la copia del payload), capitalizado.
+  const nombreCli = titleCase(cli.nombre || cli.razon_social || rev.nombre || "") || "(sin nombre)";
+  const facturado = !!ped.factura_numero;
+  const pagadoOk = ["pagado", "enviado"].includes(ped.estado) || (ped.pagos_recibidos || []).length > 0;
+  const despachado = ped.estado === "enviado" || !!pl.remito_numero;
   const condCli = cli.condicion_fiscal || rev.condicion_fiscal || "";
   const cuitCli = cli.cuit || rev.cuit || "";
   const domCli = [cli.domicilio || rev.domicilio, cli.localidad || rev.localidad, cli.provincia || rev.provincia].filter(Boolean).join(", ");
@@ -275,7 +282,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
         {/* Header */}
         <div className="bg-febo-azul text-white rounded-t-xl px-5 py-3 flex items-center justify-between">
           <div>
-            <div className="text-lg font-bold">{rev.nombre || "(sin nombre)"}</div>
+            <div className="text-lg font-bold">{nombreCli}</div>
             <div className="text-xs opacity-90 flex gap-2 items-center mt-0.5">
               <span>☀️ {ped.origen === "fv" ? "Fotovoltaico" : "Bomba"}</span><span>{ped.numero}</span><span>{fmtF(ped.fecha)}</span>
               <span style={{ background: badge[1] }} className="rounded px-2 py-0.5 font-bold text-[11px]">{badge[0]}</span>
@@ -301,8 +308,9 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               { l: "Stock confirmado", ok: !!ped.proveedor_confirmado, tab: "prov" },
               { l: "Datos de venta", ok: !!(dv.condiciones_venta || dv.forma_pago), tab: "venta" },
               { l: "Datos de envío", ok: !!(pl.envio && pl.envio.completado), tab: "envio" },
-              { l: "Pago", ok: ["pagado", "enviado"].includes(ped.estado) || (ped.pagos_recibidos || []).length > 0, tab: "pago" },
-              { l: "Facturado", ok: !!ped.factura_numero, tab: "factura" },
+              { l: "Pago", ok: pagadoOk, tab: "pago" },
+              { l: "Facturado", ok: facturado, tab: "factura" },
+              { l: "Despachado", ok: despachado, tab: "factura" },
             ];
             const hechos = pasos.filter((p) => p.ok).length;
             return (
@@ -323,7 +331,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             <div className="text-[11px] font-bold text-gray-400 uppercase mb-1 bg-gray-50 px-2 py-1 rounded">Contacto del cliente</div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm px-2">
               {pl.presupuesto_numero && <Cell l="Origen" v={<span className="font-mono font-bold text-febo-azul bg-blue-50 px-2 rounded">{pl.presupuesto_numero}</span>} />}
-              <Cell l="Nombre" v={rev.nombre || "—"} />
+              <Cell l="Nombre" v={nombreCli} />
               {rev.empresa && <Cell l="Empresa" v={rev.empresa} />}
               <Cell l="WhatsApp" v={rev.whatsapp || rev.wa || "—"} />
               <div>
@@ -681,6 +689,25 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   <div className="text-xs text-gray-500">Cuando esté todo, usá el botón <b>Facturar</b> de abajo. Elegís talonario y moneda ahí mismo.</div>
                 </div>
               )}
+
+              {/* Despacho / Remito — habilitado tras facturado + pagado */}
+              <div className="mt-4 pt-3 border-t border-gray-100">
+                <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📦 Despacho / Remito</div>
+                {pl.remito_numero ? (
+                  <div className="text-sm text-gray-700 flex flex-wrap items-center gap-2">
+                    <span>✅ Despachado · Remito <b>{pl.remito_numero}</b></span>
+                    {pl.remito_token && <a href={`/p/${pl.remito_token}?admin=1`} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-violet-300 text-violet-700 text-sm font-semibold hover:bg-violet-50">📦 Ver remito</a>}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {(!facturado || !pagadoOk) && <div className="text-xs text-amber-600">Para despachar primero: {facturado ? "" : "facturar"}{!facturado && !pagadoOk ? " y " : ""}{pagadoOk ? "" : "registrar el pago"}.</div>}
+                    <button disabled={busy || !facturado || !pagadoOk}
+                      title={!facturado ? "Falta facturar" : !pagadoOk ? "Falta registrar el pago" : "Generar remito y marcar despachado"}
+                      onClick={() => accion({ accion: "remitir" }, "¿Generar el REMITO y marcar el pedido como despachado?")}
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold ${facturado && pagadoOk ? "bg-violet-500 text-white hover:bg-violet-600" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>📦 Generar remito y despachar</button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
