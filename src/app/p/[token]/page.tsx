@@ -315,93 +315,85 @@ export default function ComprobantePublico({ params }: { params: { token: string
 }
 
 // ── REMITO sobre el formulario preimpreso de ARCA ──────────────────────────────
-// Dibuja los datos en posiciones % sobre la imagen del talonario. Calibrable con POS.
+// Hoja A4 real (210×297mm), imagen de fondo y datos posicionados en % + fuentes en pt,
+// CALCADO del modelo 00005-00000596 (coordenadas extraídas del PDF original).
 const POS = {
-  numero: { top: 10.6, left: 57, w: 41, size: 15, bold: true, center: false },
-  dia: { top: 16.7, left: 71.5, w: 7, size: 12, center: true },
-  mes: { top: 16.7, left: 80.5, w: 7, size: 12, center: true },
-  anio: { top: 16.7, left: 89.5, w: 8, size: 12, center: true },
-  senor: { top: 25.7, left: 13.5, w: 84, size: 11 },
-  domicilio: { top: 29.4, left: 16, w: 52, size: 10 },
-  cuit: { top: 29.4, left: 73, w: 24, size: 10 },
-  facturaNro: { top: 32.6, left: 80, w: 17, size: 10 },
-  transporte: { top: 37.8, left: 28, w: 69, size: 10 },
-  domTransp: { top: 41.0, left: 16, w: 52, size: 10 },
-  cuitTransp: { top: 41.0, left: 76, w: 21, size: 10 },
-  // checkboxes IVA receptor (una X)
+  numero: { top: 10.9, left: 58, w: 38, size: 12, bold: true },
+  dia: { top: 16.4, left: 72.6, w: 5, size: 10 },
+  mes: { top: 16.4, left: 77.1, w: 5, size: 10 },
+  anio: { top: 16.4, left: 81.6, w: 8, size: 10 },
+  senor: { top: 25.6, left: 15.6, w: 80, size: 10 },
+  domicilio: { top: 27.9, left: 16.3, w: 55, size: 10 },
+  cuit: { top: 28.1, left: 72.7, w: 25, size: 10 },
+  facturaNro: { top: 31.4, left: 66.2, w: 31, size: 10 },
+  transporte: { top: 34.6, left: 25.4, w: 71, size: 10 },
   iva: {
-    responsable_inscripto: { top: 31.9, left: 30.6 },
-    consumidor_final: { top: 33.3, left: 30.6 },
-    exento: { top: 31.9, left: 47 },
-    no_responsable: { top: 33.3, left: 47 },
-    no_categorizado: { top: 31.9, left: 70.5 },
-    monotributista: { top: 33.3, left: 70.5 },
+    responsable_inscripto: { top: 31.4, left: 30.4 },
+    consumidor_final: { top: 32.8, left: 30.4 },
+    exento: { top: 31.4, left: 46.8 },
+    no_responsable: { top: 32.8, left: 46.8 },
+    no_categorizado: { top: 31.4, left: 70.3 },
+    monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
-  itemsTop: 50.2, itemRowH: 2.08, cantLeft: 6, cantW: 13, detLeft: 20.5, detW: 76, itemSize: 9.5,
+  itemsTop: 45.5, itemRowH: 1.68, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 75, itemSize: 9,
 };
 
-function RemitoForm({ c, cli, items, admin, onPrint }: { c: any; cli: any; items: any[]; admin: boolean; onPrint: () => void }) {
+function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]; onPrint: () => void }) {
   const fecha = c.fecha ? new Date(c.fecha) : null;
   const dd = fecha ? String(fecha.getDate()).padStart(2, "0") : "";
   const mm = fecha ? String(fecha.getMonth() + 1).padStart(2, "0") : "";
-  const yy = fecha ? String(fecha.getFullYear()).slice(-2) : "";
+  const yyyy = fecha ? String(fecha.getFullYear()) : "";
   const nombre = titleCase(cli?.nombre || cli?.razon_social || c.cliente_nombre || "");
-  const dom = [cli?.domicilio, cli?.localidad, cli?.provincia].filter(Boolean).join(", ");
+  const dom = [cli?.domicilio, cli?.localidad, cli?.provincia, cli?.cod_postal && `- ${cli.cod_postal}`].filter(Boolean).join(" ");
   const cuit = cuitFmt(cli?.cuit || c.cliente_cuit || "");
   const cond = (cli?.condicion_fiscal || "").toLowerCase();
   const ivaPos = POS.iva[cond];
   const facturaNro = String(c.notas || "").includes("·") ? String(c.notas).split("·").pop()!.trim().replace(/^FA[^0-9]*/i, "") : "";
-  const transp = c.tipo_transporte || "";
-  const domTransp = c.lugar_entrega || "";
+  const transpDom = [c.tipo_transporte, c.lugar_entrega].filter(Boolean).join(" - ");
   const leyendas: string[] = Array.isArray(c.leyendas) ? c.leyendas : [];
+  const FONT = "Arial, Helvetica, sans-serif";
 
   const T = (p: any, txt: any) => (
-    <div style={{ position: "absolute", top: p.top + "%", left: p.left + "%", width: (p.w || 20) + "%", fontSize: (p.size || 10) + "px", fontWeight: p.bold ? 700 : 400, textAlign: p.center ? "center" : "left", lineHeight: 1, color: "#111", whiteSpace: "nowrap", overflow: "hidden" }}>{txt}</div>
+    <div style={{ position: "absolute", top: p.top + "%", left: p.left + "%", width: (p.w || 20) + "%", fontSize: (p.size || 10) + "pt", fontWeight: p.bold ? 700 : 400, lineHeight: 1, color: "#111", whiteSpace: "nowrap", overflow: "hidden", fontFamily: FONT }}>{txt}</div>
   );
 
   return (
     <div className="rwrap">
       <style>{`
-        body { background:#e5e7eb; }
-        .rwrap { max-width: 820px; margin:0 auto; padding:16px 12px 50px; }
-        .rtool { display:flex; justify-content:flex-end; gap:8px; margin-bottom:12px; }
+        html, body { background:#e5e7eb; }
+        .rtool { position:sticky; top:0; z-index:10; display:flex; justify-content:center; gap:8px; padding:12px; }
         .rbtn { background:#0b3d6b; color:#fff; border:0; border-radius:8px; padding:10px 18px; font-weight:600; cursor:pointer; }
-        .rsheet { position:relative; width:100%; }
-        .rsheet > img { width:100%; display:block; }
+        .rsheet { position:relative; width:210mm; height:297mm; margin:0 auto 30px; background:#fff; box-shadow:0 2px 14px rgba(0,0,0,.15); }
+        .rsheet > img { position:absolute; inset:0; width:100%; height:100%; object-fit:fill; }
         @media print {
-          body { background:#fff; }
+          html, body { background:#fff; }
           .rtool { display:none !important; }
-          .rwrap { max-width:none; padding:0; }
           @page { size:A4; margin:0; }
-          .rsheet { width:100%; }
+          .rsheet { width:210mm; height:297mm; margin:0; box-shadow:none; }
+          * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; }
         }
       `}</style>
-      <div className="rtool">
-        <button className="rbtn" onClick={onPrint}>🖨 Imprimir / Guardar PDF</button>
-      </div>
+      <div className="rtool"><button className="rbtn" onClick={onPrint}>🖨 Imprimir / Guardar PDF</button></div>
       <div className="rsheet">
         <img src="/images/remito-fondo.jpg" alt="Remito" />
         {/* tapar el número preimpreso y escribir el nuestro */}
-        <div style={{ position: "absolute", top: "9.6%", left: "56%", width: "43%", height: "5%", background: "#fff" }} />
+        <div style={{ position: "absolute", top: "9.8%", left: "56.5%", width: "42%", height: "4.5%", background: "#fff" }} />
         {T(POS.numero, c.numero || "")}
-        {T(POS.dia, dd)}{T(POS.mes, mm)}{T(POS.anio, yy)}
+        {T(POS.dia, dd)}{T(POS.mes, mm)}{T(POS.anio, yyyy)}
         {T(POS.senor, nombre)}
         {T(POS.domicilio, dom)}
         {T(POS.cuit, cuit)}
         {facturaNro && T(POS.facturaNro, facturaNro)}
-        {ivaPos && <div style={{ position: "absolute", top: ivaPos.top + "%", left: ivaPos.left + "%", fontSize: "11px", fontWeight: 700, color: "#111", lineHeight: 1 }}>X</div>}
-        {T(POS.transporte, transp)}
-        {T(POS.domTransp, domTransp)}
-        {/* ítems */}
+        {ivaPos && <div style={{ position: "absolute", top: ivaPos.top + "%", left: ivaPos.left + "%", fontSize: "11pt", fontWeight: 700, color: "#111", lineHeight: 1, fontFamily: FONT }}>X</div>}
+        {transpDom && T(POS.transporte, transpDom)}
         {items.map((it, i) => (
           <div key={i}>
-            <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "px", textAlign: "center", color: "#111", lineHeight: 1 }}>{it.cantidad}</div>
-            <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "px", color: "#111", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden" }}>{it.descripcion}</div>
+            <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "pt", textAlign: "center", color: "#111", lineHeight: 1, fontFamily: FONT }}>{it.cantidad}</div>
+            <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "pt", color: "#111", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", fontFamily: FONT }}>{it.descripcion}</div>
           </div>
         ))}
-        {/* mensajes personalizados (leyendas) debajo de los ítems */}
         {leyendas.map((l, i) => (
-          <div key={"l" + i} style={{ position: "absolute", top: (POS.itemsTop + (items.length + 1 + i) * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "px", fontStyle: "italic", color: "#333", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden" }}>{l}</div>
+          <div key={"l" + i} style={{ position: "absolute", top: (POS.itemsTop + (items.length + 1 + i) * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "pt", fontStyle: "italic", color: "#333", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", fontFamily: FONT }}>{l}</div>
         ))}
       </div>
     </div>
