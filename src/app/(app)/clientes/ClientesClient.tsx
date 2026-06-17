@@ -151,6 +151,25 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
   const [tags, setTags] = useState<string[]>(cliente?.tags || []);
   const [optOut, setOptOut] = useState<boolean>(!!cliente?.email_opt_out);
   const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
+  // Fusión de duplicados
+  const [fusionOpen, setFusionOpen] = useState(false);
+  const [fq, setFq] = useState(""); const [fres, setFres] = useState<any[]>([]);
+  useEffect(() => {
+    if (!fusionOpen) return; const q = fq.trim(); if (q.length < 2) { setFres([]); return; }
+    const t = setTimeout(() => { fetch("/api/clientes?limit=8&q=" + encodeURIComponent(q)).then((r) => r.json()).then((d) => setFres((d.clientes || []).filter((x: any) => x.id !== cliente?.id))).catch(() => {}); }, 250);
+    return () => clearTimeout(t);
+  }, [fq, fusionOpen, cliente?.id]);
+  async function fusionar(targetId: number, targetNombre: string) {
+    if (!cliente) return;
+    if (!confirm(`Fusionar "${cliente.nombre}" en "${targetNombre}".\n\nTodas las operaciones (presupuestos, pedidos, facturas, pagos) del duplicado pasan a "${targetNombre}" y este contacto se elimina.\n\n¿Confirmás?`)) return;
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/clientes/${cliente.id}/merge`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_id: targetId }) });
+      const d = await r.json();
+      if (d.ok) { const m = d.movidos || {}; alert(`✅ Fusionado. Movidos: ${m.presupuestos || 0} presup., ${m.operaciones || 0} pedidos, ${m.comprobantes || 0} facturas/remitos, ${m.pagos || 0} pagos.`); onSaved(); }
+      else alert("⚠️ " + (d.error || "No se pudo fusionar"));
+    } catch (e: any) { alert("Error: " + e.message); } finally { setSaving(false); }
+  }
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
   const toggleTag = (t: string) => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
 
@@ -290,6 +309,26 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
             Email opt-out (no enviar marketing)
           </label>
         </div>
+        )}
+        {!esNuevo && tab === "datos" && (
+          <div className="mt-5 border border-gray-200 rounded-lg p-3">
+            <button onClick={() => setFusionOpen((o) => !o)} className="text-sm font-semibold text-febo-azul">🔀 Fusionar con otro cliente (eliminar duplicado)</button>
+            {fusionOpen && (
+              <div className="mt-2">
+                <div className="text-[11px] text-gray-500 mb-1">Buscá el cliente que querés <b>conservar</b>. Las operaciones de <b>{f.nombre || "este contacto"}</b> pasan a ese y este se elimina.</div>
+                <input value={fq} onChange={(e) => setFq(e.target.value)} placeholder="Buscar cliente a conservar…" className={inp} />
+                {fres.length > 0 && (
+                  <div className="border border-gray-200 rounded-lg mt-1 max-h-44 overflow-auto">
+                    {fres.map((r) => (
+                      <button key={r.id} onClick={() => fusionar(r.id, r.nombre || r.razon_social || "cliente #" + r.id)} className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50">
+                        <b>{r.nombre || r.razon_social || "—"}</b> <span className="text-gray-400 text-xs">{[r.email, r.whatsapp, r.localidad].filter(Boolean).join(" · ")}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
         {(esNuevo || tab === "datos") && (
         <div className="flex justify-between items-center mt-6">
