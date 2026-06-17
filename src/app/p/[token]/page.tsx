@@ -335,7 +335,7 @@ const POS = {
     no_categorizado: { top: 31.4, left: 70.3 },
     monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
-  itemsTop: 48.7, itemRowH: 2.74, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 11, detMaxChars: 70,
+  itemsTop: 46.0, itemRowH: 2.74, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 11, detMaxChars: 70,
 };
 
 // Recorta una frase al máximo de caracteres SIN cortar palabras (corta la frase, no la palabra).
