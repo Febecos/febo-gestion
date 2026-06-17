@@ -273,13 +273,25 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const env = plr.envio || {};
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
-      const n = ((await sql`SELECT count(*)::int c FROM fg_comprobantes WHERE tipo='remito'` as any[])[0]?.c || 0) + 1;
-      const numero = `R-${String(n).padStart(6, "0")}`;
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS talonario_id INT`.catch(() => {});
+      // Numeración por TALONARIO REM (config, estilo Táctica). Permite elegir uno (b.talonario_id);
+      // si no, el REM por defecto. Si no hay ningún talonario REM, cae a R-NNNNNN.
+      let numero: string; let remTalId: number | null = null;
+      const remTal = Number(b.talonario_id) > 0
+        ? (await sql`SELECT id FROM fg_talonarios WHERE id=${Number(b.talonario_id)} AND tipo_codigo='REM' AND activo=true AND bloqueado=false LIMIT 1` as any[])[0]
+        : (await sql`SELECT id FROM fg_talonarios WHERE tipo_codigo='REM' AND activo=true AND bloqueado=false ORDER BY defecto DESC, orden, id LIMIT 1` as any[])[0];
+      if (remTal) {
+        try { const nn = await numeroDesdeTalonario(sql, remTal.id); numero = `R ${nn!.numero}`; remTalId = remTal.id; }
+        catch (e: any) { return NextResponse.json({ ok: false, error: "Talonario REM: " + e.message }, { status: 409 }); }
+      } else {
+        const n = ((await sql`SELECT count(*)::int c FROM fg_comprobantes WHERE tipo='remito'` as any[])[0]?.c || 0) + 1;
+        numero = `R-${String(n).padStart(6, "0")}`;
+      }
       const lugar = [env.direccion, env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") || plr.datos_venta?.lugar_entrega || null;
       const transp = env.empresa || plr.datos_venta?.tipo_transporte || null;
       const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, lugar_entrega, tipo_transporte)
-        VALUES ('remito','emitido',${numero},${cid},${plr.revendedor?.nombre || null}, now(), 0, 0, 'ARS', ${"Despacho del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${lugar}, ${transp})
+        INSERT INTO fg_comprobantes (tipo, estado, numero, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, lugar_entrega, tipo_transporte)
+        VALUES ('remito','emitido',${numero},${remTalId},${cid},${plr.revendedor?.nombre || null}, now(), 0, 0, 'ARS', ${"Despacho del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${lugar}, ${transp})
         RETURNING id, token` as any[])[0];
       let orden = 0;
       for (const it of (plr.items || [])) {
