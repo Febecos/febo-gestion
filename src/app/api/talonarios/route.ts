@@ -100,6 +100,19 @@ const CAMPOS: Record<string, "num" | "bool" | "text" | "date"> = {
   es_bono_fiscal: "bool", informar_traslado: "bool", excluir_facturacion: "bool", bloqueado: "bool", defecto: "bool", activo: "bool",
 };
 
+// Campos que NO se pueden modificar una vez que el talonario YA EMITIÓ comprobantes
+// (igual que Táctica: evita romper la numeración / punto de venta / tipo ante AFIP).
+const LOCK_SI_USADO = new Set(["sucursal", "serie", "nro_desde", "electronica"]);
+
+// ¿El talonario ya se usó? (tiene comprobantes emitidos o la numeración avanzó)
+async function talonarioUsado(sql: any, id: number): Promise<{ usado: boolean; emitidos: number; prox: number; desde: number }> {
+  const t = (await sql`SELECT proximo_numero, nro_desde FROM fg_talonarios WHERE id=${id}` as any[])[0] || {};
+  let emitidos = 0;
+  try { const c = await sql`SELECT count(*)::int n FROM fg_comprobantes WHERE talonario_id=${id}`; emitidos = c[0]?.n || 0; } catch {}
+  const prox = Number(t.proximo_numero || 1), desde = Number(t.nro_desde || 1);
+  return { usado: emitidos > 0 || prox > desde, emitidos, prox, desde };
+}
+
 // PATCH → { id, campo, valor }  (columna de whitelist → seguro inline con Pool)
 export async function PATCH(req: NextRequest) {
   try {
@@ -107,11 +120,30 @@ export async function PATCH(req: NextRequest) {
     const { id, campo, valor } = await req.json();
     const tipo = CAMPOS[campo];
     if (!id || !tipo) return NextResponse.json({ ok: false, error: "campo inválido" }, { status: 400 });
+    const sql = getDb();
+    const { usado, emitidos, prox } = await talonarioUsado(sql, Number(id));
+
+    // 1) Campos críticos bloqueados si el talonario ya emitió comprobantes.
+    if (usado && LOCK_SI_USADO.has(campo)) {
+      return NextResponse.json({ ok: false, error: `No se puede cambiar "${campo}": el talonario ya emitió ${emitidos} comprobante(s). El punto de venta, serie y numeración inicial quedan fijos para no romper la correlatividad ante AFIP. Si necesitás otro, creá un talonario nuevo.` }, { status: 409 });
+    }
     let v: any = valor;
     if (tipo === "num") v = (valor === "" || valor == null) ? null : Number(valor);
     else if (tipo === "bool") v = !!valor;
     else if (tipo === "date") v = valor || null;
     else v = String(valor ?? "").trim() || null;
+
+    // 2) La numeración NO puede retroceder (evita reutilizar números ya emitidos).
+    if (campo === "proximo_numero") {
+      if (v == null || v < 1) return NextResponse.json({ ok: false, error: "El próximo número debe ser ≥ 1." }, { status: 400 });
+      if (usado && v < prox) return NextResponse.json({ ok: false, error: `El próximo número no puede ser menor al actual (${prox}): se reutilizarían números ya emitidos.` }, { status: 409 });
+    }
+    // 3) nro_hasta no puede ser menor al próximo número (talonario quedaría agotado/incoherente).
+    if (campo === "nro_hasta" && v != null) {
+      const prox2 = (await sql`SELECT proximo_numero FROM fg_talonarios WHERE id=${id}` as any[])[0]?.proximo_numero || 1;
+      if (v < prox2) return NextResponse.json({ ok: false, error: `"Hasta" (${v}) no puede ser menor al próximo número (${prox2}).` }, { status: 409 });
+    }
+
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try { await pool.query(`UPDATE fg_talonarios SET ${campo}=$1, updated_at=now() WHERE id=$2`, [v, id]); }
     finally { await pool.end(); }
@@ -126,6 +158,9 @@ export async function DELETE(req: NextRequest) {
     const id = Number(new URL(req.url).searchParams.get("id"));
     if (!id) return NextResponse.json({ ok: false, error: "id requerido" }, { status: 400 });
     const sql = getDb();
+    // No se puede ELIMINAR un talonario que ya emitió comprobantes (se perdería la trazabilidad).
+    const { usado, emitidos } = await talonarioUsado(sql, id);
+    if (usado) return NextResponse.json({ ok: false, error: `No se puede eliminar: el talonario ya emitió ${emitidos} comprobante(s). Desactivalo (activo = No) en lugar de borrarlo.` }, { status: 409 });
     await sql`DELETE FROM fg_talonarios WHERE id=${id}`;
     return NextResponse.json({ ok: true });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }

@@ -621,7 +621,22 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 // ---------- FACTURAS / REMITOS (fg_comprobantes) ----------
 function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
-  useEffect(() => { fetch("/api/ventas?tipo=" + tipo).then((r) => r.json()).then((d) => { setRows(d.ok ? d.comprobantes : []); setLoading(false); }); }, [tipo]);
+  const [busy, setBusy] = useState(0);
+  const cargar = () => { setLoading(true); fetch("/api/ventas?tipo=" + tipo).then((r) => r.json()).then((d) => { setRows(d.ok ? d.comprobantes : []); setLoading(false); }); };
+  useEffect(() => { cargar(); }, [tipo]);
+  const emitirNota = async (c: any, clase: "nota_credito" | "nota_debito") => {
+    const nom = clase === "nota_credito" ? "Nota de Crédito" : "Nota de Débito";
+    if (!confirm(`¿Emitir ${nom} (electrónica, con CAE) por el total de ${c.numero}?\nReferencia la factura original ante AFIP.`)) return;
+    const motivo = prompt(`Motivo de la ${nom} (opcional):`, "") || "";
+    setBusy(c.id);
+    try {
+      const r = await fetch(`/api/ventas/${c.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: clase, motivo }) });
+      const d = await r.json();
+      if (d.ok) { alert(`✅ ${nom} emitida: ${d.numero}\nCAE: ${d.cae}`); if (d.token) window.open(`/p/${d.token}?admin=1`, "_blank"); cargar(); }
+      else alert("⚠️ " + (d.error || "No se pudo emitir"));
+    } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(0); }
+  };
+  const esFactura = tipo === "factura";
   return (
     <Tabla loading={loading} count={rows.length} unidad={titulo.toLowerCase()}
       cols={["Número", "Cliente", "Estado", "Fecha", "Total", ""]} vacio={`Todavía no hay ${titulo.toLowerCase()} (se generan desde un pedido).`}>
@@ -632,7 +647,15 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
           <td className="px-4 py-2">{chip(c.estado || "—", EST_COL[c.estado] || "#888")}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(c.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold">{fmt(c.total)}</td>
-          <td className="px-4 py-2 text-right">{c.token && <a href={`/p/${c.token}?admin=1`} target="_blank" rel="noreferrer" className="text-febo-azul hover:underline text-xs font-semibold">🧾 Ver</a>}</td>
+          <td className="px-4 py-2 text-right whitespace-nowrap">
+            {c.token && <a href={`/p/${c.token}?admin=1`} target="_blank" rel="noreferrer" className="text-febo-azul hover:underline text-xs font-semibold">🧾 Ver</a>}
+            {esFactura && c.afip_cae && (
+              <>
+                <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_credito")} title="Emitir Nota de Crédito electrónica" className="ml-2 text-xs font-semibold text-rose-600 hover:underline disabled:opacity-40">{busy === c.id ? "…" : "NC"}</button>
+                <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_debito")} title="Emitir Nota de Débito electrónica" className="ml-2 text-xs font-semibold text-amber-600 hover:underline disabled:opacity-40">{busy === c.id ? "…" : "ND"}</button>
+              </>
+            )}
+          </td>
         </tr>
       ))}
     </Tabla>
