@@ -335,8 +335,17 @@ const POS = {
     no_categorizado: { top: 31.4, left: 70.3 },
     monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
-  itemsTop: 45.5, itemRowH: 1.68, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 75, itemSize: 9,
+  itemsTop: 45.5, itemRowH: 1.68, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 10, detMaxChars: 78,
 };
+
+// Recorta una frase al máximo de caracteres SIN cortar palabras (corta la frase, no la palabra).
+function recortaFrase(s: string, max: number): string {
+  const t = String(s || "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const corte = t.slice(0, max);
+  const sp = corte.lastIndexOf(" ");
+  return (sp > max * 0.5 ? corte.slice(0, sp) : corte).trim();
+}
 
 function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]; onPrint: () => void }) {
   const fecha = c.fecha ? new Date(c.fecha) : null;
@@ -390,7 +399,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {items.map((it, i) => (
           <div key={i}>
             <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "pt", textAlign: "center", color: "#111", lineHeight: 1, fontFamily: FONT }}>{it.cantidad}</div>
-            <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "pt", color: "#111", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", fontFamily: FONT }}>{it.descripcion}</div>
+            <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "pt", color: "#111", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", fontFamily: FONT }}>{recortaFrase(it.descripcion, POS.detMaxChars)}</div>
           </div>
         ))}
         {leyendas.map((l, i) => (
