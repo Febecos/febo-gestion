@@ -262,11 +262,11 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     // Despacho: generar REMITO. Habilitado solo tras FACTURADO + PAGADO.
     if (b.accion === "remitir") {
       if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
-      const row = (await sql`SELECT payload, factura_numero, estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const row = (await sql`SELECT payload, factura_numero, estado, pagos_recibidos FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
       if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
       const plr = row.payload || {};
       if (!row.factura_numero) return NextResponse.json({ ok: false, error: "Primero facturá el pedido." }, { status: 409 });
-      const pagado = ["pagado", "enviado"].includes(row.estado) || (plr.pagos_recibidos || []).length > 0;
+      const pagado = ["pagado", "enviado"].includes(row.estado) || (row.pagos_recibidos || []).length > 0 || (plr.pagos_recibidos || []).length > 0;
       if (!pagado) return NextResponse.json({ ok: false, error: "Falta registrar el pago del cliente antes de despachar." }, { status: 409 });
       if (plr.remito_numero) return NextResponse.json({ ok: true, ya: true, remito_numero: plr.remito_numero, remito_token: plr.remito_token });
       const cid = await clienteIdDe(sql, plr);
