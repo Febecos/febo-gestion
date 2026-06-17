@@ -93,7 +93,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
   const fmt = (v: any) => `${sym} ${Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   // Remito: se imprime sobre el formulario preimpreso de ARCA (imagen de fondo + datos encima).
-  if (tipoDoc === "remito") return <RemitoForm c={c} cli={cli} items={items} admin={admin} onPrint={() => window.print()} />;
+  if (tipoDoc === "remito") return <RemitoForm c={c} cli={cli} items={items} onPrint={() => window.print()} />;
 
   // Subtotal BRUTO (suma de ítems, antes de descuento)
   const subtotalBruto = items.reduce((a: number, it: any) => a + (Number(it.total) || 0), 0) || Number(c.subtotal_bruto) || Number(c.subtotal) || 0;
