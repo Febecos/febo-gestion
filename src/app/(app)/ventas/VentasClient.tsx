@@ -100,7 +100,7 @@ function Presupuestos() {
     if (!hash) { alert("⚠️ No se pudo abrir en modo interno (revisá FV_BRIDGE_SECRET)."); return; }
     open("presup-edit", { url: `https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, title: `☀️ ${numero}` });
   }
-  const nombreCli = (r: Presup) => r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ") || "—";
+  const nombreCli = (r: Presup) => titleCase(r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ")) || "—";
   const selCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm";
   return (
     <div>
@@ -178,7 +178,7 @@ function Pedidos() {
         <tr key={i} className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer" onClick={() => setSel(String(p.numero || p.ref))}>
           <td className="px-4 py-2">{chip(p.origen === "fv" ? "FV" : "Bomba", p.origen === "fv" ? "#d97706" : "#2563eb")}</td>
           <td className="px-4 py-2 font-semibold">{p.numero || (p.presup ? "↳ " + p.presup : "—")}</td>
-          <td className="px-4 py-2">{p.cliente}</td>
+          <td className="px-4 py-2">{titleCase(p.cliente) || "—"}</td>
           <td className="px-4 py-2 text-gray-600">{p.detalle}</td>
           <td className="px-4 py-2">{chip(p.estado, EST_COL[p.estado] || "#888")}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(p.fecha)}</td>

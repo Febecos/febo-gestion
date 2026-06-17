@@ -21,9 +21,11 @@ export async function GET(_req: NextRequest) {
     try {
       fv = await sql`
         SELECT fp.numero, fp.estado, fp.public_token, fp.payload, fp.metodo_pago,
-               pr.public_token AS presup_token
+               pr.public_token AS presup_token,
+               COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,'')) AS cliente_crm
         FROM fv_pedidos fp
         LEFT JOIN presupuestos pr ON pr.numero = fp.payload->>'presupuesto_numero'
+        LEFT JOIN clientes c ON c.id = pr.cliente_id AND (c.crm_eliminado IS NULL OR c.crm_eliminado = false)
         ORDER BY fp.numero DESC LIMIT 300` as any[];
     } catch { fv = []; }
 
@@ -39,7 +41,7 @@ export async function GET(_req: NextRequest) {
         const pl = p.payload || {};
         return {
           origen: "fv", ref: p.numero, numero: p.numero,
-          cliente: pl.revendedor?.nombre || pl.cliente?.nombre || "—",
+          cliente: p.cliente_crm || pl.revendedor?.nombre || pl.cliente?.nombre || "—",
           detalle: (pl.items?.length ? `${pl.items.length} ítem(s)` : "FV"),
           total: Number(pl.totales?.total) || 0, moneda: pl.totales?.moneda || "USD", tc: pl.totales?.tc || null,
           estado: p.estado || "—", fecha: null,

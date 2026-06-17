@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
         p.vendedor, p.vendedor_email,
         c.id AS cliente_id,
         -- Nombre CANÓNICO: del CRM (enlazado o resuelto por cuit/email/tel); si no, la copia
-        COALESCE(NULLIF(c.razon_social,''), NULLIF(c.nombre,''), NULLIF(p.cliente_razon_social,''),
+        COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,''), NULLIF(p.cliente_razon_social,''),
                  NULLIF(trim(concat_ws(' ', p.cliente_nombre, p.cliente_apellido)),'')) AS cliente_display,
         ped.pedido_numero, ped.factura_numero
       FROM presupuestos p
