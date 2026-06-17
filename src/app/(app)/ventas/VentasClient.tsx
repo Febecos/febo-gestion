@@ -210,7 +210,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [tals, setTals] = useState<any[]>([]); const [talSel, setTalSel] = useState<string>("");
   const [facMoneda, setFacMoneda] = useState("USD"); const [facTc, setFacTc] = useState("");
   useEffect(() => { fetch("/api/talonarios?facturacion=1").then((r) => r.json()).then((d) => { if (d.ok) { setTals(d.talonarios); const def = d.talonarios.find((t: any) => t.defecto) || d.talonarios[0]; if (def) setTalSel(String(def.id)); } }).catch(() => {}); }, []);
-  const [tab, setTab] = useState<"detalle" | "prov" | "pago">("detalle");
+  const [tab, setTab] = useState<"cliente" | "prov" | "venta" | "envio" | "pago" | "factura">("cliente");
   const [monedaInit, setMonedaInit] = useState(false);
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => {
     if (d.ok) {
@@ -287,7 +287,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
 
         {/* Solapas */}
         <div className="flex gap-1 px-4 pt-2 border-b border-gray-200 bg-gray-50 text-sm shrink-0">
-          {([["detalle", "📋 Detalle"], ["prov", "🏭 Proveedor / Stock"], ["pago", "💵 Pago / Factura"]] as const).map(([k, l]) => (
+          {([["cliente", "📋 Cliente"], ["prov", "🏭 Proveedor / Stock"], ["venta", "🧾 Datos de venta"], ["envio", "📦 Envío"], ["pago", "💵 Pago"], ["factura", "📄 Factura"]] as const).map(([k, l]) => (
             <button key={k} onClick={() => setTab(k)} className={`px-4 py-2 font-semibold border-b-2 -mb-px ${tab === k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-500 hover:text-gray-700"}`}>{l}</button>
           ))}
         </div>
@@ -296,13 +296,13 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
           {cancelado && <div className="bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm font-semibold">⛔ Pedido CANCELADO — NO SE PUEDE EDITAR. Para continuar, generá un nuevo pedido.</div>}
           {/* Checklist del pedido — qué falta para avanzar (cada chip lleva a su solapa) */}
           {!cancelado && (() => {
-            const pasos: { l: string; ok: boolean; tab: "detalle" | "prov" | "pago" }[] = [
-              { l: "Condición fiscal", ok: !!condCli, tab: "detalle" },
+            const pasos: { l: string; ok: boolean; tab: typeof tab }[] = [
+              { l: "Condición fiscal", ok: !!condCli, tab: "cliente" },
               { l: "Stock confirmado", ok: !!ped.proveedor_confirmado, tab: "prov" },
-              { l: "Datos de venta", ok: !!(dv.condiciones_venta || dv.forma_pago), tab: "detalle" },
-              { l: "Datos de envío", ok: !!(pl.envio && pl.envio.completado), tab: "detalle" },
+              { l: "Datos de venta", ok: !!(dv.condiciones_venta || dv.forma_pago), tab: "venta" },
+              { l: "Datos de envío", ok: !!(pl.envio && pl.envio.completado), tab: "envio" },
               { l: "Pago", ok: ["pagado", "enviado"].includes(ped.estado) || (ped.pagos_recibidos || []).length > 0, tab: "pago" },
-              { l: "Facturado", ok: !!ped.factura_numero, tab: "pago" },
+              { l: "Facturado", ok: !!ped.factura_numero, tab: "factura" },
             ];
             const hechos = pasos.filter((p) => p.ok).length;
             return (
@@ -316,8 +316,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               </div>
             );
           })()}
-          {/* === SOLAPA DETALLE === */}
-          {tab === "detalle" && (<>
+          {/* === SOLAPA CLIENTE === */}
+          {tab === "cliente" && (<>
           {/* Contacto */}
           <div>
             <div className="text-[11px] font-bold text-gray-400 uppercase mb-1 bg-gray-50 px-2 py-1 rounded">Contacto del cliente</div>
@@ -608,8 +608,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             );
           })()}
 
-          {/* Datos de venta (salen en la factura) — solapa Detalle */}
-          {tab === "detalle" && <div className="border border-gray-200 rounded-lg p-3">
+          {/* Datos de venta (salen en la factura) */}
+          {tab === "venta" && <div className="border border-gray-200 rounded-lg p-3">
             <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">🚚 Datos de venta (se imprimen en la factura)</div>
             <div className="grid grid-cols-2 gap-2">
               <label className="text-[11px] text-gray-500">Condiciones de Venta
@@ -626,8 +626,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             </div>
           </div>}
 
-          {/* Datos de envío del cliente (solapa Detalle) */}
-          {tab === "detalle" && (() => {
+          {/* Datos de envío del cliente */}
+          {tab === "envio" && (() => {
             const env = pl.envio || {};
             const completo = !!env.completado;
             const link = `https://visor.febecos.com/envio/${ped.public_token || ""}`;
@@ -652,14 +652,37 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             );
           })()}
 
-          {/* Nota interna (solapa Detalle) */}
-          {tab === "detalle" && <div>
+          {/* Nota interna (solapa Cliente) */}
+          {tab === "cliente" && <div>
             <div className="text-[11px] font-bold text-gray-400 uppercase mb-1">Nota interna</div>
             <div className="flex gap-2">
               <input value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Observación interna…" className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
               <button disabled={busy} onClick={() => accion({ accion: "nota", nota })} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">💾 Nota</button>
             </div>
           </div>}
+
+          {/* === SOLAPA FACTURA === */}
+          {tab === "factura" && !cancelado && (
+            <div className="border border-gray-200 rounded-lg p-3">
+              <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📄 Factura</div>
+              {ped.factura_numero ? (
+                <div className="text-sm text-gray-700 space-y-2">
+                  <div>✅ Factura emitida: <b>{ped.factura_numero}</b></div>
+                  {ped.factura_token && <a href={`/p/${ped.factura_token}?admin=1`} target="_blank" rel="noreferrer" className="inline-block px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 Ver / Imprimir factura</a>}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600 space-y-2">
+                  <div>Todavía no se facturó este pedido.</div>
+                  <ul className="text-xs text-gray-500 list-disc pl-4 space-y-0.5">
+                    <li>{ped.proveedor_confirmado ? "✓" : "○"} Stock confirmado con el proveedor</li>
+                    <li>{condCli ? "✓" : "○"} Condición fiscal del cliente {letraReq ? `→ Factura ${letraReq}` : ""}</li>
+                    <li>{talsLetra.length > 0 ? "✓" : "○"} Talonario de Factura {letraReq || ""} cargado</li>
+                  </ul>
+                  <div className="text-xs text-gray-500">Cuando esté todo, usá el botón <b>Facturar</b> de abajo. Elegís talonario y moneda ahí mismo.</div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Footer acciones */}
