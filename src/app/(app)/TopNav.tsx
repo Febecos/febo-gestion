@@ -11,6 +11,7 @@ const MODULOS: { key: WinKey; label: string; icon: string }[] = [
   { key: "cot-bomba", label: "Cotizar bomba", icon: "🔧" },
   { key: "cot-fv", label: "Cotizar FV", icon: "☀️" },
   { key: "compras", label: "Compras", icon: "🛒" },
+  { key: "transportistas", label: "Transportistas", icon: "🚚" },
 ];
 const SOON = [
   { label: "Tesorería", icon: "💰" }, { label: "Reportes", icon: "📊" },
