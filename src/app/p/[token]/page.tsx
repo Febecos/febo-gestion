@@ -345,7 +345,7 @@ function RemitoForm({ c, cli, items, admin, onPrint }: { c: any; cli: any; items
   const dd = fecha ? String(fecha.getDate()).padStart(2, "0") : "";
   const mm = fecha ? String(fecha.getMonth() + 1).padStart(2, "0") : "";
   const yy = fecha ? String(fecha.getFullYear()).slice(-2) : "";
-  const nombre = titleCase(cli?.razon_social || cli?.nombre || c.cliente_nombre || "");
+  const nombre = titleCase(cli?.nombre || cli?.razon_social || c.cliente_nombre || "");
   const dom = [cli?.domicilio, cli?.localidad, cli?.provincia].filter(Boolean).join(", ");
   const cuit = cuitFmt(cli?.cuit || c.cliente_cuit || "");
   const cond = (cli?.condicion_fiscal || "").toLowerCase();
