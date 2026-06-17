@@ -11,14 +11,18 @@ export async function GET(req: NextRequest) {
     const estado = (sp.get("estado") || "").trim();
     const q = (sp.get("q") || "").trim().toLowerCase();
     const like = `%${q}%`;
+    // Nombre del cliente SIEMPRE desde el CRM (por norma): por cliente_id; si no, la copia guardada.
     const rows = await sql`
-      SELECT id, tipo, estado, numero, cliente_id, cliente_nombre, cliente_cuit,
-             ref_id, fecha, total, moneda, token, afip_cae, letra, created_at
-      FROM fg_comprobantes
-      WHERE (${tipo} = '' OR tipo = ${tipo})
-        AND (${estado} = '' OR estado = ${estado})
-        AND (${q} = '' OR lower(coalesce(cliente_nombre,'')||' '||coalesce(numero,'')||' '||coalesce(cliente_cuit,'')) LIKE ${like})
-      ORDER BY created_at DESC LIMIT 200`;
+      SELECT fc.id, fc.tipo, fc.estado, fc.numero, fc.cliente_id,
+             COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,''), fc.cliente_nombre) AS cliente_nombre,
+             COALESCE(NULLIF(c.cuit,''), fc.cliente_cuit) AS cliente_cuit,
+             fc.ref_id, fc.fecha, fc.total, fc.moneda, fc.token, fc.afip_cae, fc.letra, fc.created_at
+      FROM fg_comprobantes fc
+      LEFT JOIN clientes c ON c.id = fc.cliente_id AND (c.crm_eliminado IS NULL OR c.crm_eliminado = false)
+      WHERE (${tipo} = '' OR fc.tipo = ${tipo})
+        AND (${estado} = '' OR fc.estado = ${estado})
+        AND (${q} = '' OR lower(coalesce(c.nombre,'')||' '||coalesce(c.razon_social,'')||' '||coalesce(fc.cliente_nombre,'')||' '||coalesce(fc.numero,'')||' '||coalesce(fc.cliente_cuit,'')) LIKE ${like})
+      ORDER BY fc.created_at DESC LIMIT 200`;
     return NextResponse.json({ ok: true, comprobantes: rows });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });

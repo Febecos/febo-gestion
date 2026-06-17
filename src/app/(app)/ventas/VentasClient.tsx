@@ -769,7 +769,7 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
       {rows.map((c) => (
         <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
           <td className="px-4 py-2 font-semibold">{c.numero}</td>
-          <td className="px-4 py-2">{c.cliente_nombre || "—"}</td>
+          <td className="px-4 py-2">{titleCase(c.cliente_nombre) || "—"}</td>
           <td className="px-4 py-2">{chip(c.estado || "—", EST_COL[c.estado] || "#888")}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(c.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold">{fmt(c.total)}</td>
@@ -798,7 +798,7 @@ function Pagos() {
       {rows.map((p) => (
         <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50">
           <td className="px-4 py-2 font-semibold">{p.comprobante_numero || "—"}</td>
-          <td className="px-4 py-2">{p.cliente_nombre || "—"}</td>
+          <td className="px-4 py-2">{titleCase(p.cliente_nombre) || "—"}</td>
           <td className="px-4 py-2 text-gray-600">{p.medio || "—"}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(p.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold text-emerald-600">{fmt(p.monto)}</td>
@@ -865,7 +865,7 @@ function CuentasCorrientes() {
             : rows.length === 0 ? <tr><td colSpan={4} className="text-center py-8 text-gray-400">Sin saldos pendientes</td></tr>
             : rows.map((r, i) => (
               <tr key={i} className="border-t border-gray-100 hover:bg-blue-50 cursor-pointer" onClick={() => setSel({ tipo: amb === "clientes" ? "cliente" : "proveedor", key: amb === "clientes" ? r.cliente_id : (Number(r.proveedor_id) > 0 ? r.proveedor_id : r.nombre), nombre: r.nombre })}>
-                <td className="px-4 py-2 font-semibold">{r.nombre}</td>
+                <td className="px-4 py-2 font-semibold">{amb === "clientes" ? titleCase(r.nombre) : r.nombre}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-gray-500">{Number(r.debe).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
                 <td className="px-4 py-2 text-right tabular-nums text-gray-500">{Number(r.haber).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
                 <td className={`px-4 py-2 text-right tabular-nums font-bold ${Number(r.saldo) > 0.01 ? "text-red-600" : "text-emerald-600"}`}>{Number(r.saldo).toLocaleString("es-AR", { minimumFractionDigits: 2 })}<span className="block text-[10px] font-normal text-gray-400">{dolar > 0 ? "$ " + Math.round(Number(r.saldo) * dolar).toLocaleString("es-AR") : ""}</span></td>
