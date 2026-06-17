@@ -294,6 +294,28 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
 
         <div className="flex-1 overflow-auto p-5 flex flex-col gap-4">
           {cancelado && <div className="bg-red-50 border border-red-300 text-red-700 rounded-lg px-4 py-3 text-sm font-semibold">⛔ Pedido CANCELADO — NO SE PUEDE EDITAR. Para continuar, generá un nuevo pedido.</div>}
+          {/* Checklist del pedido — qué falta para avanzar (cada chip lleva a su solapa) */}
+          {!cancelado && (() => {
+            const pasos: { l: string; ok: boolean; tab: "detalle" | "prov" | "pago" }[] = [
+              { l: "Condición fiscal", ok: !!condCli, tab: "detalle" },
+              { l: "Stock confirmado", ok: !!ped.proveedor_confirmado, tab: "prov" },
+              { l: "Datos de venta", ok: !!(dv.condiciones_venta || dv.forma_pago), tab: "detalle" },
+              { l: "Datos de envío", ok: !!(pl.envio && pl.envio.completado), tab: "detalle" },
+              { l: "Pago", ok: ["pagado", "enviado"].includes(ped.estado) || (ped.pagos_recibidos || []).length > 0, tab: "pago" },
+              { l: "Facturado", ok: !!ped.factura_numero, tab: "pago" },
+            ];
+            const hechos = pasos.filter((p) => p.ok).length;
+            return (
+              <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+                <div className="flex items-center justify-between mb-1.5"><span className="text-[11px] font-bold text-gray-400 uppercase">Progreso del pedido</span><span className="text-[11px] text-gray-500">{hechos}/{pasos.length}</span></div>
+                <div className="flex flex-wrap gap-1.5">
+                  {pasos.map((p, i) => (
+                    <button key={i} onClick={() => setTab(p.tab)} title={p.ok ? "Completo" : "Pendiente — click para ir"} className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ${p.ok ? "bg-emerald-100 text-emerald-700" : "bg-white border border-gray-300 text-gray-500 hover:bg-gray-100"}`}>{p.ok ? "✓" : "○"} {p.l}</button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
           {/* === SOLAPA DETALLE === */}
           {tab === "detalle" && (<>
           {/* Contacto */}
