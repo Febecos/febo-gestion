@@ -318,10 +318,10 @@ export default function ComprobantePublico({ params }: { params: { token: string
 // Hoja A4 real (210×297mm), imagen de fondo y datos posicionados en % + fuentes en pt,
 // CALCADO del modelo 00005-00000596 (coordenadas extraídas del PDF original).
 const POS = {
-  numero: { top: 10.9, left: 58, w: 38, size: 12, bold: true },
-  dia: { top: 16.4, left: 72.6, w: 5, size: 10 },
-  mes: { top: 16.4, left: 77.1, w: 5, size: 10 },
-  anio: { top: 16.4, left: 81.6, w: 8, size: 10 },
+  numero: { top: 10.6, left: 59.5, w: 38, size: 19, bold: true, serif: true },
+  dia: { top: 16.3, left: 71.2, w: 6, size: 13, center: true },
+  mes: { top: 16.3, left: 79.8, w: 6, size: 13, center: true },
+  anio: { top: 16.3, left: 88, w: 9, size: 13, center: true },
   senor: { top: 25.6, left: 15.6, w: 80, size: 10 },
   domicilio: { top: 27.9, left: 16.3, w: 55, size: 10 },
   cuit: { top: 28.1, left: 72.7, w: 25, size: 10 },
@@ -353,8 +353,9 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
   const leyendas: string[] = Array.isArray(c.leyendas) ? c.leyendas : [];
   const FONT = "Arial, Helvetica, sans-serif";
 
+  const numeroTxt = String(c.numero || "").replace(/^R[\s-]+/i, "");
   const T = (p: any, txt: any) => (
-    <div style={{ position: "absolute", top: p.top + "%", left: p.left + "%", width: (p.w || 20) + "%", fontSize: (p.size || 10) + "pt", fontWeight: p.bold ? 700 : 400, lineHeight: 1, color: "#111", whiteSpace: "nowrap", overflow: "hidden", fontFamily: FONT }}>{txt}</div>
+    <div style={{ position: "absolute", top: p.top + "%", left: p.left + "%", width: (p.w || 20) + "%", fontSize: (p.size || 10) + "pt", fontWeight: p.bold ? 700 : 400, textAlign: p.center ? "center" : "left", lineHeight: 1, color: "#111", whiteSpace: "nowrap", overflow: "hidden", fontFamily: p.serif ? "'Times New Roman', Times, serif" : FONT }}>{txt}</div>
   );
 
   return (
@@ -378,7 +379,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         <img src="/images/remito-fondo.jpg" alt="Remito" />
         {/* tapar el número preimpreso y escribir el nuestro */}
         <div style={{ position: "absolute", top: "9.8%", left: "56.5%", width: "42%", height: "4.5%", background: "#fff" }} />
-        {T(POS.numero, c.numero || "")}
+        {T(POS.numero, numeroTxt)}
         {T(POS.dia, dd)}{T(POS.mes, mm)}{T(POS.anio, yyyy)}
         {T(POS.senor, nombre)}
         {T(POS.domicilio, dom)}
