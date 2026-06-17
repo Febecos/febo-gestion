@@ -25,9 +25,10 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
   const set = (k: string) => (ev: any) => setF({ ...f, [k]: ev.target.value });
 
   // Autocompletado de localidades — API oficial Georef (gob. argentino), filtrada por provincia.
+  const [locPick, setLocPick] = useState("");
   useEffect(() => {
     const q = String(f.localidad || "").trim();
-    if (q.length < 2) { setLocOpts([]); return; }
+    if (q.length < 2 || q === locPick) { setLocOpts([]); return; }
     const ctrl = new AbortController();
     const t = setTimeout(async () => {
       try {
@@ -36,9 +37,9 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
         const j = await r.json();
         setLocOpts(Array.from(new Set((j.localidades || []).map((x: any) => x.nombre).filter(Boolean))));
       } catch { /* sin red → queda como texto libre */ }
-    }, 300);
+    }, 250);
     return () => { clearTimeout(t); ctrl.abort(); };
-  }, [f.localidad, f.provincia]);
+  }, [f.localidad, f.provincia, locPick]);
 
   // Al elegir/escribir una empresa que está en el maestro, autocompleta su teléfono.
   const setEmpresa = (ev: any) => {
@@ -100,8 +101,18 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
           <L l="Dirección de entrega *" full><input value={f.direccion} onChange={set("direccion")} placeholder="Calle, número, piso/depto" /></L>
           <L l="Provincia *"><select value={f.provincia} onChange={set("provincia")}><option value="">Seleccioná…</option>{PROVINCIAS.map((p) => <option key={p} value={p}>{p}</option>)}</select></L>
           <L l="Localidad / Ciudad *">
-            <input value={f.localidad} onChange={set("localidad")} list="localidades" placeholder={f.provincia ? "Escribí tu ciudad…" : "Elegí provincia primero"} autoComplete="off" />
-            <datalist id="localidades">{locOpts.map((l) => <option key={l} value={l} />)}</datalist>
+            <div style={{ position: "relative" }}>
+              <input value={f.localidad} onChange={set("localidad")} placeholder={f.provincia ? "Escribí tu ciudad…" : "Elegí provincia primero"} autoComplete="off" style={{ width: "100%" }} onBlur={() => setTimeout(() => setLocOpts([]), 180)} />
+              {locOpts.length > 0 && (
+                <div style={{ position: "absolute", top: "calc(100% + 2px)", left: 0, right: 0, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 9, boxShadow: "0 6px 20px rgba(0,0,0,.12)", zIndex: 50, maxHeight: 200, overflowY: "auto" }}>
+                  {locOpts.map((l) => (
+                    <button key={l} type="button" onMouseDown={(e) => { e.preventDefault(); setF((p: any) => ({ ...p, localidad: l })); setLocPick(l); setLocOpts([]); }}
+                      style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", fontSize: 14, background: "#fff", border: 0, cursor: "pointer" }}
+                      onMouseOver={(e) => (e.currentTarget.style.background = "#eff6ff")} onMouseOut={(e) => (e.currentTarget.style.background = "#fff")}>📍 {l}</button>
+                  ))}
+                </div>
+              )}
+            </div>
           </L>
           <L l="Código Postal"><input value={f.cp} onChange={set("cp")} /></L>
           <L l="Teléfono de contacto"><input value={f.telefono} onChange={set("telefono")} placeholder="WhatsApp o celular" /></L>
