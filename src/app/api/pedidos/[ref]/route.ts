@@ -249,6 +249,13 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{envio}', ${JSON.stringify(b.envio || {})}::jsonb) WHERE numero=${ref}`;
       return NextResponse.json({ ok: true });
     }
+    // Datos de venta (Condiciones de Venta / Forma de Pago / Lugar de Entrega / Tipo de Transporte) → factura.
+    if (b.accion === "datos_venta") {
+      const dv = b.datos_venta || {};
+      const clean = { condiciones_venta: String(dv.condiciones_venta || "").trim(), forma_pago: String(dv.forma_pago || "").trim(), lugar_entrega: String(dv.lugar_entrega || "").trim(), tipo_transporte: String(dv.tipo_transporte || "").trim() };
+      if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{datos_venta}', ${JSON.stringify(clean)}::jsonb) WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
+    }
     // Mail al proveedor: reusa el endpoint del admin (genera Excel "Pedido GSA" + email). 1 llamada por proveedor.
     if (b.accion === "proveedor") {
       const internal = process.env.INTERNAL_SERVICE_SECRET;
@@ -375,10 +382,15 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS afip_cae TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS afip_cae_vto TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS afip_qr TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS condiciones_venta TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS forma_pago TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
+      const dvF = pl.datos_venta || {};
       const estadoComp = afip ? "emitida" : "proforma";
       const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, afip_cae, afip_cae_vto, afip_qr)
-        VALUES ('factura',${estadoComp},${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${afip?.cae || null}, ${afip?.caeVto || null}, ${afip?.qr || null})
+        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, afip_cae, afip_cae_vto, afip_qr, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte)
+        VALUES ('factura',${estadoComp},${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${afip?.cae || null}, ${afip?.caeVto || null}, ${afip?.qr || null}, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null})
         RETURNING id, token` as any[])[0];
 
       let orden = 0;

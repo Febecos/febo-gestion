@@ -200,6 +200,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [pesos, setPesos] = useState(false);
   const [busy, setBusy] = useState(false);
   const [nota, setNota] = useState("");
+  const [dv, setDv] = useState({ condiciones_venta: "", forma_pago: "", lugar_entrega: "", tipo_transporte: "" });
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
   const [unlockedProv, setUnlockedProv] = useState<Record<string, boolean>>({});
@@ -214,6 +215,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => {
     if (d.ok) {
       setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || "");
+      const dvp = d.pedido.payload?.datos_venta || {};
+      setDv({ condiciones_venta: dvp.condiciones_venta || "", forma_pago: dvp.forma_pago || "", lugar_entrega: dvp.lugar_entrega || "", tipo_transporte: dvp.tipo_transporte || "" });
       // Si el presupuesto se hizo en $ → arrancar pedido y factura en pesos con su TC (una sola vez).
       if (!monedaInit) {
         const tt = d.pedido.payload?.totales || {};
@@ -575,6 +578,24 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               </div>
             );
           })()}
+
+          {/* Datos de venta (salen en la factura) — solapa Detalle */}
+          {tab === "detalle" && <div className="border border-gray-200 rounded-lg p-3">
+            <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">🚚 Datos de venta (se imprimen en la factura)</div>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-[11px] text-gray-500">Condiciones de Venta
+                <input value={dv.condiciones_venta} onChange={(e) => setDv({ ...dv, condiciones_venta: e.target.value })} placeholder="Ej: Anticipado / Contado / 30 días" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+              <label className="text-[11px] text-gray-500">Forma de Pago
+                <input value={dv.forma_pago} onChange={(e) => setDv({ ...dv, forma_pago: e.target.value })} placeholder="Ej: Transferencia / Efectivo" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+              <label className="text-[11px] text-gray-500 col-span-2">Lugar de Entrega
+                <input value={dv.lugar_entrega} onChange={(e) => setDv({ ...dv, lugar_entrega: e.target.value })} placeholder="Ej: Transporte indicado y flete a cargo del cliente" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+              <label className="text-[11px] text-gray-500 col-span-2">Tipo de Transporte
+                <input value={dv.tipo_transporte} onChange={(e) => setDv({ ...dv, tipo_transporte: e.target.value })} placeholder="Ej: De Terceros - Expreso XYZ (011) …" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+            </div>
+            <div className="flex justify-end mt-2">
+              <button disabled={busy} onClick={() => accion({ accion: "datos_venta", datos_venta: dv })} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">💾 Guardar datos de venta</button>
+            </div>
+          </div>}
 
           {/* Nota interna (solapa Detalle) */}
           {tab === "detalle" && <div>
