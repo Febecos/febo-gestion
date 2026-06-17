@@ -65,7 +65,13 @@ export default function TransportistasClient() {
   const visibles = rows.filter((c) => {
     if (estado === "activos" && !c.activo) return false;
     if (estado === "inactivos" && c.activo) return false;
-    if (q.trim()) { const t = norm(q); if (!norm(c.nombre).includes(t) && !norm(contactoDe(c, ["phone", "whatsapp", "tel", "mobile"])).includes(t) && !norm(c.legal_name).includes(t)) return false; }
+    if (q.trim()) {
+      const t = norm(q);
+      const enTexto = norm(c.nombre).includes(t) || norm(contactoDe(c, ["phone", "whatsapp", "tel", "mobile"])).includes(t) || norm(c.legal_name).includes(t) || norm(c.tax_id).includes(t);
+      // La búsqueda principal también matchea por provincia/localidad de cobertura.
+      const enZona = (c.provincias || []).some((p) => norm(p).includes(t)) || (c.zonas_detalle || []).some((z) => norm([z.locality, z.province].filter(Boolean).join(" ")).includes(t));
+      if (!enTexto && !enZona) return false;
+    }
     if (zonaF.trim() && !cubreZona(c, zonaF)) return false;
     return true;
   });
@@ -74,7 +80,7 @@ export default function TransportistasClient() {
   return (
     <div onClick={() => colMenu && setColMenu(false)}>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, contacto…" className={inp + " w-56"} />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, contacto, localidad o provincia…" className={inp + " w-72"} />
         <div className="relative">
           <input value={zonaF} onChange={(e) => setZonaF(e.target.value)} placeholder="🔍 Ciudad o provincia…" className={inp + " w-52"} autoComplete="off" />
           {zonaSug.length > 0 && (
