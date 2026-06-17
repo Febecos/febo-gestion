@@ -318,7 +318,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
 // Hoja A4 real (210×297mm), imagen de fondo y datos posicionados en % + fuentes en pt,
 // CALCADO del modelo 00005-00000596 (coordenadas extraídas del PDF original).
 const POS = {
-  numero: { top: 10.4, left: 59.5, w: 32, size: 18, bold: true, serif: true },
+  numero: { top: 10.4, left: 56.5, w: 36, size: 18, bold: true, serif: true },
   dia: { top: 16.2, left: 72.3, w: 5, size: 11 },
   mes: { top: 16.2, left: 76.8, w: 5, size: 11 },
   anio: { top: 16.2, left: 81.2, w: 9, size: 11 },
@@ -378,8 +378,8 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
       <div className="rsheet">
         <img src="/images/remito-fondo.png" alt="Remito" />
         {/* tapar el número preimpreso y escribir el nuestro */}
-        <div style={{ position: "absolute", top: "10.7%", left: "58.7%", width: "27%", height: "2.4%", background: "#fff" }} />
-        {T(POS.numero, numeroTxt)}
+        <div style={{ position: "absolute", top: "10.4%", left: "56.3%", width: "30%", height: "2.6%", background: "#fff" }} />
+        {T(POS.numero, "Nº " + numeroTxt)}
         {T(POS.dia, dd)}{T(POS.mes, mm)}{T(POS.anio, yyyy)}
         {T(POS.senor, nombre)}
         {T(POS.domicilio, dom)}
