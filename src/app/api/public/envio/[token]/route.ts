@@ -39,12 +39,23 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     const pl = r[0].payload || {};
     const rev = pl.revendedor || pl.cliente || {};
     const envio = pl.envio || {};
+    // Transporte habitual del cliente (CRM) → sugerencia si el envío aún no tiene empresa.
+    let transporteSugerido = "";
+    try {
+      const pn = pl.presupuesto_numero;
+      if (pn) {
+        const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pn} LIMIT 1` as any[];
+        const cid = pr[0]?.cliente_id;
+        if (cid) { const cl = await sql`SELECT transporte FROM clientes WHERE id=${cid} LIMIT 1` as any[]; transporteSugerido = cl[0]?.transporte || ""; }
+      }
+    } catch {}
     return NextResponse.json({
       ok: true,
       numero: r[0].numero,
       cliente_nombre: rev.nombre || "",
       completado: !!envio.completado,
       envio,
+      transporte_sugerido: transporteSugerido,
       transportistas: await listarTransportistas(),
     });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }

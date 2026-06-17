@@ -5,7 +5,7 @@ type Cliente = {
   id: number; tipo: string; nombre: string; email: string; whatsapp: string;
   cuit: string; provincia: string; localidad: string; razon_social?: string;
   domicilio?: string; cod_postal?: string; condicion_fiscal?: string; notas?: string;
-  tags: string[]; origenes: string[]; email_opt_out?: boolean; descuento_pct?: number;
+  tags: string[]; origenes: string[]; email_opt_out?: boolean; descuento_pct?: number; transporte?: string;
   n_presup?: number; n_pedidos?: number; monto_ars?: number; monto_usd?: number;
   ultimo_contacto_at: string;
 };
@@ -25,7 +25,7 @@ const COLORES: Record<string, string> = {
   proveedor: "#059669", pocero: "#0d9488", instalador: "#ea580c", prospecto_curso: "#db2777",
 };
 const fmtMonto = (v: number) => (v ? "$ " + Math.round(v).toLocaleString("es-AR") : "—");
-const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "descuento_pct"] as const;
+const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "descuento_pct", "transporte"] as const;
 
 export default function ClientesClient({ openClienteId, openClienteTab }: { openClienteId?: number; openClienteTab?: "datos" | "operaciones" } = {}) {
   const [rows, setRows] = useState<Cliente[]>([]);
@@ -146,13 +146,26 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
     razon_social: cliente?.razon_social || "", email: cliente?.email || "", whatsapp: cliente?.whatsapp || "",
     cuit: cliente?.cuit || "", provincia: cliente?.provincia || "", localidad: cliente?.localidad || "",
     cod_postal: cliente?.cod_postal || "", domicilio: cliente?.domicilio || "", condicion_fiscal: cliente?.condicion_fiscal || "",
-    notas: cliente?.notas || "", descuento_pct: cliente?.descuento_pct ?? "",
+    notas: cliente?.notas || "", descuento_pct: cliente?.descuento_pct ?? "", transporte: cliente?.transporte || "",
   }));
   const [tags, setTags] = useState<string[]>(cliente?.tags || []);
   const [optOut, setOptOut] = useState<boolean>(!!cliente?.email_opt_out);
   const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
   const toggleTag = (t: string) => setTags((p) => (p.includes(t) ? p.filter((x) => x !== t) : [...p, t]));
+
+  // Transporte habitual: sugerencias del maestro según la provincia/localidad del cliente.
+  const [transportes, setTransportes] = useState<any[]>([]);
+  useEffect(() => { fetch("/api/transportistas?soloActivos=true").then((r) => r.json()).then((d) => setTransportes(d.ok ? d.rows : [])).catch(() => {}); }, []);
+  const normT = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const sugeridos = (() => {
+    const prov = normT(f.provincia), loc = normT(f.localidad);
+    if (!prov && !loc) return [] as any[];
+    return transportes.filter((t: any) =>
+      (t.provincias || []).some((p: string) => prov && (normT(p).includes(prov) || prov.includes(normT(p)))) ||
+      (t.zonas_detalle || []).some((z: any) => { const zt = normT([z.locality, z.province].filter(Boolean).join(" ")); return (loc && zt.includes(loc)) || (prov && zt.includes(prov)); })
+    );
+  })();
 
   async function buscarArca() {
     const cuit = (f.cuit || "").replace(/\D/g, "");
@@ -254,6 +267,13 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
           <label className={lbl}>LOCALIDAD<input value={f.localidad} onChange={(e) => set("localidad", e.target.value)} className={inp} /></label>
           <label className={lbl}>CÓDIGO POSTAL<input value={f.cod_postal} onChange={(e) => set("cod_postal", e.target.value)} className={inp} /></label>
           <label className={lbl}>DOMICILIO<input value={f.domicilio} onChange={(e) => set("domicilio", e.target.value)} className={inp} /></label>
+          <label className={lbl + " col-span-2"}>🚚 TRANSPORTE HABITUAL
+            <input value={f.transporte} onChange={(e) => set("transporte", e.target.value)} list="cli-transportes" className={inp} placeholder={(f.provincia || f.localidad) ? "Elegí de la lista (sugeridos por zona) o escribí…" : "Cargá localidad/provincia para ver sugerencias"} />
+            <datalist id="cli-transportes">{(sugeridos.length ? sugeridos : transportes).map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
+            {sugeridos.length > 0
+              ? <span className="text-[10px] text-emerald-600 font-normal">✓ {sugeridos.length} transporte(s) cubren {f.localidad || f.provincia} — se puede cambiar</span>
+              : (f.provincia || f.localidad) ? <span className="text-[10px] text-amber-600 font-normal">Ninguno con cobertura cargada para esa zona — podés elegir cualquiera o escribirlo</span> : null}
+          </label>
           <label className={lbl + " col-span-2"}>NOTAS<textarea value={f.notas} onChange={(e) => set("notas", e.target.value)} rows={2} className={inp} /></label>
           <div className="col-span-2">
             <div className="text-[11px] font-semibold text-gray-600 mb-1.5">ETIQUETAS</div>

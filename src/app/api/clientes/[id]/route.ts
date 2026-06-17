@@ -6,7 +6,7 @@ import { Pool } from "@neondatabase/serverless";
 const ALLOWED = new Set([
   "tipo", "nombre", "apellido", "razon_social", "empresa", "email", "whatsapp", "cuit",
   "domicilio", "localidad", "provincia", "cod_postal", "condicion_fiscal", "notas",
-  "email_opt_out", "descuento_pct", "tags", "origenes",
+  "email_opt_out", "descuento_pct", "tags", "origenes", "transporte",
 ]);
 
 // GET /api/clientes/:id  → un cliente completo (para abrir su ficha desde otros módulos)
@@ -15,10 +15,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     const id = Number(params.id);
     if (!id) return NextResponse.json({ ok: false, error: "id requerido" }, { status: 400 });
     const sql = getDb();
+    await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS transporte TEXT`.catch(() => {});
     const r = await sql`
       SELECT id, tipo, nombre, apellido, razon_social, empresa, email, whatsapp, cuit,
              provincia, localidad, cod_postal, domicilio, condicion_fiscal, notas, email_opt_out, descuento_pct,
-             tags, origenes
+             tags, origenes, transporte
       FROM clientes WHERE id = ${id} LIMIT 1`;
     if (!r.length) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
     return NextResponse.json({ ok: true, cliente: r[0] });

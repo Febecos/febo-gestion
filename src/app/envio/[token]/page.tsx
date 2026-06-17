@@ -16,7 +16,7 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
       if (!j.ok) { setErr(j.error || "No encontrado"); return; }
       setD(j);
       const e = j.envio || {};
-      setF((prev: any) => ({ ...prev, ...e, nombre: e.nombre || j.cliente_nombre || "" }));
+      setF((prev: any) => ({ ...prev, ...e, nombre: e.nombre || j.cliente_nombre || "", empresa: e.empresa || j.transporte_sugerido || "" }));
     }).catch((e) => setErr(e.message));
   }, [params.token]);
 

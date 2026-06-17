@@ -30,9 +30,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS transporte TEXT`.catch(() => {});
     const ins = await sql`
-      INSERT INTO clientes (tipo, nombre, razon_social, email, whatsapp, cuit, domicilio, localidad, provincia, cod_postal, condicion_fiscal, notas, descuento_pct, origen, tags, origenes, primer_contacto_at, ultimo_contacto_at)
-      VALUES (${tipo}, ${b.nombre || null}, ${b.razon_social || null}, ${email}, ${wa}, ${cuit}, ${b.domicilio || null}, ${b.localidad || null}, ${b.provincia || null}, ${b.cod_postal || null}, ${b.condicion_fiscal || null}, ${b.notas || null}, ${Number(b.descuento_pct) || 0}, 'admin_erp', ${tags}, ${origenes}, now(), now())
+      INSERT INTO clientes (tipo, nombre, razon_social, email, whatsapp, cuit, domicilio, localidad, provincia, cod_postal, condicion_fiscal, notas, descuento_pct, transporte, origen, tags, origenes, primer_contacto_at, ultimo_contacto_at)
+      VALUES (${tipo}, ${b.nombre || null}, ${b.razon_social || null}, ${email}, ${wa}, ${cuit}, ${b.domicilio || null}, ${b.localidad || null}, ${b.provincia || null}, ${b.cod_postal || null}, ${b.condicion_fiscal || null}, ${b.notas || null}, ${Number(b.descuento_pct) || 0}, ${b.transporte || null}, 'admin_erp', ${tags}, ${origenes}, now(), now())
       RETURNING id`;
     return NextResponse.json({ ok: true, id: ins[0].id, accion: "insert" });
   } catch (e: any) {
@@ -52,11 +53,12 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(100, Number(sp.get("limit")) || 50);
     const offset = (page - 1) * limit;
     const like = `%${q.toLowerCase()}%`;
+    await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS transporte TEXT`.catch(() => {});
 
     // Filtro por estado (tipo) O por etiqueta (tags), igual que el admin.
     const rows = await sql`
       SELECT c.id, c.tipo, c.nombre, c.apellido, c.razon_social, c.empresa, c.email, c.whatsapp, c.cuit,
-             c.provincia, c.localidad, c.cod_postal, c.domicilio, c.condicion_fiscal, c.notas, c.email_opt_out, c.descuento_pct,
+             c.provincia, c.localidad, c.cod_postal, c.domicilio, c.condicion_fiscal, c.notas, c.email_opt_out, c.descuento_pct, c.transporte,
              c.tags, c.origenes, c.ultimo_contacto_at,
              agg.n_presup, agg.n_pedidos, agg.monto_ars, agg.monto_usd
       FROM clientes c
