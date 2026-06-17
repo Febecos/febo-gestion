@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 
 const TIPOS = ["", "Puerta a puerta", "A sucursal de transporte", "Retira en depósito", "Flete propio"];
+const PROVINCIAS = ["Buenos Aires", "Ciudad Autónoma de Buenos Aires", "Catamarca", "Chaco", "Chubut", "Córdoba", "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones", "Neuquén", "Río Negro", "Salta", "San Juan", "San Luis", "Santa Cruz", "Santa Fe", "Santiago del Estero", "Tierra del Fuego", "Tucumán"];
 
 export default function EnvioCliente({ params }: { params: { token: string } }) {
   const [d, setD] = useState<any>(null);
@@ -20,7 +21,24 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
   }, [params.token]);
 
   const [sug, setSug] = useState<any[] | null>(null);
+  const [locOpts, setLocOpts] = useState<string[]>([]);
   const set = (k: string) => (ev: any) => setF({ ...f, [k]: ev.target.value });
+
+  // Autocompletado de localidades — API oficial Georef (gob. argentino), filtrada por provincia.
+  useEffect(() => {
+    const q = String(f.localidad || "").trim();
+    if (q.length < 2) { setLocOpts([]); return; }
+    const ctrl = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const u = `https://apis.datos.gob.ar/georef/api/localidades?nombre=${encodeURIComponent(q)}&campos=nombre&max=12&aplanar=true${f.provincia ? `&provincia=${encodeURIComponent(f.provincia)}` : ""}`;
+        const r = await fetch(u, { signal: ctrl.signal });
+        const j = await r.json();
+        setLocOpts(Array.from(new Set((j.localidades || []).map((x: any) => x.nombre).filter(Boolean))));
+      } catch { /* sin red → queda como texto libre */ }
+    }, 300);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [f.localidad, f.provincia]);
 
   // Al elegir/escribir una empresa que está en el maestro, autocompleta su teléfono.
   const setEmpresa = (ev: any) => {
@@ -80,8 +98,11 @@ export default function EnvioCliente({ params }: { params: { token: string } }) 
           <L l="Nombre y apellido / Razón social *"><input value={f.nombre} onChange={set("nombre")} /></L>
           <L l="DNI / CUIT"><input value={f.dni} onChange={set("dni")} /></L>
           <L l="Dirección de entrega *" full><input value={f.direccion} onChange={set("direccion")} placeholder="Calle, número, piso/depto" /></L>
-          <L l="Localidad *"><input value={f.localidad} onChange={set("localidad")} /></L>
-          <L l="Provincia *"><input value={f.provincia} onChange={set("provincia")} /></L>
+          <L l="Provincia *"><select value={f.provincia} onChange={set("provincia")}><option value="">Seleccioná…</option>{PROVINCIAS.map((p) => <option key={p} value={p}>{p}</option>)}</select></L>
+          <L l="Localidad / Ciudad *">
+            <input value={f.localidad} onChange={set("localidad")} list="localidades" placeholder={f.provincia ? "Escribí tu ciudad…" : "Elegí provincia primero"} autoComplete="off" />
+            <datalist id="localidades">{locOpts.map((l) => <option key={l} value={l} />)}</datalist>
+          </L>
           <L l="Código Postal"><input value={f.cp} onChange={set("cp")} /></L>
           <L l="Teléfono de contacto"><input value={f.telefono} onChange={set("telefono")} placeholder="WhatsApp o celular" /></L>
           <L l="Email" full><input value={f.email} onChange={set("email")} type="email" /></L>
