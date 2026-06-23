@@ -1,20 +1,21 @@
 "use client";
-import { createContext, useContext, useState, useCallback, useRef, Suspense } from "react";
+import { createContext, useContext, useState, useCallback, useRef, useEffect, Suspense } from "react";
 import ClientesClient, { ClienteFichaModal } from "./clientes/ClientesClient";
 import ProveedoresClient from "./proveedores/ProveedoresClient";
 import ComprasClient from "./compras/ComprasClient";
 import TransportistasClient from "./transportistas/TransportistasClient";
 import VentasClient from "./ventas/VentasClient";
+import PedidosOnlineClient from "./ventas/PedidosOnlineClient";
 import ProductosClient from "./productos/ProductosClient";
 import StockClient from "./productos/StockClient";
 import CotizadorEmbed from "./cotizadores/CotizadorEmbed";
 import ConfigClient from "./config/ConfigClient";
 
-export type WinKey = "clientes" | "proveedores" | "ventas" | "productos" | "stock" | "compras" | "transportistas" | "cot-bomba" | "cot-fv" | "presup-edit" | "config";
+export type WinKey = "clientes" | "proveedores" | "ventas" | "pedidos-online" | "productos" | "stock" | "compras" | "transportistas" | "cot-bomba" | "cot-fv" | "presup-edit" | "config";
 type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean; payload?: any };
 
 const TITULOS: Record<WinKey, string> = {
-  clientes: "👥 Clientes / CRM", proveedores: "🏭 Proveedores", ventas: "🧾 Ventas / Presupuestos", productos: "📦 Productos", stock: "📦 Stock / Depósito", compras: "🛒 Compras / Pedido a proveedor", transportistas: "🚚 Transportistas",
+  clientes: "👥 Clientes / CRM", proveedores: "🏭 Proveedores", ventas: "🧾 Ventas / Presupuestos", "pedidos-online": "🛒 Pedidos online", productos: "📦 Productos", stock: "📦 Stock / Depósito", compras: "🛒 Compras / Pedido a proveedor", transportistas: "🚚 Transportistas",
   "cot-bomba": "🔧 Cotizador de bombas", "cot-fv": "☀️ Cotizador fotovoltaico",
   "presup-edit": "✏️ Editar presupuesto",
   config: "⚙️ Configuración",
@@ -29,6 +30,7 @@ function Body({ k, payload }: { k: WinKey; payload?: any }) {
   if (k === "compras") return <ComprasClient />;
   if (k === "transportistas") return <TransportistasClient />;
   if (k === "ventas") return <VentasClient />;
+  if (k === "pedidos-online") return <PedidosOnlineClient />;
   if (k === "productos") return <ProductosClient />;
   if (k === "stock") return <StockClient />;
   if (k === "config") return <ConfigClient />;
@@ -70,6 +72,15 @@ export default function WindowManager({ children }: { children: React.ReactNode 
       return [...ws, { id: idSeq.current++, key: k, title: TITULOS[k], x: Math.min(20 + n * 26, Math.max(0, dw - w - 10)), y: Math.min(16 + n * 22, Math.max(0, dh - h - 10)), w, h, z: zTop.current, max: true, min: false, payload }];
     });
   }, []);
+
+  // Nombre del archivo al "Guardar como PDF" desde un presupuesto/comprobante embebido:
+  // Chrome usa el title del documento padre. Lo seteamos al del presupuesto abierto (Cliente - N°).
+  useEffect(() => {
+    const DEF = "FEBO-GESTION";
+    const top = wins.filter((w) => w.key === "presup-edit" && !w.min).sort((a, b) => b.z - a.z)[0];
+    const dt = top?.payload?.docTitle || (top && top.title.includes(" ") ? top.title.slice(top.title.indexOf(" ") + 1).trim() : top?.title || "");
+    document.title = dt || DEF;
+  }, [wins]);
 
   const setTitle = useCallback((k: WinKey, title: string) => {
     setWins((ws) => ws.map((w) => (w.key === k && w.title !== title ? { ...w, title } : w)));
