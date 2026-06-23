@@ -416,6 +416,7 @@ function PasosPedido({ p }: { p: any }) {
 function Pedidos() {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
+  const { openFicha } = useWindows();
   const load = () => fetch("/api/pedidos").then((r) => r.json()).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); });
   useEffect(() => { load(); }, []);
   // Refrescar al volver a la ventana (ej. tras generar un pedido en el cotizador)
@@ -435,7 +436,16 @@ function Pedidos() {
           <td className="px-4 py-2 whitespace-nowrap">{p.origen === "fv" ? <PasosPedido p={p} /> : <span className="text-gray-300">—</span>}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(p.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold">{(p.moneda === "ARS" || p.moneda === "$") && Number(p.tc) > 0 ? `$ ${Math.round(Number(p.total) * Number(p.tc)).toLocaleString("es-AR")}` : fmt(p.total, p.moneda)}</td>
-          <td className="px-4 py-2 text-right">{p.token && <a onClick={(e) => e.stopPropagation()} href={linkPresup(p.origen === "fv" ? "fv" : "bomba", p.token)} target="_blank" rel="noreferrer" title="Ver presupuesto" className="text-gray-400 hover:text-febo-azul">📄</a>}</td>
+          <td className="px-4 py-2 text-right whitespace-nowrap">
+            {p.cliente_id && (
+              <button
+                onClick={(e) => { e.stopPropagation(); openFicha(p.cliente_id, "datos"); }}
+                title="Ver ficha del cliente en CRM"
+                className="text-gray-400 hover:text-febo-azul mr-1"
+              >👤</button>
+            )}
+            {p.token && <a onClick={(e) => e.stopPropagation()} href={linkPresup(p.origen === "fv" ? "fv" : "bomba", p.token)} target="_blank" rel="noreferrer" title="Ver presupuesto" className="text-gray-400 hover:text-febo-azul">📄</a>}
+          </td>
         </tr>
       ))}
     </Tabla>
