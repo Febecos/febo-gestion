@@ -38,21 +38,34 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     if (!r.length) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
     const pl = r[0].payload || {};
     const rev = pl.revendedor || pl.cliente || {};
-    const envio = pl.envio || {};
-    // Transporte habitual del cliente (CRM) → sugerencia si el envío aún no tiene empresa.
+    const envioPayload = pl.envio || {};
+    // CRM = fuente única: resolvemos el cliente y, si ya tiene datos de envío cargados,
+    // ESOS mandan (no la copia del payload del pedido). Así el link levanta lo que está
+    // en el CRM y editarlo desde cualquier lado (CRM o link) muestra el mismo registro.
+    let envioCrm: any = null;
+    let clienteNombre = "";
     let transporteSugerido = "";
     try {
       const pn = pl.presupuesto_numero;
       if (pn) {
         const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pn} LIMIT 1` as any[];
         const cid = pr[0]?.cliente_id;
-        if (cid) { const cl = await sql`SELECT transporte FROM clientes WHERE id=${cid} LIMIT 1` as any[]; transporteSugerido = cl[0]?.transporte || ""; }
+        if (cid) {
+          const cl = await sql`SELECT nombre, transporte, envio FROM clientes WHERE id=${cid} LIMIT 1` as any[];
+          clienteNombre = cl[0]?.nombre || "";
+          transporteSugerido = cl[0]?.transporte || "";
+          const e = cl[0]?.envio;
+          if (e && typeof e === "object" && Object.keys(e).length) envioCrm = e;
+        }
       }
     } catch {}
+    const envio = envioCrm || envioPayload;
+    // El nombre del destinatario sigue al canónico del cliente (CRM), no a una copia vieja.
+    if (clienteNombre) envio.nombre = clienteNombre;
     return NextResponse.json({
       ok: true,
       numero: r[0].numero,
-      cliente_nombre: rev.nombre || "",
+      cliente_nombre: clienteNombre || rev.nombre || "",
       completado: !!envio.completado,
       envio,
       transporte_sugerido: transporteSugerido,
