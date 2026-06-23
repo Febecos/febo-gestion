@@ -3,7 +3,6 @@ import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 // Toma el próximo número de un talonario (atómico) y lo formatea estilo Táctica/AFIP:
 //   "FA B 0001-00000123"  (prefijo por grupo + letra + pto.vta(4) + número(8))
 // Devuelve null si el talonario no existe o está bloqueado.
-const PREFIJO: Record<string, string> = { factura: "FA", nc: "NC", nd: "ND", operativo: "" };
 
 // Letra de factura según ARCA (ex AFIP), siendo el EMISOR Responsable Inscripto.
 //   Cliente Responsable Inscripto                 → A

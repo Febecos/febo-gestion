@@ -28,7 +28,7 @@ export default function PedidoPrep({ params }: { params: { ref: string } }) {
   if (!ped) return <div style={{ padding: 40, color: "#888", fontFamily: "Arial" }}>Cargando…</div>;
 
   const pl = ped.payload || {}; const items = pl.items || []; const rev = pl.revendedor || pl.cliente || {};
-  const cond = pl.condiciones || {}; const envio = ped.envio_data || {};
+  const envio = ped.envio_data || {};
   const fecha = ped.fecha ? new Date(ped.fecha).toLocaleDateString("es-AR") : "";
   const nombre = rev.nombre || "—";
 

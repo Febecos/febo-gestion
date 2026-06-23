@@ -430,11 +430,6 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
   );
 }
 
-const TIPO_COMP: Record<string, { l: string; c: string; o: number }> = {
-  presupuesto: { l: "Presupuesto", c: "#64748b", o: 0 }, pedido: { l: "Pedido", c: "#2563eb", o: 1 },
-  factura: { l: "Factura", c: "#059669", o: 2 }, remito: { l: "Remito", c: "#7c3aed", o: 3 },
-};
-
 const FICHA_TABS = [
   { k: "presupuestos", l: "Presupuestos" }, { k: "pedidos", l: "Pedidos" },
   { k: "facturas", l: "Facturas" }, { k: "remitos", l: "Remitos" }, { k: "pagos", l: "Pagos" },
