@@ -23,6 +23,7 @@ export async function GET(_req: NextRequest) {
         SELECT fp.numero, fp.estado, fp.public_token, fp.payload, fp.metodo_pago,
                fp.factura_numero, fp.proveedor_confirmado, fp.pagos_recibidos,
                pr.public_token AS presup_token,
+               pr.cliente_id,
                COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,'')) AS cliente_crm
         FROM fv_pedidos fp
         LEFT JOIN presupuestos pr ON pr.numero = fp.payload->>'presupuesto_numero'
@@ -48,6 +49,7 @@ export async function GET(_req: NextRequest) {
         const totalReal = (!isNaN(netoN) && Array.isArray(tt.iva_detalle) && tt.iva_detalle.length) ? +(netoN + ivaSum).toFixed(2) : (Number(tt.total) || 0);
         return {
           origen: "fv", ref: p.numero, numero: p.numero,
+          cliente_id: p.cliente_id ? Number(p.cliente_id) : null,
           cliente: p.cliente_crm || pl.revendedor?.nombre || pl.cliente?.nombre || "—",
           detalle: (pl.items?.length ? `${pl.items.length} ítem(s)` : "FV"),
           total: totalReal, moneda: pl.totales?.moneda || "USD", tc: pl.totales?.tc || null,
