@@ -712,7 +712,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await insertItems(comp.id);
       await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_token=${comp.token}, factura_estado='emitida' WHERE numero=${ref}`;
       if (cliente_id && Number(tot.total) > 0) {
-        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +Number(tot.total).toFixed(2), uniq: `fac:${facturaNum}` });
+        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +Number(tot.total).toFixed(2), detalle: { moneda: facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null }, uniq: `fac:${facturaNum}` });
       }
       if (revendedor_id && comisionMonto > 0) {
         await movCtaCte(sql, { ambito: "cliente", cliente_id: revendedor_id, fecha: hoy(), concepto: `Comisión ${comisionPct}% s/ ${facturaNum}${receptorFinalId ? " (venta a cliente)" : ""}`, comprobante: facturaNum, pedido_ref: ref, haber: comisionMonto, detalle: { tipo: "comision_revendedor", pct: comisionPct, factura: facturaNum }, uniq: `com:${facturaNum}` });
@@ -766,7 +766,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const totalUsd = Number(meta.totalUsd) || 0; const netoUsd = Number(meta.netoUsd) || totalUsd;
       const cliente_id = meta.cliente_id || null; const revendedor_id = meta.revendedor_id || null; const receptorFinalId = Number(meta.receptorFinalId) || 0;
       if (cliente_id && totalUsd > 0) {
-        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +totalUsd.toFixed(2), uniq: `fac:${facturaNum}` });
+        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +totalUsd.toFixed(2), detalle: { moneda: meta.facturaMoneda || "USD", tc: meta.tc || null }, uniq: `fac:${facturaNum}` });
       }
       const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, totalUsd, netoUsd);
       if (revendedor_id && comisionMonto > 0) {

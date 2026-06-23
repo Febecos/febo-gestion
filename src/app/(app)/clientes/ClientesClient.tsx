@@ -6,6 +6,7 @@ type Cliente = {
   cuit: string; provincia: string; localidad: string; razon_social?: string;
   domicilio?: string; cod_postal?: string; condicion_fiscal?: string; notas?: string;
   tags: string[]; origenes: string[]; email_opt_out?: boolean; descuento_pct?: number; transporte?: string;
+  comision_propia_pct?: number; comision_revende_pct?: number; revendedor_padre_id?: number;
   n_presup?: number; n_pedidos?: number; monto_ars?: number; monto_usd?: number;
   ultimo_contacto_at: string;
 };
@@ -25,7 +26,8 @@ const COLORES: Record<string, string> = {
   proveedor: "#059669", pocero: "#0d9488", instalador: "#ea580c", prospecto_curso: "#db2777",
 };
 const fmtMonto = (v: number) => (v ? "$ " + Math.round(v).toLocaleString("es-AR") : "—");
-const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "descuento_pct", "transporte"] as const;
+const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "transporte", "comision_propia_pct", "comision_revende_pct"] as const;
+const esRevendedor = (t: string) => (t || "").startsWith("revendedor");
 
 export default function ClientesClient({ openClienteId, openClienteTab }: { openClienteId?: number; openClienteTab?: "datos" | "operaciones" } = {}) {
   const [rows, setRows] = useState<Cliente[]>([]);
@@ -146,8 +148,10 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
     razon_social: cliente?.razon_social || "", email: cliente?.email || "", whatsapp: cliente?.whatsapp || "",
     cuit: cliente?.cuit || "", provincia: cliente?.provincia || "", localidad: cliente?.localidad || "",
     cod_postal: cliente?.cod_postal || "", domicilio: cliente?.domicilio || "", condicion_fiscal: cliente?.condicion_fiscal || "",
-    notas: cliente?.notas || "", descuento_pct: cliente?.descuento_pct ?? "", transporte: cliente?.transporte || "",
+    notas: cliente?.notas || "", transporte: cliente?.transporte || "",
+    comision_propia_pct: cliente?.comision_propia_pct ?? "", comision_revende_pct: cliente?.comision_revende_pct ?? "",
   }));
+  const [origComision, setOrigComision] = useState<{ propia: any; revende: any }>({ propia: cliente?.comision_propia_pct ?? null, revende: cliente?.comision_revende_pct ?? null });
   const [tags, setTags] = useState<string[]>(cliente?.tags || []);
   const [optOut, setOptOut] = useState<boolean>(!!cliente?.email_opt_out);
   const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
@@ -186,6 +190,26 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
     );
   })();
 
+  // Hidratar comisiones al abrir (las filas de la lista no las traen).
+  useEffect(() => {
+    if (esNuevo || !cliente) return;
+    fetch(`/api/clientes/${cliente.id}`).then((r) => r.json()).then((d) => {
+      if (!d.ok || !d.cliente) return;
+      const c = d.cliente;
+      // "Compra para sí" = descuento del admin revendedor (fuente de verdad). Si hay link, gana el admin.
+      const propia = (d.admin_descuento_pct ?? c.comision_propia_pct);
+      (cliente as any).comision_propia_pct = propia;
+      (cliente as any).comision_revende_pct = c.comision_revende_pct;
+      (cliente as any).revendedor_padre_id = c.revendedor_padre_id;
+      setOrigComision({ propia: propia ?? null, revende: c.comision_revende_pct ?? null });
+      setF((p: any) => ({
+        ...p,
+        comision_propia_pct: propia ?? (p.comision_propia_pct === "" ? "" : p.comision_propia_pct),
+        comision_revende_pct: p.comision_revende_pct === "" ? (c.comision_revende_pct ?? "") : p.comision_revende_pct,
+      }));
+    }).catch(() => {});
+  }, [cliente?.id, esNuevo]);
+
   async function buscarArca() {
     const cuit = (f.cuit || "").replace(/\D/g, "");
     if (cuit.length !== 11) { setArca("El CUIT debe tener 11 dígitos."); return; }
@@ -195,7 +219,8 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
       if (!d.ok || d.valido === false) throw new Error(d.error || "CUIT sin datos");
       const dom = d.domicilio || {};
       const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" ");
-      setF((p: any) => ({ ...p, razon_social: p.razon_social || d.razonSocial || d.denominacion || "", nombre: p.nombre || nom || "", domicilio: p.domicilio || dom.direccion || "", localidad: p.localidad || dom.localidad || "", provincia: p.provincia || dom.provincia || "", cod_postal: p.cod_postal || dom.codPostal || "" }));
+      // La RAZÓN SOCIAL es el dato legal de AFIP: ARCA manda (pisa lo tipeado). El resto se completa si está vacío.
+      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: p.domicilio || dom.direccion || "", localidad: p.localidad || dom.localidad || "", provincia: p.provincia || dom.provincia || "", cod_postal: p.cod_postal || dom.codPostal || "" }));
       setArca("✓ " + (nom || cuit));
     } catch (e: any) { setArca("✕ " + e.message); }
   }
@@ -248,7 +273,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
   const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
   const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm";
   return (
-    <div className="fixed inset-0 bg-black/45 z-[120] overflow-y-auto" onClick={onClose}>
+    <div className="fixed inset-0 bg-black/45 z-[9999] overflow-y-auto" onClick={onClose}>
       <div className="bg-white rounded-2xl max-w-3xl mx-auto my-8 p-7 relative" onClick={(e) => e.stopPropagation()}>
         <button onClick={onClose} className="absolute top-4 right-5 text-2xl text-gray-400">✕</button>
         <h2 className="text-lg font-bold mb-1">{esNuevo ? "＋ Nuevo cliente" : "✏️ " + (f.nombre || "Cliente")}</h2>
@@ -270,7 +295,9 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
           </label>
           {arca && <div className="col-span-2 text-[11px] -mt-2" style={{ color: arca.startsWith("✓") ? "#059669" : "#e53935" }}>{arca}</div>}
           <label className={lbl + " col-span-2"}>NOMBRE Y APELLIDO<input value={f.nombre} onChange={(e) => set("nombre", e.target.value)} className={inp} /></label>
-          <label className={lbl + " col-span-2"}>RAZÓN SOCIAL / EMPRESA<input value={f.razon_social} onChange={(e) => set("razon_social", e.target.value)} className={inp} /></label>
+          <label className={lbl + " col-span-2"}>RAZÓN SOCIAL / EMPRESA (oficial ARCA)
+            <input value={f.razon_social} readOnly title="Se completa automáticamente desde ARCA (dato legal de AFIP). Usá el botón 🔍 ARCA." className={inp + " bg-gray-100 text-gray-700 cursor-not-allowed"} placeholder="Se completa desde ARCA" />
+          </label>
           <label className={lbl}>EMAIL<input value={f.email} onChange={(e) => set("email", e.target.value)} className={inp} /></label>
           <label className={lbl}>WHATSAPP<input value={f.whatsapp} onChange={(e) => set("whatsapp", e.target.value)} className={inp} /></label>
           <label className={lbl}>ESTADO<select value={f.tipo} onChange={(e) => set("tipo", e.target.value)} className={inp}>{ESTADOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
@@ -281,7 +308,6 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
             <option value="consumidor_final">Consumidor Final</option>
             <option value="exento">Exento</option>
           </select></label>
-          <label className={lbl}>DESCUENTO % (predeterminado)<input type="number" value={f.descuento_pct} onChange={(e) => set("descuento_pct", e.target.value)} className={inp} placeholder="0" /></label>
           <label className={lbl}>PROVINCIA<input value={f.provincia} onChange={(e) => set("provincia", e.target.value)} className={inp} /></label>
           <label className={lbl}>LOCALIDAD<input value={f.localidad} onChange={(e) => set("localidad", e.target.value)} className={inp} /></label>
           <label className={lbl}>CÓDIGO POSTAL<input value={f.cod_postal} onChange={(e) => set("cod_postal", e.target.value)} className={inp} /></label>
@@ -294,6 +320,20 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
               : (f.provincia || f.localidad) ? <span className="text-[10px] text-amber-600 font-normal">Ninguno con cobertura cargada para esa zona — podés elegir cualquiera o escribirlo</span> : null}
           </label>
           <label className={lbl + " col-span-2"}>NOTAS<textarea value={f.notas} onChange={(e) => set("notas", e.target.value)} rows={2} className={inp} /></label>
+          {esRevendedor(f.tipo) && (
+            <div className="col-span-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3 mt-1">
+              <div className="text-[12px] font-bold text-violet-700 mb-2">🤝 Revendedor — comisiones y clientes finales</div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className={lbl}>COMISIÓN % — compra para sí
+                  <input type="number" value={f.comision_propia_pct} onChange={(e) => set("comision_propia_pct", e.target.value)} className={inp} placeholder="0" /></label>
+                <label className={lbl}>COMISIÓN % — venta a su cliente
+                  <input type="number" value={f.comision_revende_pct} onChange={(e) => set("comision_revende_pct", e.target.value)} className={inp} placeholder="0" /></label>
+              </div>
+              {esNuevo
+                ? <div className="text-[11px] text-gray-500 mt-2">Guardá el revendedor para poder cargar sus clientes finales (a quienes se factura).</div>
+                : <ClientesFinales revendedorId={cliente!.id} />}
+            </div>
+          )}
           <div className="col-span-2">
             <div className="text-[11px] font-semibold text-gray-600 mb-1.5">ETIQUETAS</div>
             <div className="flex flex-wrap gap-2">
@@ -363,14 +403,20 @@ function CtaCteCliente({ clienteId }: { clienteId: number }) {
   const [movs, setMovs] = useState<any[]>([]); const [saldo, setSaldo] = useState(0); const [dolar, setDolar] = useState(0); const [open, setOpen] = useState(false); const [loaded, setLoaded] = useState(false);
   useEffect(() => { fetch(`/api/ctacte?ambito=cliente&cliente_id=${clienteId}`).then((r) => r.json()).then((d) => { if (d.ok) { setMovs(d.movimientos || []); setSaldo(d.saldo || 0); setDolar(d.dolar || 0); } setLoaded(true); }).catch(() => setLoaded(true)); }, [clienteId]);
   if (!loaded || (movs.length === 0 && Math.abs(saldo) < 0.01)) return null;
-  let acum = 0;
+  // TC de cada movimiento: factura → TC pactado del comprobante; pago → su TC; si no, dólar del día.
+  const tcDe = (m: any) => Number(m.comp_tc) || Number(m.detalle?.tc) || dolar || 0;
+  const pesosDe = (m: any) => ((Number(m.debe) || 0) - (Number(m.haber) || 0)) * tcDe(m);
+  // Saldo en PESOS al TC pactado de cada factura (coincide con "Facturado"), no al dólar del día.
+  const saldoPesos = Math.round(movs.reduce((a, m) => a + pesosDe(m), 0));
+  const fmt$ = (n: number) => "$ " + Math.round(n).toLocaleString("es-AR");
+  let acumP = 0;
   return (
     <div className="mb-3 rounded-lg border border-gray-200 bg-white">
       <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center justify-between px-3 py-2 text-sm">
         <span className="font-semibold text-febo-azul">💳 Cuenta corriente</span>
         <span className="flex items-center gap-2">
-          <b className={saldo > 0.01 ? "text-red-600" : "text-emerald-600"}>USD {saldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}{dolar > 0 ? " · $ " + Math.round(saldo * dolar).toLocaleString("es-AR") : ""}</b>
-          <span className="text-gray-400 text-xs">{saldo > 0.01 ? "(nos debe)" : "(al día)"}</span>
+          <b className={saldoPesos > 1 ? "text-red-600" : "text-emerald-600"}>{fmt$(saldoPesos)}<span className="text-gray-400 font-normal text-[11px]"> · USD {saldo.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span></b>
+          <span className="text-gray-400 text-xs">{saldoPesos > 1 ? "(nos debe)" : "(al día)"}</span>
           <span className="text-gray-400">{open ? "▲" : "▼"}</span>
         </span>
       </button>
@@ -378,18 +424,140 @@ function CtaCteCliente({ clienteId }: { clienteId: number }) {
         <table className="w-full text-xs">
           <thead className="text-[10px] uppercase text-gray-400"><tr><th className="text-left py-1">Fecha</th><th className="text-left py-1">Concepto</th><th className="text-right py-1">Debe</th><th className="text-right py-1">Haber</th><th className="text-right py-1">Saldo</th></tr></thead>
           <tbody>
-            {movs.map((m, i) => { const d = Number(m.debe) || 0, h = Number(m.haber) || 0; acum += d - h; return (
+            {movs.map((m, i) => { const tc = tcDe(m); const d = (Number(m.debe) || 0) * tc, h = (Number(m.haber) || 0) * tc; acumP += d - h; return (
               <tr key={i} className="border-t border-gray-100">
                 <td className="py-1 text-gray-500 whitespace-nowrap">{m.fecha ? new Date(m.fecha).toLocaleDateString("es-AR") : "—"}</td>
                 <td className="py-1">{m.concepto}{m.comprobante ? " · " + m.comprobante : ""}</td>
-                <td className="py-1 text-right tabular-nums text-gray-600">{d ? d.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : ""}</td>
-                <td className="py-1 text-right tabular-nums text-gray-600">{h ? h.toLocaleString("es-AR", { minimumFractionDigits: 2 }) : ""}</td>
-                <td className="py-1 text-right tabular-nums font-semibold">{acum.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</td>
+                <td className="py-1 text-right tabular-nums text-gray-600">{d ? fmt$(d) : ""}</td>
+                <td className="py-1 text-right tabular-nums text-gray-600">{h ? fmt$(h) : ""}</td>
+                <td className="py-1 text-right tabular-nums font-semibold">{fmt$(acumP)}</td>
               </tr>
             ); })}
           </tbody>
         </table>
+        <div className="text-[10px] text-gray-400 mt-1">Importes en pesos al TC pactado de cada comprobante.</div>
       </div>}
+    </div>
+  );
+}
+
+// Clientes finales de un revendedor: a ellos se les factura (datos fiscales propios).
+function ClientesFinales({ revendedorId }: { revendedorId: number }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [add, setAdd] = useState(false);
+  const [edit, setEdit] = useState<any>(null);
+  const [f, setF] = useState<any>({});
+  const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
+  const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
+  const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm";
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch(`/api/clientes/${revendedorId}/finales`).then((r) => r.json()).then((d) => { setRows(d.ok ? d.finales : []); setLoading(false); }).catch(() => setLoading(false));
+  }, [revendedorId]);
+  useEffect(() => { load(); }, [load]);
+
+  const abrirNuevo = () => { setF({ condicion_fiscal: "" }); setArca(""); setEdit(null); setAdd(true); };
+  const abrirEdit = (r: any) => { setF({ ...r }); setArca(""); setAdd(false); setEdit(r); };
+  const cerrar = () => { setAdd(false); setEdit(null); setF({}); setArca(""); };
+  const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+
+  async function buscarArca() {
+    const cuit = (f.cuit || "").replace(/\D/g, "");
+    if (cuit.length !== 11) { setArca("El CUIT debe tener 11 dígitos."); return; }
+    setArca("Buscando en ARCA…");
+    try {
+      const r = await fetch("/api/consultar-cuit?cuit=" + cuit); const d = await r.json();
+      if (!d.ok || d.valido === false) throw new Error(d.error || "CUIT sin datos");
+      const dom = d.domicilio || {};
+      const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" ");
+      // La RAZÓN SOCIAL es el dato legal de AFIP: ARCA manda (pisa lo tipeado). El resto se completa si está vacío.
+      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: p.domicilio || dom.direccion || "", localidad: p.localidad || dom.localidad || "", provincia: p.provincia || dom.provincia || "", cod_postal: p.cod_postal || dom.codPostal || "" }));
+      setArca("✓ " + (nom || cuit));
+    } catch (e: any) { setArca("✕ " + e.message); }
+  }
+
+  async function guardar() {
+    if (!(f.nombre || f.razon_social || "").trim()) { alert("Cargá al menos nombre o razón social."); return; }
+    setSaving(true);
+    try {
+      if (edit) {
+        const id = edit.id;
+        const campos = ["nombre", "razon_social", "cuit", "condicion_fiscal", "domicilio", "localidad", "provincia", "cod_postal", "email", "whatsapp"];
+        for (const k of campos) {
+          const nv = (f[k] ?? "").toString().trim() || null;
+          if (nv !== ((edit[k] ?? null) || null)) {
+            const r = await fetch(`/api/clientes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ field: k, value: nv }) });
+            const d = await r.json(); if (!d.ok) throw new Error(d.error);
+          }
+        }
+      } else {
+        const r = await fetch(`/api/clientes/${revendedorId}/finales`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+        const d = await r.json(); if (!d.ok) throw new Error(d.error);
+      }
+      cerrar(); load();
+    } catch (e: any) { alert("Error: " + e.message); } finally { setSaving(false); }
+  }
+
+  async function eliminar(r: any) {
+    if (!confirm(`¿Eliminar el cliente final "${r.razon_social || r.nombre}"?`)) return;
+    const res = await fetch(`/api/clientes/${r.id}?motivo=${encodeURIComponent("cliente final eliminado")}`, { method: "DELETE" });
+    const d = await res.json();
+    if (d.ok) load(); else alert("⚠️ " + (d.error || "No se pudo eliminar."));
+  }
+
+  return (
+    <div className="mt-3">
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="text-[11px] font-semibold text-gray-600">CLIENTES FINALES (a quienes se factura)</div>
+        {!add && !edit && <button onClick={abrirNuevo} className="text-[12px] font-semibold text-febo-azul">＋ Agregar</button>}
+      </div>
+      {loading ? <div className="text-[11px] text-gray-400 py-2">Cargando…</div>
+        : (add || edit) ? (
+          <div className="rounded-lg border border-gray-200 bg-white p-3 grid grid-cols-2 gap-2">
+            <label className="col-span-2 grid grid-cols-[1fr_auto] gap-2 items-end">
+              <span className={lbl}>CUIT<input value={f.cuit || ""} onChange={(e) => set("cuit", e.target.value)} className={inp + " w-full"} /></span>
+              <button type="button" onClick={buscarArca} className="bg-febo-cyan text-white rounded-lg px-3 h-[34px] text-sm">🔍 ARCA</button>
+            </label>
+            {arca && <div className="col-span-2 text-[11px] -mt-1" style={{ color: arca.startsWith("✓") ? "#059669" : "#e53935" }}>{arca}</div>}
+            <label className={lbl + " col-span-2"}>NOMBRE / CONTACTO<input value={f.nombre || ""} onChange={(e) => set("nombre", e.target.value)} className={inp} /></label>
+            <label className={lbl + " col-span-2"}>RAZÓN SOCIAL (oficial ARCA)
+              <input value={f.razon_social || ""} readOnly title="Se completa automáticamente desde ARCA. Usá el botón 🔍 ARCA." className={inp + " bg-gray-100 text-gray-700 cursor-not-allowed"} placeholder="Se completa desde ARCA" />
+            </label>
+            <label className={lbl}>CONDICIÓN FISCAL<select value={f.condicion_fiscal || ""} onChange={(e) => set("condicion_fiscal", e.target.value)} className={inp}>
+              <option value="">— sin datos —</option>
+              <option value="responsable_inscripto">Responsable Inscripto</option>
+              <option value="monotributista">Monotributista</option>
+              <option value="consumidor_final">Consumidor Final</option>
+              <option value="exento">Exento</option>
+            </select></label>
+            <label className={lbl}>EMAIL<input value={f.email || ""} onChange={(e) => set("email", e.target.value)} className={inp} /></label>
+            <label className={lbl}>WHATSAPP<input value={f.whatsapp || ""} onChange={(e) => set("whatsapp", e.target.value)} className={inp} /></label>
+            <label className={lbl}>PROVINCIA<input value={f.provincia || ""} onChange={(e) => set("provincia", e.target.value)} className={inp} /></label>
+            <label className={lbl}>LOCALIDAD<input value={f.localidad || ""} onChange={(e) => set("localidad", e.target.value)} className={inp} /></label>
+            <label className={lbl}>CÓDIGO POSTAL<input value={f.cod_postal || ""} onChange={(e) => set("cod_postal", e.target.value)} className={inp} /></label>
+            <label className={lbl + " col-span-2"}>DOMICILIO<input value={f.domicilio || ""} onChange={(e) => set("domicilio", e.target.value)} className={inp} /></label>
+            <div className="col-span-2 flex justify-end gap-2 mt-1">
+              <button onClick={cerrar} className="border border-gray-300 rounded-lg px-4 py-1.5 text-sm">Cancelar</button>
+              <button onClick={guardar} disabled={saving} className="bg-febo-azul text-white rounded-lg px-5 py-1.5 text-sm font-semibold disabled:opacity-50">{saving ? "Guardando…" : edit ? "Guardar" : "Agregar"}</button>
+            </div>
+          </div>
+        ) : rows.length === 0 ? <div className="text-[11px] text-gray-400 py-1">Sin clientes finales cargados.</div>
+          : (
+            <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+              {rows.map((r) => (
+                <div key={r.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                  <div className="flex-1">
+                    <span className="font-semibold">{r.razon_social || r.nombre || "—"}</span>
+                    <span className="text-gray-400 text-xs ml-2">{[r.cuit, r.condicion_fiscal, r.localidad].filter(Boolean).join(" · ")}</span>
+                  </div>
+                  <button onClick={() => abrirEdit(r)} className="text-gray-400 hover:text-febo-azul" title="Editar">✏️</button>
+                  <button onClick={() => eliminar(r)} className="text-gray-300 hover:text-red-500" title="Eliminar">🗑</button>
+                </div>
+              ))}
+            </div>
+          )}
     </div>
   );
 }
@@ -548,7 +716,7 @@ export function ClienteFichaModal({ clienteId, tab, onClose }: { clienteId: numb
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-  if (err) return <div className="fixed inset-0 bg-black/45 z-[120] flex items-center justify-center" onClick={onClose}><div className="bg-white rounded-xl p-6 text-sm text-gray-600" onClick={(e) => e.stopPropagation()}>⚠️ {err}</div></div>;
+  if (err) return <div className="fixed inset-0 bg-black/45 z-[9999] flex items-center justify-center" onClick={onClose}><div className="bg-white rounded-xl p-6 text-sm text-gray-600" onClick={(e) => e.stopPropagation()}>⚠️ {err}</div></div>;
   if (!cli) return null;
   return <ClienteModal cliente={cli} initialTab={tab} onClose={onClose} onSaved={onClose} />;
 }

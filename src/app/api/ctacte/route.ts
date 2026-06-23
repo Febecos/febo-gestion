@@ -45,7 +45,14 @@ export async function GET(req: NextRequest) {
     if (ambito === "cliente") {
       const cid = Number(sp.get("cliente_id"));
       if (!cid) return NextResponse.json({ ok: false, error: "cliente_id requerido" }, { status: 400 });
-      const movs = await sql`SELECT * FROM fg_ctacte WHERE ambito='cliente' AND cliente_id=${cid} ORDER BY fecha, created_at, id`;
+      // Trae el TC/moneda real del comprobante (factura) asociado: así los pesos se muestran
+      // al TC PACTADO de la factura, no al dólar del día (evita diferir de lo facturado).
+      const movs = await sql`
+        SELECT c.*, fc.tc AS comp_tc, fc.moneda AS comp_moneda
+        FROM fg_ctacte c
+        LEFT JOIN fg_comprobantes fc ON fc.numero = c.comprobante
+        WHERE c.ambito='cliente' AND c.cliente_id=${cid}
+        ORDER BY c.fecha, c.created_at, c.id`;
       const saldo = movs.reduce((a: number, m: any) => a + Number(m.debe) - Number(m.haber), 0);
       return NextResponse.json({ ok: true, movimientos: movs, saldo: +saldo.toFixed(2), orientacion: "cliente_debe_si_positivo", dolar });
     }
