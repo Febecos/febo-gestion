@@ -456,6 +456,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [busy, setBusy] = useState(false);
   const [nota, setNota] = useState("");
   const [dv, setDv] = useState({ condiciones_venta: "", forma_pago: "", lugar_entrega: "", tipo_transporte: "" });
+  const [valorDecl, setValorDecl] = useState(""); // valor declarado para el transporte (propio del pedido)
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
   const [unlockedProv, setUnlockedProv] = useState<Record<string, boolean>>({});
@@ -486,6 +487,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
         lugar_entrega: dvp.lugar_entrega || cond.lugar || "",
         tipo_transporte: dvp.tipo_transporte || "",
       });
+      // Valor declarado: propio del pedido (fallback al que pudiera haber quedado en envio viejo).
+      setValorDecl(String(d.pedido.payload?.valor_declarado ?? d.pedido.payload?.envio?.valor_declarado ?? ""));
       // Si el presupuesto se hizo en $ → arrancar pedido y factura en pesos con su TC (una sola vez).
       if (!monedaInit) {
         const tt = d.pedido.payload?.totales || {};
@@ -972,12 +975,35 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     {env.direccion || "(sin dirección)"}{[env.localidad, env.provincia, env.cp].filter(Boolean).length ? " · " + [env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") : ""}<br />
                     {[env.telefono, env.email].filter(Boolean).join(" · ")}
                     {(env.empresa || env.tipo_envio) && <><br />🚚 {[env.empresa, env.tipo_envio].filter(Boolean).join(" · ")}</>}
-                    {(env.domicilio_transporte || env.telefono_transporte || env.valor_declarado) && <><br /><span className="text-gray-400">{[env.domicilio_transporte, env.telefono_transporte, env.valor_declarado && `Valor decl. $${env.valor_declarado}`].filter(Boolean).join(" · ")}</span></>}
+                    {(env.domicilio_transporte || env.telefono_transporte) && <><br /><span className="text-gray-400">{[env.domicilio_transporte, env.telefono_transporte].filter(Boolean).join(" · ")}</span></>}
                   </div>
                 ) : (
                   <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-2">⏳ Este cliente todavía no tiene datos de envío cargados. Cargalos en su ficha (CRM › Datos Envíos) o enviale el link para que los complete.</div>
                 )}
                 {!completo && tieneAlgo && <div className="text-[11px] text-amber-600 mb-2">Falta: {["nombre","direccion","localidad","provincia"].filter((k)=>!String((env as any)[k]||"").trim()).map((k)=>({nombre:"destinatario",direccion:"dirección",localidad:"localidad",provincia:"provincia"} as any)[k]).join(", ")}.</div>}
+
+                {/* Valor declarado para el transporte — propio del pedido (lo indica el cliente). */}
+                {(() => {
+                  const netoUsd = Number(tot.neto) || 0;
+                  const ivaUsd = tot.iva != null ? Number(tot.iva) : Math.max(0, (Number(tot.total) || 0) - netoUsd);
+                  const totalUsd = netoUsd + ivaUsd;
+                  return (
+                    <div className="bg-blue-50/40 border border-blue-100 rounded-lg p-2.5 mb-2">
+                      <div className="text-[11px] font-bold text-gray-500 uppercase mb-1.5">💰 Valor declarado (transporte)</div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-600 mb-2">
+                        <span>Neto del pedido: <b>{money(netoUsd)}</b></span>
+                        <span>Con IVA: <b>{money(totalUsd)}</b></span>
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <label className="text-[11px] text-gray-500">Monto declarado por el cliente ($)
+                          <input value={valorDecl} onChange={(e) => setValorDecl(e.target.value.replace(/[^\d.,]/g, ""))} inputMode="decimal" placeholder="0" className="block mt-0.5 w-40 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+                        </label>
+                        <button type="button" onClick={() => setValorDecl(String(Math.round(totalUsd * (enP ? tcMostrar : 1))))} className="px-2.5 py-1.5 rounded-lg border border-gray-300 text-[11px] hover:bg-gray-50" title="Usar el total con IVA del pedido">= Total c/IVA</button>
+                        <button disabled={busy} onClick={() => accion({ accion: "valor_declarado", valor_declarado: valorDecl })} className="px-3 py-1.5 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold hover:bg-blue-50">💾 Guardar</button>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="flex flex-wrap gap-2">
                   <button disabled={!ped.public_token} onClick={() => { navigator.clipboard.writeText(link); alert("Link copiado:\n" + link); }} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">🔗 Copiar link para el cliente</button>
                   {ped.public_token && <a href={link} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">✏️ Abrir formulario</a>}

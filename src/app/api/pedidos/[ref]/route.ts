@@ -412,6 +412,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{envio}', ${JSON.stringify(b.envio || {})}::jsonb) WHERE numero=${ref}`;
       return NextResponse.json({ ok: true });
     }
+    // Valor declarado para el transporte: es PROPIO del pedido (no del cliente), lo indica el cliente.
+    if (b.accion === "valor_declarado") {
+      const vd = String(b.valor_declarado ?? "").trim();
+      if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{valor_declarado}', to_jsonb(${vd}::text)) WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
+    }
     // Enviar al cliente el link para que cargue sus datos de envío.
     if (b.accion === "pedir_envio") {
       const email = String(b.email || "").trim();

@@ -334,8 +334,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
                 <datalist id="cli-transportes-envio">{(sugeridos.length ? sugeridos : transportes).map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
                 {sugeridos.length > 0 && <span className="text-[10px] text-emerald-600 font-normal">✓ {sugeridos.length} transporte(s) cubren {envioForm.localidad || envioForm.provincia}</span>}
               </label>
-              <label className={lbl}>TIPO DE ENVÍO<select value={envioForm.tipo_envio} onChange={(e) => setE("tipo_envio", e.target.value)} className={inp}>{TIPOS_ENVIO.map((t) => <option key={t} value={t}>{t || "Seleccioná…"}</option>)}</select></label>
-              <label className={lbl}>VALOR DECLARADO ($)<input value={envioForm.valor_declarado} onChange={(e) => setE("valor_declarado", e.target.value)} className={inp} /></label>
+              <label className={lbl + " col-span-2"}>TIPO DE ENVÍO<select value={envioForm.tipo_envio} onChange={(e) => setE("tipo_envio", e.target.value)} className={inp}>{TIPOS_ENVIO.map((t) => <option key={t} value={t}>{t || "Seleccioná…"}</option>)}</select></label>
               <label className={lbl + " col-span-2"}>DOMICILIO DE LA SUCURSAL<input value={envioForm.domicilio_transporte} onChange={(e) => setE("domicilio_transporte", e.target.value)} className={inp} placeholder="Si es a sucursal de transporte" /></label>
               <label className={lbl + " col-span-2"}>TELÉFONO DEL TRANSPORTE<input value={envioForm.telefono_transporte} onChange={(e) => setE("telefono_transporte", e.target.value)} className={inp} /></label>
             </div>
