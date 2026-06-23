@@ -319,16 +319,16 @@ export default function ComprobantePublico({ params }: { params: { token: string
 // Hoja A4 real (210×297mm), imagen de fondo y datos posicionados en % + fuentes en pt,
 // CALCADO del modelo 00005-00000596 (coordenadas extraídas del PDF original).
 const POS = {
-  numero: { top: 9.9, left: 56.0, w: 40, size: 18, bold: true, serif: true },
+  numero: { top: 9.9, left: 57.8, w: 40, size: 18, bold: true, serif: true },
   dia: { top: 16.2, left: 72.3, w: 5, size: 11 },
   mes: { top: 16.2, left: 76.8, w: 5, size: 11 },
   anio: { top: 16.2, left: 81.2, w: 9, size: 11 },
-  senor: { top: 25.6, left: 15.6, w: 80, size: 10 },
-  domicilio: { top: 27.9, left: 16.3, w: 55, size: 10 },
-  cuit: { top: 28.1, left: 72.7, w: 25, size: 10 },
+  senor: { top: 25.6, left: 15.6, w: 80, size: 11 },
+  domicilio: { top: 27.9, left: 16.3, w: 55, size: 11 },
+  cuit: { top: 28.1, left: 72.7, w: 25, size: 11 },
   facturaNro: { top: 31.0, left: 70.5, w: 27, size: 13, bold: true },
-  transporte: { top: 34.6, left: 25.4, w: 71, size: 10 },
-  transporteDom: { top: 37.0, left: 16.3, w: 55, size: 10 },
+  transporte: { top: 34.6, left: 25.4, w: 71, size: 11 },
+  transporteDom: { top: 37.0, left: 16.3, w: 55, size: 11 },
   iva: {
     responsable_inscripto: { top: 31.4, left: 30.4 },
     consumidor_final: { top: 32.8, left: 30.4 },
