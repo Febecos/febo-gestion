@@ -74,6 +74,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
         await pool.query(`UPDATE presupuestos SET ${MAP[field]} = $1 WHERE cliente_id = $2`, [value, id]);
         if (field === "nombre") await pool.query(`UPDATE presupuestos SET cliente_apellido = NULL WHERE cliente_id = $1`, [id]);
       }
+      // PROPAGAR identidad también al envío (CRM = fuente única): la copia de nombre/dni/tel/email
+      // dentro de clientes.envio sigue al dato canónico del cliente. La dirección de entrega y el
+      // transporte se administran aparte en la pestaña Datos Envíos.
+      const ENVIO_MAP: Record<string, string> = { nombre: "nombre", cuit: "dni", whatsapp: "telefono", email: "email" };
+      if (ENVIO_MAP[field]) {
+        await pool.query(`UPDATE clientes SET envio = jsonb_set(coalesce(envio,'{}'::jsonb), $1::text[], to_jsonb($2::text)) WHERE id = $3`,
+          [`{${ENVIO_MAP[field]}}`, String(value ?? ""), id]);
+      }
     } finally { await pool.end(); }
     return NextResponse.json({ ok: true });
   } catch (e: any) {
