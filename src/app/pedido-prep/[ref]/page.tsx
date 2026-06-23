@@ -6,10 +6,12 @@ import { useEffect, useState } from "react";
 export default function PedidoPrep({ params }: { params: { ref: string } }) {
   const [ped, setPed] = useState<any>(null);
   const [err, setErr] = useState("");
+  const [coment, setComent] = useState("");
   useEffect(() => {
     fetch("/api/pedidos/" + encodeURIComponent(params.ref))
       .then((r) => r.json())
-      .then((d) => { if (d.ok) { setPed(d.pedido); if (new URLSearchParams(location.search).get("print") === "1") setTimeout(() => window.print(), 600); } else setErr(d.error || "No encontrado"); })
+      // Con ?print=1 se enfoca el comentario para que el operador escriba ANTES de imprimir (botón 🖨).
+      .then((d) => { if (d.ok) { setPed(d.pedido); if (new URLSearchParams(location.search).get("print") === "1") setTimeout(() => document.getElementById("coment-deposito")?.focus(), 400); } else setErr(d.error || "No encontrado"); })
       .catch((e) => setErr(e.message));
   }, [params.ref]);
 
@@ -23,7 +25,7 @@ export default function PedidoPrep({ params }: { params: { ref: string } }) {
 
   return (
     <div style={{ fontFamily: "Arial, sans-serif", color: "#1c2733", maxWidth: 820, margin: "0 auto", padding: "24px 28px" }}>
-      <style>{`@page{size:A4 portrait;margin:14mm}@media print{.noprint{display:none!important}}
+      <style>{`@page{size:A4 portrait;margin:14mm}@media print{.noprint{display:none!important}.printonly{display:block!important}}
         table{border-collapse:collapse;width:100%} `}</style>
 
       {/* Barra acciones (no imprime) */}
@@ -76,7 +78,7 @@ export default function PedidoPrep({ params }: { params: { ref: string } }) {
             <tr key={i} style={{ borderBottom: "1px solid #e1e6ec" }}>
               <td style={{ textAlign: "center", padding: "10px", fontSize: 18, fontWeight: 800 }}>{it.cantidad || 1}</td>
               <td style={{ padding: "10px", fontWeight: 700, color: "#0b3d6b" }}>{it.codigo || ""}</td>
-              <td style={{ padding: "10px", fontSize: 13 }}>{it.descripcion || ""}{it.proveedor ? <span style={{ color: "#94a3b8", fontSize: 11 }}> · {it.proveedor}</span> : null}</td>
+              <td style={{ padding: "10px", fontSize: 13 }}><div style={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }} title={it.descripcion || ""}>{it.descripcion || ""}{it.proveedor ? <span style={{ color: "#94a3b8", fontSize: 11 }}> · {it.proveedor}</span> : null}</div></td>
               <td style={{ textAlign: "center", padding: "10px" }}><span style={{ display: "inline-block", width: 20, height: 20, border: "2px solid #c8d0da", borderRadius: 4 }} /></td>
             </tr>
           ))}
@@ -84,6 +86,24 @@ export default function PedidoPrep({ params }: { params: { ref: string } }) {
       </table>
 
       {pl.notas && <div style={{ marginTop: 14, fontSize: 12, color: "#555", borderLeft: "3px solid #0b3d6b", padding: "6px 10px", background: "#f7f9fc" }}><b>Notas:</b> {pl.notas}</div>}
+
+      {/* Comentario para el depósito — editable en pantalla, se imprime en el PDF */}
+      <div style={{ marginTop: 18 }}>
+        <div style={{ fontSize: 11, color: "#888", textTransform: "uppercase", fontWeight: 700, marginBottom: 4 }}>Comentario para el depósito</div>
+        <textarea
+          id="coment-deposito"
+          className="noprint"
+          value={coment}
+          onChange={(e) => setComent(e.target.value)}
+          rows={5}
+          placeholder="Indicaciones de preparación / embalaje / observaciones para el depósito…"
+          style={{ width: "100%", boxSizing: "border-box", border: "1px solid #c8d0da", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontFamily: "Arial, sans-serif", color: "#1c2733", resize: "vertical" }}
+        />
+        {/* Versión solo-impresión: muestra el texto escrito (o líneas en blanco para anotar a mano) */}
+        <div className="printonly" style={{ display: "none", border: "1px solid #c8d0da", borderRadius: 8, padding: "10px 12px", fontSize: 13, whiteSpace: "pre-wrap", minHeight: 84, lineHeight: 1.9 }}>
+          {coment.trim() ? coment : "\n\n\n"}
+        </div>
+      </div>
 
       <div style={{ marginTop: 30, display: "flex", justifyContent: "space-between", fontSize: 12, color: "#888", borderTop: "1px solid #e1e6ec", paddingTop: 10 }}>
         <div>Preparado por: __________________</div>

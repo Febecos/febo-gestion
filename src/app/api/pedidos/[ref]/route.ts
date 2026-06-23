@@ -350,8 +350,16 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         const p = pagos[idx];
         const resto = pagos.filter((_, i) => i !== idx);
         await sql`UPDATE fv_pedidos SET pagos_recibidos=${JSON.stringify(resto)}::jsonb, verificacion_pago=${resto.length ? JSON.stringify(resto[resto.length - 1]) : null}::jsonb, comprobante_recibido=${resto.length > 0} WHERE numero=${ref}`;
-        const cid = await clienteIdDe(sql, row?.payload);
-        if (cid && p?.fecha) await delMov(sql, `pcli:${ref}:${p.fecha}`).catch(() => {});
+        // Revierte el movimiento de cuenta corriente del pago eliminado.
+        if (p?.fecha) await delMov(sql, `pcli:${ref}:${p.fecha}`).catch(() => {});
+        if (resto.length === 0) {
+          // Sin pagos: barre cualquier mov de pago huérfano de este pedido (uniq con fecha distinta)
+          // para que no quede saldo "duplicado" al volver a cargar.
+          await delMovPrefijo(sql, `pcli:${ref}:`).catch(() => {});
+          // Reactiva el botón "Avisar pago OK al cliente": si quedó marcado 'pagado'
+          // (y todavía no se despachó), vuelve a 'aprobado' para reiniciar el proceso de pago.
+          await sql`UPDATE fv_pedidos SET estado='aprobado', pagado_at=NULL WHERE numero=${ref} AND estado='pagado'`.catch(() => {});
+        }
       }
       return NextResponse.json({ ok: true });
     }
