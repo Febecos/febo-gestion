@@ -21,6 +21,7 @@ export async function GET(_req: NextRequest) {
     try {
       fv = await sql`
         SELECT fp.numero, fp.estado, fp.public_token, fp.payload, fp.metodo_pago,
+               fp.factura_numero, fp.proveedor_confirmado, fp.pagos_recibidos,
                pr.public_token AS presup_token,
                COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,'')) AS cliente_crm
         FROM fv_pedidos fp
@@ -39,14 +40,25 @@ export async function GET(_req: NextRequest) {
       })),
       ...fv.map((p) => {
         const pl = p.payload || {};
+        // Regla canónica: el total = neto + IVA (nunca el `total` entero que pudo guardar el
+        // cotizador). Así el listado coincide con presupuesto/factura/cta cte al peso.
+        const tt = pl.totales || {};
+        const ivaSum = Array.isArray(tt.iva_detalle) ? tt.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
+        const netoN = Number(tt.neto);
+        const totalReal = (!isNaN(netoN) && Array.isArray(tt.iva_detalle) && tt.iva_detalle.length) ? +(netoN + ivaSum).toFixed(2) : (Number(tt.total) || 0);
         return {
           origen: "fv", ref: p.numero, numero: p.numero,
           cliente: p.cliente_crm || pl.revendedor?.nombre || pl.cliente?.nombre || "—",
           detalle: (pl.items?.length ? `${pl.items.length} ítem(s)` : "FV"),
-          total: Number(pl.totales?.total) || 0, moneda: pl.totales?.moneda || "USD", tc: pl.totales?.tc || null,
+          total: totalReal, moneda: pl.totales?.moneda || "USD", tc: pl.totales?.tc || null,
           estado: p.estado || "—", fecha: null,
           token: p.presup_token || p.public_token,
           presup: pl.presupuesto_numero || null,
+          // Semáforo de avance del pedido del cliente
+          prov_confirmado: !!p.proveedor_confirmado,
+          pagado: ["pagado", "enviado"].includes(p.estado) || (p.pagos_recibidos || pl.pagos_recibidos || []).length > 0,
+          factura_numero: p.factura_numero || null,
+          remito_numero: pl.remito_numero || null,
         };
       }),
     ];
