@@ -467,6 +467,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [preview, setPreview] = useState<any | null>(null); // revisión previa (dry-run) de la factura
   const [arcaOpen, setArcaOpen] = useState(false); // modal de autorización ARCA (paso 2)
   const [avisarPagoOpen, setAvisarPagoOpen] = useState(false); // modal: avisar pago OK al cliente
+  const [esOwner, setEsOwner] = useState(false); // confirmación de stock manual = solo owner (Guille)
   // Receptor de la factura: 0 = el revendedor mismo; o el id de un cliente final suyo.
   const [receptorId, setReceptorId] = useState<number>(0);
   const [finales, setFinales] = useState<any[]>([]);
@@ -497,6 +498,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     }
   }), [refId, monedaInit]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setEsOwner(!!d.es_owner)).catch(() => {}); }, []);
   // Clientes finales del revendedor + sus % de comisión (para elegir receptor y previsualizar comisión).
   useEffect(() => {
     const id = ped?.cliente?.id; if (!id) return;
@@ -768,12 +770,14 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         })}
                       </div>
                     ) : <div className="text-xs text-gray-500 mb-2">Todavía no cargaste los ítems a Compras. Hacelo abajo en "Pedir a proveedor".</div>}
-                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/60 mt-1">
-                      <span className="text-[11px] text-gray-500">Ante demora del proveedor:</span>
-                      <label className="text-xs">Adjuntar proforma / mail: <input type="file" multiple onChange={(e) => confirmar(e.target.files)} className="text-xs" /></label>
-                      <span className="text-xs text-gray-400">o</span>
-                      <button disabled={busy} onClick={() => confirmar(null)} title="Marca el stock confirmado a mano (ante demora del proveedor)." className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">✔ Forzar confirmación (manual)</button>
-                    </div>
+                    {esOwner && (
+                      <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-amber-200/60 mt-1">
+                        <span className="text-[11px] text-gray-500">Solo administrador, ante demora:</span>
+                        <label className="text-xs">Adjuntar proforma / mail: <input type="file" multiple onChange={(e) => confirmar(e.target.files)} className="text-xs" /></label>
+                        <span className="text-xs text-gray-400">o</span>
+                        <button disabled={busy} onClick={() => confirmar(null)} title="Override de Guillermo: marca el stock confirmado a mano (ante demora del proveedor)." className="px-3 py-1.5 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">✔ Forzar confirmación (manual)</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
