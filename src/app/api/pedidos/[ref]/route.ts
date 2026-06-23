@@ -441,7 +441,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       // (fallback al envío que pudiera tener el pedido por compatibilidad con pedidos viejos).
       const cidEnvio = await clienteIdDe(sql, plr);
       const clEnvio = cidEnvio ? ((await sql`SELECT envio FROM clientes WHERE id=${cidEnvio} LIMIT 1` as any[])[0]?.envio || null) : null;
-      const env = (clEnvio && Object.keys(clEnvio).length ? clEnvio : null) || plr.envio || {};
+      // Si hay cliente en CRM, manda SIEMPRE su envío (en vivo); el payload viejo es solo fallback sin cliente.
+      const env = cidEnvio ? (clEnvio || {}) : (plr.envio || {});
       const envCompleto = !!(env.nombre && env.direccion && env.localidad && env.provincia);
       if (!envCompleto) return NextResponse.json({ ok: false, error: "Faltan los datos de envío del cliente. Cargalos en la ficha del cliente (CRM › Datos Envíos) o pedile que los complete desde el link." }, { status: 409 });
       if (plr.remito_numero) return NextResponse.json({ ok: true, ya: true, remito_numero: plr.remito_numero, remito_token: plr.remito_token });

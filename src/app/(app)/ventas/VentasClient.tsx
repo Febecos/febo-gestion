@@ -526,9 +526,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const borrador = !facturado && ped.factura_estado === "borrador"; // facturado en gestión, falta autorizar ARCA
   const pagadoOk = ["pagado", "enviado"].includes(ped.estado) || (ped.pagos_recibidos || []).length > 0;
   const despachado = ped.estado === "enviado" || !!pl.remito_numero;
-  // CRM = fuente única de los datos de envío: se leen de la ficha del cliente (cliente_envio),
-  // con fallback al envío que pudiera tener el pedido (compatibilidad con pedidos viejos).
-  const envioCli = (ped.cliente_envio && Object.keys(ped.cliente_envio).length ? ped.cliente_envio : null) || pl.envio || {};
+  // CRM = fuente única de los datos de envío: se leen EN VIVO de la ficha del cliente (cliente_envio).
+  // Si el pedido tiene cliente resuelto en el CRM, manda SIEMPRE el CRM (aunque esté vacío) — nada de
+  // copias viejas del payload. El fallback a pl.envio es solo para pedidos sin cliente en CRM.
+  const envioCli = ped.cliente_id ? (ped.cliente_envio || {}) : (pl.envio || {});
   const envioCompleto = !!(envioCli.nombre && envioCli.direccion && envioCli.localidad && envioCli.provincia);
   // Receptor efectivo: el revendedor (default) o el cliente final elegido.
   const finalSel = receptorId ? finales.find((x) => x.id === receptorId) : null;
