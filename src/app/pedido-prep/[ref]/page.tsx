@@ -11,7 +11,16 @@ export default function PedidoPrep({ params }: { params: { ref: string } }) {
     fetch("/api/pedidos/" + encodeURIComponent(params.ref))
       .then((r) => r.json())
       // Con ?print=1 se enfoca el comentario para que el operador escriba ANTES de imprimir (botón 🖨).
-      .then((d) => { if (d.ok) { setPed(d.pedido); if (new URLSearchParams(location.search).get("print") === "1") setTimeout(() => document.getElementById("coment-deposito")?.focus(), 400); } else setErr(d.error || "No encontrado"); })
+      .then((d) => {
+        if (d.ok) {
+          setPed(d.pedido);
+          // El título del documento = nombre del PDF al "Guardar como PDF" (ej "PED-0039 - Edgardo Bouvier").
+          const pl0 = d.pedido?.payload || {}; const rev0 = pl0.revendedor || pl0.cliente || {};
+          const nom0 = (rev0.nombre || rev0.empresa || "").toString().trim();
+          document.title = [d.pedido?.numero, nom0].filter(Boolean).join(" - ") || "Pedido";
+          if (new URLSearchParams(location.search).get("print") === "1") setTimeout(() => document.getElementById("coment-deposito")?.focus(), 400);
+        } else setErr(d.error || "No encontrado");
+      })
       .catch((e) => setErr(e.message));
   }, [params.ref]);
 

@@ -505,7 +505,9 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   if (!ped) return null;
   const pl = ped.payload || {}; const items = pl.items || []; const tot = pl.totales || {};
   const rev = pl.revendedor || pl.cliente || {}; const dolar = Number(ped.dolar) || 0;
-  const tcMostrar = Number(tot.tc) || dolar; // TC del presupuesto si quedó fijado; si no, el del día
+  // TC para mostrar pesos: si ya está facturado, manda el TC PACTADO de la factura (no el del día),
+  // así los $ coinciden EXACTO con lo facturado; si no, el del presupuesto o el del día.
+  const tcMostrar = Number(ped.factura?.tc) || Number(tot.tc) || dolar;
   const enP = pesos && tcMostrar > 0; const sym = enP ? "$" : "USD";
   const v = (usd: number) => usd == null ? null : (enP ? Math.round(usd * tcMostrar) : usd);
   const nf = (n: number | null) => n == null || isNaN(Number(n)) ? "—" : Number(n).toLocaleString("es-AR", { minimumFractionDigits: enP ? 0 : 2, maximumFractionDigits: enP ? 0 : 2 });
@@ -538,10 +540,15 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const talEfectivo = talsLetra.some((t) => String(t.id) === talSel) ? talSel : (talDefLetra ? String(talDefLetra.id) : "");
   // ── PAGO: se compara en la MONEDA de la factura (no mezclar USD/pesos). Para pedidos en pesos
   //    se usa el TC PACTADO del pedido (tot.tc), no el del día → el saldo da exacto. ──
-  const pedMoneda = String(tot.moneda || "USD").toUpperCase();
-  const tcPed = Number(tot.tc) || dolar || 0;
+  // Si ya hay factura (borrador o emitida), la moneda/TC/total de COBRO los manda la FACTURA
+  // (no la cotización) → el $ a cobrar coincide exacto con lo facturado.
+  const fac = ped.factura || null;
+  const pedMoneda = String(fac?.moneda || tot.moneda || "USD").toUpperCase();
+  const tcPed = Number(fac?.tc) || Number(tot.tc) || dolar || 0;
   const enPesos = pedMoneda === "ARS";
-  const totalCobrar = enPesos ? Math.round((Number(tot.total) || 0) * tcPed) : +(Number(tot.total) || 0).toFixed(2);
+  const totalCobrar = fac?.total != null
+    ? (enPesos ? Math.round(Number(fac.total)) : +Number(fac.total).toFixed(2))
+    : (enPesos ? Math.round((Number(tot.total) || 0) * tcPed) : +(Number(tot.total) || 0).toFixed(2));
   const pagosRec: any[] = ped.pagos_recibidos || [];
   const pagoEnMonedaFactura = (p: any) => { const m = Number(p.monto) || 0; if (enPesos) return p.moneda === "usd" ? Math.round(m * tcPed) : m; return p.moneda === "ars" ? (tcPed ? +(m / tcPed).toFixed(2) : 0) : m; };
   const totalPagado = +pagosRec.reduce((a, p) => a + pagoEnMonedaFactura(p), 0).toFixed(2);
@@ -1075,8 +1082,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
             <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor"} onClick={aprobar} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ped.proveedor_confirmado ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
           </>}
-          {ped.estado === "aprobado" && <button disabled={busy} onClick={() => setAvisarPagoOpen(true)} title="Confirma al cliente que su pago está OK (email desde administración) y marca el pedido como pagado" className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">✅ Avisar pago OK al cliente</button>}
-          {ped.estado === "pagado" && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}
+          {(ped.estado === "aprobado" || (ped.estado === "pagado" && pagosRec.length === 0)) && <button disabled={busy} onClick={() => setAvisarPagoOpen(true)} title="Confirma al cliente que su pago está OK (email desde administración) y marca el pedido como pagado" className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">✅ Avisar pago OK al cliente</button>}
+          {ped.estado === "pagado" && pagosRec.length > 0 && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}
           {ped.es_ultimo && !facturado && !despachado && !pagadoOk && !ped.proveedor_confirmado && !["cancelado", "anulado"].includes(ped.estado) &&
             <button disabled={busy} onClick={revertir} title="Deshacer: borra el último pedido (sin pasos iniciados), libera el número y devuelve el presupuesto a Presupuestos" className="px-4 py-2 rounded-lg border border-amber-400 text-amber-700 text-sm font-semibold hover:bg-amber-50">↩ Revertir pedido</button>}
         </div>

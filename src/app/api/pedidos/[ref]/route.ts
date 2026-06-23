@@ -118,6 +118,13 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         cliente = cl[0] || null;
       }
       const provSent = await sql`SELECT proveedor, items, total_costo_usd, email_destinatario, gsa_numero, estado, created_at FROM pedidos_proveedores WHERE fv_numero=${ref} ORDER BY created_at`.catch(() => []) as any[];
+      // TC/moneda/total REALES de la factura (borrador o emitida): los $ del pedido se muestran
+      // al TC PACTADO de la factura, no al dólar del día (evita diferir de lo facturado).
+      let factura: any = null;
+      if (p.factura_borrador_id || p.factura_numero) {
+        const fc = await sql`SELECT numero, moneda, tc, total FROM fg_comprobantes WHERE id=${p.factura_borrador_id || -1} OR numero=${p.factura_numero || ''} LIMIT 1`.catch(() => []) as any[];
+        if (fc[0]) factura = { numero: fc[0].numero, moneda: fc[0].moneda, tc: fc[0].tc != null ? Number(fc[0].tc) : null, total: fc[0].total != null ? Number(fc[0].total) : null };
+      }
       // ¿Es el ÚLTIMO número emitido? (para habilitar "Revertir" solo en ese caso).
       let es_ultimo = false;
       try { const n = parseInt(String(ref).match(/(\d+)\s*$/)?.[1] || "0", 10); const cnt = await sql`SELECT ultimo_numero FROM pedidos_counter WHERE clave='PED' LIMIT 1` as any[]; es_ultimo = !!cnt[0] && n > 0 && Number(cnt[0].ultimo_numero) === n; } catch {}
@@ -130,7 +137,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
         proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
-        factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, pago_proveedor: p.pago_proveedor || null,
+        factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, factura, pago_proveedor: p.pago_proveedor || null,
         stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
         es_ultimo,
       }});
