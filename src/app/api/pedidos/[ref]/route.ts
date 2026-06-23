@@ -643,6 +643,13 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const esElectronica = !!tipoTal?.electronica;
       const letraFac: string | null = tipoTal?.letra || letraReq || null;
       const pref = tipoTal?.grupo === "nc" ? "NC" : tipoTal?.grupo === "nd" ? "ND" : "FA";
+      // ── TOTAL CANÓNICO: neto + IVA (NUNCA el tot.total redondeado del cotizador). Mismo desglose
+      //    que el dry-run "revisar" → presupuesto == revisar == factura == cta cte, al peso. ──
+      const esFacturaC = tipoTal?.letra === "C";
+      const netoUsd = Number(tot.neto ?? tot.total ?? 0);
+      const sumIvaUsd = Array.isArray(tot.iva_detalle) ? tot.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
+      const totalUsd = esFacturaC ? +netoUsd.toFixed(2) : +(netoUsd + sumIvaUsd).toFixed(2);
+      const desglose = desglosarFactura({ items, tot, conv, esFacturaC });
       const leyendas = leyendasFactura(condicion);
       const condRecept = condicionIvaReceptor(condicion);
       const dvp = pl.datos_venta || {}; const cond = pl.condiciones || {};
@@ -692,15 +699,14 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         if (!condId) return NextResponse.json({ ok: false, error: "Condición IVA del receptor no mapeada para AFIP." }, { status: 409 });
         const doc = docTipoReceptor(clienteCuit);
         if (tipoTal!.letra === "A" && doc.tipo !== 80) return NextResponse.json({ ok: false, error: "Factura A requiere CUIT válido del receptor." }, { status: 409 });
-        const esFacturaC = tipoTal!.letra === "C";
-        const { neto, ivaArr, impIVA, total } = desglosarFactura({ items, tot, conv, esFacturaC });
+        const { neto, ivaArr, impIVA, total } = desglose;
         let monId = "PES", monCotiz = 1, canMis: string | null = null;
         if (facturaMoneda === "USD") { monId = "DOL"; canMis = "S"; try { const cz = await callSelector("wsfe-cotizacion&mon=DOL"); monCotiz = Number(cz?.cotiz) || tc || 1; } catch { monCotiz = tc || 1; } }
         const afipPayload = { ptoVta, cbteTipo, concepto: 1, docTipo: doc.tipo, docNro: doc.nro, neto, iva: ivaArr, impIVA, impTotal: total, monId, monCotiz, canMisMonExt: canMis, condicionIvaReceptorId: condId, esFacturaC };
-        const afipMeta = { ref, pref, letraFac, ptoVta, cliente_id, revendedor_id, receptorFinalId, totalUsd: Number(tot.total || 0), netoUsd: Number(tot.neto || tot.total || 0), facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null };
+        const afipMeta = { ref, pref, letraFac, ptoVta, cliente_id, revendedor_id, receptorFinalId, totalUsd, netoUsd, facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null };
         const comp = (await sql`
           INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, revendedor_id, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte, afip_payload, afip_meta)
-          VALUES ('factura','borrador',NULL,${letraFac},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null}, ${JSON.stringify(afipPayload)}::jsonb, ${JSON.stringify(afipMeta)}::jsonb)
+          VALUES ('factura','borrador',NULL,${letraFac},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, now(), ${desglose.neto}, ${desglose.total}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null}, ${JSON.stringify(afipPayload)}::jsonb, ${JSON.stringify(afipMeta)}::jsonb)
           RETURNING id, token` as any[])[0];
         await insertItems(comp.id);
         await sql`UPDATE fv_pedidos SET factura_estado='borrador', factura_borrador_id=${comp.id}, factura_token=${comp.token} WHERE numero=${ref}`;
@@ -711,15 +717,16 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const n = await numeroDesdeTalonario(sql, talId);
       if (!n) return NextResponse.json({ ok: false, error: "talonario inválido" }, { status: 400 });
       const facturaNum = n.numero; const letraM = n.letra || letraFac;
-      const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, Number(tot.total || 0), Number(tot.neto || tot.total || 0));
+      const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, totalUsd, netoUsd);
       const comp = (await sql`
         INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, revendedor_id, comision_pct, comision_monto, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte)
-        VALUES ('factura','proforma',${facturaNum},${letraM},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, ${comisionPct || null}, ${comisionMonto || null}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null})
+        VALUES ('factura','proforma',${facturaNum},${letraM},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, ${comisionPct || null}, ${comisionMonto || null}, now(), ${desglose.neto}, ${desglose.total}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null})
         RETURNING id, token` as any[])[0];
       await insertItems(comp.id);
       await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_token=${comp.token}, factura_estado='emitida' WHERE numero=${ref}`;
-      if (cliente_id && Number(tot.total) > 0) {
-        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +Number(tot.total).toFixed(2), detalle: { moneda: facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null }, uniq: `fac:${facturaNum}` });
+      if (cliente_id && totalUsd > 0) {
+        // La cta cte es USD-base: se debita el total USD REAL (neto+IVA), no el redondeado.
+        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: totalUsd, detalle: { moneda: facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null }, uniq: `fac:${facturaNum}` });
       }
       if (revendedor_id && comisionMonto > 0) {
         await movCtaCte(sql, { ambito: "cliente", cliente_id: revendedor_id, fecha: hoy(), concepto: `Comisión ${comisionPct}% s/ ${facturaNum}${receptorFinalId ? " (venta a cliente)" : ""}`, comprobante: facturaNum, pedido_ref: ref, haber: comisionMonto, detalle: { tipo: "comision_revendedor", pct: comisionPct, factura: facturaNum }, uniq: `com:${facturaNum}` });
