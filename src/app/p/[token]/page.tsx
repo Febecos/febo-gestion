@@ -61,7 +61,8 @@ export default function ComprobantePublico({ params }: { params: { token: string
       setD(j);
       try {
         const c = j.comprobante || {};
-        const t = (TITULO[c.tipo] || "Comprobante") + (c.numero ? " " + c.numero : "");
+        const cli = (j.cliente?.razon_social || j.cliente?.nombre || c.cliente_nombre || "").trim();
+        const t = (cli ? cli + " - " : "") + (TITULO[c.tipo] || "Comprobante") + (c.numero ? " " + c.numero : "");
         document.title = t;
       } catch {}
       if (new URLSearchParams(window.location.search).get("print") === "1") setTimeout(() => window.print(), 700);
@@ -318,15 +319,16 @@ export default function ComprobantePublico({ params }: { params: { token: string
 // Hoja A4 real (210×297mm), imagen de fondo y datos posicionados en % + fuentes en pt,
 // CALCADO del modelo 00005-00000596 (coordenadas extraídas del PDF original).
 const POS = {
-  numero: { top: 10.4, left: 56.5, w: 36, size: 18, bold: true, serif: true },
+  numero: { top: 9.4, left: 58.3, w: 36, size: 18, bold: true, serif: true },
   dia: { top: 16.2, left: 72.3, w: 5, size: 11 },
   mes: { top: 16.2, left: 76.8, w: 5, size: 11 },
   anio: { top: 16.2, left: 81.2, w: 9, size: 11 },
   senor: { top: 25.6, left: 15.6, w: 80, size: 10 },
   domicilio: { top: 27.9, left: 16.3, w: 55, size: 10 },
   cuit: { top: 28.1, left: 72.7, w: 25, size: 10 },
-  facturaNro: { top: 31.4, left: 66.2, w: 31, size: 10 },
+  facturaNro: { top: 31.0, left: 70.5, w: 27, size: 13, bold: true },
   transporte: { top: 34.6, left: 25.4, w: 71, size: 10 },
+  transporteDom: { top: 37.0, left: 16.3, w: 55, size: 10 },
   iva: {
     responsable_inscripto: { top: 31.4, left: 30.4 },
     consumidor_final: { top: 32.8, left: 30.4 },
@@ -348,17 +350,25 @@ function recortaFrase(s: string, max: number): string {
 }
 
 function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]; onPrint: () => void }) {
+  // SNAPSHOT inmutable: si el remito se emitió con datos congelados (datos_remito), MANDAN esos.
+  // Para remitos viejos sin snapshot, fallback al cliente en vivo (comportamiento anterior).
+  const snap = c.datos_remito && typeof c.datos_remito === "object" ? c.datos_remito : null;
   const fecha = c.fecha ? new Date(c.fecha) : null;
   const dd = fecha ? String(fecha.getDate()).padStart(2, "0") : "";
   const mm = fecha ? String(fecha.getMonth() + 1).padStart(2, "0") : "";
   const yyyy = fecha ? String(fecha.getFullYear()) : "";
-  const nombre = titleCase(cli?.nombre || cli?.razon_social || c.cliente_nombre || "");
-  const dom = [cli?.domicilio, cli?.localidad, cli?.provincia, cli?.cod_postal && `- ${cli.cod_postal}`].filter(Boolean).join(" ");
-  const cuit = cuitFmt(cli?.cuit || c.cliente_cuit || "");
-  const cond = (cli?.condicion_fiscal || "").toLowerCase();
+  const nombre = titleCase(snap?.cliente?.nombre || cli?.nombre || cli?.razon_social || c.cliente_nombre || "");
+  const dom = snap?.cliente?.domicilio || [cli?.domicilio, cli?.localidad, cli?.provincia, cli?.cod_postal && `- ${cli.cod_postal}`].filter(Boolean).join(" ");
+  const cuit = cuitFmt(snap?.cliente?.cuit || cli?.cuit || c.cliente_cuit || "");
+  const cond = String(snap?.cliente?.condicion_fiscal || cli?.condicion_fiscal || "").toLowerCase();
   const ivaPos = POS.iva[cond];
-  const facturaNro = String(c.notas || "").includes("·") ? String(c.notas).split("·").pop()!.trim().replace(/^FA[^0-9]*/i, "") : "";
-  const transpDom = [c.tipo_transporte, c.lugar_entrega].filter(Boolean).join(" - ");
+  const facturaNro = snap?.factura_nro
+    ? String(snap.factura_nro).replace(/^FA[^0-9]*/i, "")
+    : (String(c.notas || "").includes("·") ? String(c.notas).split("·").pop()!.trim().replace(/^FA[^0-9]*/i, "") : "");
+  // Transporte: empresa en su renglón y el DOMICILIO del transporte en el renglón que corresponde.
+  const transpEmpresa = snap?.transporte?.empresa || c.tipo_transporte || "";
+  const transpDom = snap?.transporte?.domicilio || "";
+  const fondo = "/images/" + (snap?.imagen_fondo || "remito-fondo.png");
   const leyendas: string[] = Array.isArray(c.leyendas) ? c.leyendas : [];
   const FONT = "Arial, Helvetica, sans-serif";
 
@@ -385,9 +395,9 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
       `}</style>
       <div className="rtool"><button className="rbtn" onClick={onPrint}>🖨 Imprimir / Guardar PDF</button></div>
       <div className="rsheet">
-        <img src="/images/remito-fondo.png" alt="Remito" />
+        <img src={fondo} alt="Remito" />
         {/* tapar el número preimpreso y escribir el nuestro */}
-        <div style={{ position: "absolute", top: "10.4%", left: "56.3%", width: "30%", height: "2.6%", background: "#fff" }} />
+        <div style={{ position: "absolute", top: "9.4%", left: "57.8%", width: "30%", height: "2.6%", background: "#fff" }} />
         {T(POS.numero, "Nº " + numeroTxt)}
         {T(POS.dia, dd)}{T(POS.mes, mm)}{T(POS.anio, yyyy)}
         {T(POS.senor, nombre)}
@@ -395,7 +405,8 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {T(POS.cuit, cuit)}
         {facturaNro && T(POS.facturaNro, facturaNro)}
         {ivaPos && <div style={{ position: "absolute", top: ivaPos.top + "%", left: ivaPos.left + "%", fontSize: "11pt", fontWeight: 700, color: "#111", lineHeight: 1, fontFamily: FONT }}>X</div>}
-        {transpDom && T(POS.transporte, transpDom)}
+        {transpEmpresa && T(POS.transporte, transpEmpresa)}
+        {transpDom && T(POS.transporteDom, transpDom)}
         {items.map((it, i) => (
           <div key={i}>
             <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "pt", textAlign: "center", color: "#111", lineHeight: 1, fontFamily: FONT }}>{it.cantidad}</div>

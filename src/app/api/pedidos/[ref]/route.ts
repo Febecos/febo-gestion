@@ -453,12 +453,15 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS talonario_id INT`.catch(() => {});
+      // Snapshot inmutable del remito (cliente + transporte + factura + imagen de fondo de la matriz).
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS datos_remito JSONB`.catch(() => {});
+      await sql`ALTER TABLE fg_talonarios ADD COLUMN IF NOT EXISTS imagen_fondo TEXT`.catch(() => {});
       // Numeración por TALONARIO REM (config, estilo Táctica). Permite elegir uno (b.talonario_id);
       // si no, el REM por defecto. Si no hay ningún talonario REM, cae a R-NNNNNN.
       let numero: string; let remTalId: number | null = null;
       const remTal = Number(b.talonario_id) > 0
-        ? (await sql`SELECT id FROM fg_talonarios WHERE id=${Number(b.talonario_id)} AND tipo_codigo='REM' AND activo=true AND bloqueado=false LIMIT 1` as any[])[0]
-        : (await sql`SELECT id FROM fg_talonarios WHERE tipo_codigo='REM' AND activo=true AND bloqueado=false ORDER BY defecto DESC, orden, id LIMIT 1` as any[])[0];
+        ? (await sql`SELECT id, imagen_fondo FROM fg_talonarios WHERE id=${Number(b.talonario_id)} AND tipo_codigo='REM' AND activo=true AND bloqueado=false LIMIT 1` as any[])[0]
+        : (await sql`SELECT id, imagen_fondo FROM fg_talonarios WHERE tipo_codigo='REM' AND activo=true AND bloqueado=false ORDER BY defecto DESC, orden, id LIMIT 1` as any[])[0];
       if (remTal) {
         try { const nn = await numeroDesdeTalonario(sql, remTal.id); numero = `R ${nn!.numero}`; remTalId = remTal.id; }
         catch (e: any) { return NextResponse.json({ ok: false, error: "Talonario REM: " + e.message }, { status: 409 }); }
@@ -468,9 +471,25 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       }
       const lugar = [env.direccion, env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") || plr.datos_venta?.lugar_entrega || null;
       const transp = env.empresa || plr.datos_venta?.tipo_transporte || null;
+      // SNAPSHOT inmutable: datos fiscales del receptor (congelados al emitir, NO se leen en vivo),
+      // datos del transporte (incl. su domicilio), N° de factura e imagen de fondo de la matriz/talonario.
+      const recep = cid ? (await sql`SELECT nombre, razon_social, cuit, condicion_fiscal, domicilio, localidad, provincia, cod_postal FROM clientes WHERE id=${cid} LIMIT 1` as any[])[0] : null;
+      const datosRemito = {
+        cliente: {
+          nombre: recep?.nombre || recep?.razon_social || cnombre || env.nombre || "",
+          domicilio: [recep?.domicilio, recep?.localidad, recep?.provincia, recep?.cod_postal && `(${recep.cod_postal})`].filter(Boolean).join(" "),
+          cuit: recep?.cuit || env.dni || "",
+          condicion_fiscal: recep?.condicion_fiscal || "",
+        },
+        transporte: { empresa: env.empresa || "", domicilio: env.domicilio_transporte || "", telefono: env.telefono_transporte || "" },
+        entrega: lugar,
+        factura_nro: row.factura_numero || null,
+        imagen_fondo: (remTal && remTal.imagen_fondo) ? remTal.imagen_fondo : "remito-fondo.png",
+        emitido_at: new Date().toISOString(),
+      };
       const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, lugar_entrega, tipo_transporte)
-        VALUES ('remito','emitido',${numero},${remTalId},${cid},${cnombre}, now(), 0, 0, 'ARS', ${"Despacho del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${lugar}, ${transp})
+        INSERT INTO fg_comprobantes (tipo, estado, numero, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, lugar_entrega, tipo_transporte, datos_remito)
+        VALUES ('remito','emitido',${numero},${remTalId},${cid},${cnombre}, now(), 0, 0, 'ARS', ${"Despacho del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${lugar}, ${transp}, ${JSON.stringify(datosRemito)}::jsonb)
         RETURNING id, token` as any[])[0];
       let orden = 0;
       for (const it of (plr.items || [])) {
