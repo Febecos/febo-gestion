@@ -7,6 +7,10 @@ const ALLOWED = new Set([
   "tipo", "nombre", "apellido", "razon_social", "empresa", "email", "whatsapp", "cuit",
   "domicilio", "localidad", "provincia", "cod_postal", "condicion_fiscal", "notas",
   "email_opt_out", "descuento_pct", "tags", "origenes", "transporte",
+  // Comisiones del revendedor: % cuando compra para sí mismo vs % cuando comisiona por venta a su cliente final
+  "comision_propia_pct", "comision_revende_pct",
+  // Datos de envío del cliente (CRM = fuente única): JSONB con la misma forma que el form de visor.
+  "envio",
 ]);
 
 // GET /api/clientes/:id  → un cliente completo (para abrir su ficha desde otros módulos)
@@ -16,13 +20,25 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     if (!id) return NextResponse.json({ ok: false, error: "id requerido" }, { status: 400 });
     const sql = getDb();
     await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS transporte TEXT`.catch(() => {});
+    await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS comision_propia_pct NUMERIC`.catch(() => {});
+    await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS comision_revende_pct NUMERIC`.catch(() => {});
+    await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS envio JSONB DEFAULT '{}'::jsonb`.catch(() => {});
     const r = await sql`
       SELECT id, tipo, nombre, apellido, razon_social, empresa, email, whatsapp, cuit,
              provincia, localidad, cod_postal, domicilio, condicion_fiscal, notas, email_opt_out, descuento_pct,
-             tags, origenes, transporte
+             tags, origenes, transporte, comision_propia_pct, comision_revende_pct, revendedor_padre_id, revendedor_token, envio
       FROM clientes WHERE id = ${id} LIMIT 1`;
     if (!r.length) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
-    return NextResponse.json({ ok: true, cliente: r[0] });
+    // "Compra para sí" se sincroniza con el descuento del admin revendedor (fuente de verdad).
+    let admin_descuento_pct: number | null = null;
+    const tok = (r[0] as any).revendedor_token;
+    if (tok) {
+      try {
+        const sr = await sql`SELECT descuento_pct FROM solicitudes_revendedor WHERE token_acceso = ${tok} LIMIT 1`;
+        if (sr.length && sr[0].descuento_pct != null) admin_descuento_pct = Number(sr[0].descuento_pct);
+      } catch { /* sin admin link */ }
+    }
+    return NextResponse.json({ ok: true, cliente: r[0], admin_descuento_pct });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
@@ -39,7 +55,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     // .query() con parámetros (la función http de neon no).
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
+      if (field === "envio") {
+        // JSONB: serializar el objeto y castear. Mantener `transporte` (columna) en sync con la
+        // empresa de transporte del envío, para que las sugerencias por zona sigan funcionando.
+        await pool.query(`UPDATE clientes SET envio = $1::jsonb, transporte = $2, updated_at = now() WHERE id = $3`,
+          [JSON.stringify(value || {}), String((value && value.empresa) || "") || null, id]);
+        return NextResponse.json({ ok: true });
+      }
       await pool.query(`UPDATE clientes SET "${field}" = $1, updated_at = now() WHERE id = $2`, [value, id]);
+      // "Compra para sí" es UNA sola base con el admin revendedor: replicar al descuento del admin (vía token).
+      if (field === "comision_propia_pct") {
+        const tk = (await pool.query(`SELECT revendedor_token FROM clientes WHERE id = $1`, [id])).rows[0]?.revendedor_token;
+        if (tk) await pool.query(`UPDATE solicitudes_revendedor SET descuento_pct = $1 WHERE token_acceso = $2`, [value, tk]);
+      }
       // PROPAGAR identidad a los presupuestos enlazados (CRM = fuente única → coti/PDF se actualizan).
       const MAP: Record<string, string> = { nombre: "cliente_nombre", razon_social: "cliente_razon_social", cuit: "cliente_cuit", email: "cliente_email", whatsapp: "cliente_telefono" };
       if (MAP[field]) {

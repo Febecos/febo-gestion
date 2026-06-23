@@ -26,10 +26,10 @@ const COLORES: Record<string, string> = {
   proveedor: "#059669", pocero: "#0d9488", instalador: "#ea580c", prospecto_curso: "#db2777",
 };
 const fmtMonto = (v: number) => (v ? "$ " + Math.round(v).toLocaleString("es-AR") : "—");
-const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "transporte", "comision_propia_pct", "comision_revende_pct"] as const;
+const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "comision_propia_pct", "comision_revende_pct"] as const;
 const esRevendedor = (t: string) => (t || "").startsWith("revendedor");
 
-export default function ClientesClient({ openClienteId, openClienteTab }: { openClienteId?: number; openClienteTab?: "datos" | "operaciones" } = {}) {
+export default function ClientesClient({ openClienteId, openClienteTab }: { openClienteId?: number; openClienteTab?: "datos" | "operaciones" | "envio" } = {}) {
   const [rows, setRows] = useState<Cliente[]>([]);
   const [total, setTotal] = useState(0);
   const [q, setQ] = useState(""); const [tipo, setTipo] = useState("");
@@ -140,7 +140,8 @@ export default function ClientesClient({ openClienteId, openClienteTab }: { open
   );
 }
 
-function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Cliente | null; onClose: () => void; onSaved: () => void; initialTab?: "datos" | "operaciones" }) {
+const TIPOS_ENVIO = ["", "A domicilio", "Puerta a puerta", "A sucursal de transporte", "Retira en depósito", "Flete propio"];
+function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Cliente | null; onClose: () => void; onSaved: () => void; initialTab?: "datos" | "operaciones" | "envio" }) {
   const esNuevo = !cliente;
   const [f, setF] = useState<any>(() => ({
     tipo: cliente?.tipo || "contacto",
@@ -152,6 +153,24 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
     comision_propia_pct: cliente?.comision_propia_pct ?? "", comision_revende_pct: cliente?.comision_revende_pct ?? "",
   }));
   const [origComision, setOrigComision] = useState<{ propia: any; revende: any }>({ propia: cliente?.comision_propia_pct ?? null, revende: cliente?.comision_revende_pct ?? null });
+  // Datos de envío (CRM = fuente única). Prefill: lo guardado en cliente.envio; si falta, los datos
+  // fiscales/domicilio del cliente como punto de partida.
+  const [envioForm, setEnvioForm] = useState<any>(() => {
+    const e = (cliente as any)?.envio || {};
+    return {
+      nombre: e.nombre || cliente?.nombre || "", dni: e.dni || cliente?.cuit || "",
+      telefono: e.telefono || cliente?.whatsapp || "", email: e.email || cliente?.email || "",
+      direccion: e.direccion || cliente?.domicilio || "", localidad: e.localidad || cliente?.localidad || "",
+      provincia: e.provincia || cliente?.provincia || "", cp: e.cp || cliente?.cod_postal || "",
+      empresa: e.empresa || cliente?.transporte || "", tipo_envio: e.tipo_envio || "",
+      domicilio_transporte: e.domicilio_transporte || "", telefono_transporte: e.telefono_transporte || "",
+      valor_declarado: e.valor_declarado || "",
+    };
+  });
+  const setE = (k: string, v: any) => setEnvioForm((p: any) => ({ ...p, [k]: v }));
+  // Faltantes para poder despachar (mismos campos obligatorios que el visor / el remito).
+  const envioFalta = ["nombre", "direccion", "localidad", "provincia"].filter((k) => !String(envioForm[k] || "").trim());
+  const envioOk = envioFalta.length === 0;
   const [tags, setTags] = useState<string[]>(cliente?.tags || []);
   const [optOut, setOptOut] = useState<boolean>(!!cliente?.email_opt_out);
   const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
@@ -181,8 +200,9 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
   const [transportes, setTransportes] = useState<any[]>([]);
   useEffect(() => { fetch("/api/transportistas?soloActivos=true").then((r) => r.json()).then((d) => setTransportes(d.ok ? d.rows : [])).catch(() => {}); }, []);
   const normT = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  // Sugerencias de transporte por la zona de ENVÍO (pestaña Datos Envíos).
   const sugeridos = (() => {
-    const prov = normT(f.provincia), loc = normT(f.localidad);
+    const prov = normT(envioForm.provincia), loc = normT(envioForm.localidad);
     if (!prov && !loc) return [] as any[];
     return transportes.filter((t: any) =>
       (t.provincias || []).some((p: string) => prov && (normT(p).includes(prov) || prov.includes(normT(p)))) ||
@@ -202,6 +222,8 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
       (cliente as any).comision_revende_pct = c.comision_revende_pct;
       (cliente as any).revendedor_padre_id = c.revendedor_padre_id;
       setOrigComision({ propia: propia ?? null, revende: c.comision_revende_pct ?? null });
+      const ev = c.envio || {};
+      if (ev && Object.keys(ev).length) setEnvioForm((p: any) => ({ ...p, ...ev }));
       setF((p: any) => ({
         ...p,
         comision_propia_pct: propia ?? (p.comision_propia_pct === "" ? "" : p.comision_propia_pct),
@@ -253,6 +275,10 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
         const tagsOrig = JSON.stringify((cliente!.tags || []).slice().sort());
         if (JSON.stringify(tags.slice().sort()) !== tagsOrig) await patch("tags", tags);
         if (optOut !== !!cliente!.email_opt_out) await patch("email_opt_out", optOut);
+        // Datos de envío: se guardan como JSONB (y sincroniza la columna `transporte`).
+        const envioOrig = JSON.stringify((cliente as any).envio || {});
+        const envioLimpio: any = {}; for (const k of Object.keys(envioForm)) envioLimpio[k] = String(envioForm[k] ?? "").trim();
+        if (JSON.stringify(envioLimpio) !== envioOrig) { await patch("envio", envioLimpio); (cliente as any).envio = envioLimpio; }
       }
       onSaved();
     } catch (e: any) { alert("Error: " + e.message); } finally { setSaving(false); }
@@ -269,7 +295,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
     if (d.ok) onSaved(); else alert("⚠️ " + (d.error || "No se pudo eliminar."));
   }
 
-  const [tab, setTab] = useState<"datos" | "operaciones">(initialTab || "datos");
+  const [tab, setTab] = useState<"datos" | "operaciones" | "envio">(initialTab || "datos");
   const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
   const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm";
   return (
@@ -279,14 +305,41 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
         <h2 className="text-lg font-bold mb-1">{esNuevo ? "＋ Nuevo cliente" : "✏️ " + (f.nombre || "Cliente")}</h2>
         {!esNuevo && (
           <div className="flex gap-1 mb-4 border-b border-gray-200 -mx-1">
-            {([["datos", "Datos"], ["operaciones", "Operaciones / Cuenta"]] as const).map(([k, l]) => (
+            {([["datos", "Datos"], ["envio", "🚚 Datos Envíos"], ["operaciones", "Operaciones / Cuenta"]] as const).map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)}
-                className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-400 hover:text-gray-600"}`}>{l}</button>
+                className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-400 hover:text-gray-600"}`}>{l}{k === "envio" && !esNuevo ? <span className={envioOk ? "text-emerald-500" : "text-amber-500"}> {envioOk ? "✅" : "⏳"}</span> : null}</button>
             ))}
           </div>
         )}
         {!esNuevo && tab === "operaciones" ? (
           <OperacionesTab clienteId={cliente!.id} />
+        ) : !esNuevo && tab === "envio" ? (
+          <div>
+            <div className={`rounded-lg px-3 py-2 mb-3 text-[12px] font-semibold ${envioOk ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+              {envioOk ? "✅ Datos de envío completos — el remito se puede generar." : `⏳ Datos de envío pendientes — falta: ${envioFalta.map((k) => ({ nombre: "destinatario", direccion: "dirección", localidad: "localidad", provincia: "provincia" } as any)[k] || k).join(", ")}.`}
+              <div className="font-normal text-[11px] mt-0.5 opacity-80">Estos datos son la fuente única: se ven (no editables) en el pedido y habilitan el remito. El cliente también puede cargarlos desde el link de envío.</div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <label className={lbl + " col-span-2"}>📦 NOMBRE Y APELLIDO / RAZÓN SOCIAL *<input value={envioForm.nombre} onChange={(e) => setE("nombre", e.target.value)} className={inp} /></label>
+              <label className={lbl}>DNI / CUIT<input value={envioForm.dni} onChange={(e) => setE("dni", e.target.value)} className={inp} /></label>
+              <label className={lbl}>TELÉFONO DE CONTACTO<input value={envioForm.telefono} onChange={(e) => setE("telefono", e.target.value)} className={inp} placeholder="WhatsApp o celular" /></label>
+              <label className={lbl + " col-span-2"}>DIRECCIÓN DE ENTREGA *<input value={envioForm.direccion} onChange={(e) => setE("direccion", e.target.value)} className={inp} placeholder="Calle, número, piso/depto" /></label>
+              <label className={lbl}>PROVINCIA *<input value={envioForm.provincia} onChange={(e) => setE("provincia", e.target.value)} className={inp} /></label>
+              <label className={lbl}>LOCALIDAD / CIUDAD *<input value={envioForm.localidad} onChange={(e) => setE("localidad", e.target.value)} className={inp} /></label>
+              <label className={lbl}>CÓDIGO POSTAL<input value={envioForm.cp} onChange={(e) => setE("cp", e.target.value)} className={inp} /></label>
+              <label className={lbl}>EMAIL<input value={envioForm.email} onChange={(e) => setE("email", e.target.value)} className={inp} /></label>
+              <div className="col-span-2 border-t border-gray-100 mt-1 pt-2 text-[11px] font-bold text-gray-400 uppercase">🚚 Transporte</div>
+              <label className={lbl + " col-span-2"}>EMPRESA DE TRANSPORTE
+                <input value={envioForm.empresa} onChange={(e) => setE("empresa", e.target.value)} list="cli-transportes-envio" className={inp} placeholder={(envioForm.provincia || envioForm.localidad) ? "Elegí de la lista (sugeridos por zona) o escribí…" : "Cargá localidad/provincia para ver sugerencias"} />
+                <datalist id="cli-transportes-envio">{(sugeridos.length ? sugeridos : transportes).map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
+                {sugeridos.length > 0 && <span className="text-[10px] text-emerald-600 font-normal">✓ {sugeridos.length} transporte(s) cubren {envioForm.localidad || envioForm.provincia}</span>}
+              </label>
+              <label className={lbl}>TIPO DE ENVÍO<select value={envioForm.tipo_envio} onChange={(e) => setE("tipo_envio", e.target.value)} className={inp}>{TIPOS_ENVIO.map((t) => <option key={t} value={t}>{t || "Seleccioná…"}</option>)}</select></label>
+              <label className={lbl}>VALOR DECLARADO ($)<input value={envioForm.valor_declarado} onChange={(e) => setE("valor_declarado", e.target.value)} className={inp} /></label>
+              <label className={lbl + " col-span-2"}>DOMICILIO DE LA SUCURSAL<input value={envioForm.domicilio_transporte} onChange={(e) => setE("domicilio_transporte", e.target.value)} className={inp} placeholder="Si es a sucursal de transporte" /></label>
+              <label className={lbl + " col-span-2"}>TELÉFONO DEL TRANSPORTE<input value={envioForm.telefono_transporte} onChange={(e) => setE("telefono_transporte", e.target.value)} className={inp} /></label>
+            </div>
+          </div>
         ) : (
         <div className="grid grid-cols-2 gap-3">
           <label className="col-span-2 grid grid-cols-[1fr_auto] gap-2 items-end">
@@ -312,13 +365,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
           <label className={lbl}>LOCALIDAD<input value={f.localidad} onChange={(e) => set("localidad", e.target.value)} className={inp} /></label>
           <label className={lbl}>CÓDIGO POSTAL<input value={f.cod_postal} onChange={(e) => set("cod_postal", e.target.value)} className={inp} /></label>
           <label className={lbl}>DOMICILIO<input value={f.domicilio} onChange={(e) => set("domicilio", e.target.value)} className={inp} /></label>
-          <label className={lbl + " col-span-2"}>🚚 TRANSPORTE HABITUAL
-            <input value={f.transporte} onChange={(e) => set("transporte", e.target.value)} list="cli-transportes" className={inp} placeholder={(f.provincia || f.localidad) ? "Elegí de la lista (sugeridos por zona) o escribí…" : "Cargá localidad/provincia para ver sugerencias"} />
-            <datalist id="cli-transportes">{(sugeridos.length ? sugeridos : transportes).map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
-            {sugeridos.length > 0
-              ? <span className="text-[10px] text-emerald-600 font-normal">✓ {sugeridos.length} transporte(s) cubren {f.localidad || f.provincia} — se puede cambiar</span>
-              : (f.provincia || f.localidad) ? <span className="text-[10px] text-amber-600 font-normal">Ninguno con cobertura cargada para esa zona — podés elegir cualquiera o escribirlo</span> : null}
-          </label>
+          {!esNuevo && <div className="col-span-2 text-[11px] text-gray-400">🚚 El transporte y los datos de envío están en la pestaña <b>Datos Envíos</b>.</div>}
           <label className={lbl + " col-span-2"}>NOTAS<textarea value={f.notas} onChange={(e) => set("notas", e.target.value)} rows={2} className={inp} /></label>
           {esRevendedor(f.tipo) && (
             <div className="col-span-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3 mt-1">
@@ -370,9 +417,9 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
             )}
           </div>
         )}
-        {(esNuevo || tab === "datos") && (
+        {(esNuevo || tab === "datos" || tab === "envio") && (
         <div className="flex justify-between items-center mt-6">
-          {esNuevo ? <span /> : <button onClick={eliminar} className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold">🗑 Eliminar del CRM</button>}
+          {esNuevo || tab !== "datos" ? <span /> : <button onClick={eliminar} className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold">🗑 Eliminar del CRM</button>}
           <div className="flex gap-2">
             <button onClick={onClose} className="border border-gray-300 rounded-lg px-5 py-2 text-sm">Cancelar</button>
             <button onClick={guardar} disabled={saving} className="bg-febo-azul text-white rounded-lg px-6 py-2 text-sm font-semibold disabled:opacity-50">{saving ? "Guardando…" : esNuevo ? "Crear" : "Guardar cambios"}</button>

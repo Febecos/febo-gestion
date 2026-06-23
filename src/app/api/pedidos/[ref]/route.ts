@@ -114,7 +114,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
       // Datos fiscales completos del cliente (para facturar según AFIP)
       let cliente: any = null;
       if (cliente_id) {
-        const cl = await sql`SELECT id, tipo, nombre, razon_social, empresa, email, whatsapp, cuit, domicilio, localidad, provincia, cod_postal, condicion_fiscal FROM clientes WHERE id=${cliente_id} LIMIT 1` as any[];
+        const cl = await sql`SELECT id, tipo, nombre, razon_social, empresa, email, whatsapp, cuit, domicilio, localidad, provincia, cod_postal, condicion_fiscal, envio FROM clientes WHERE id=${cliente_id} LIMIT 1` as any[];
         cliente = cl[0] || null;
       }
       const provSent = await sql`SELECT proveedor, items, total_costo_usd, email_destinatario, gsa_numero, estado, created_at FROM pedidos_proveedores WHERE fv_numero=${ref} ORDER BY created_at`.catch(() => []) as any[];
@@ -133,6 +133,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
       return NextResponse.json({ ok: true, pedido: {
         origen: "fv", numero: p.numero, estado: p.estado || "pendiente_confirmacion",
         public_token: p.public_token, payload: payloadEnriq, dolar, fecha: p.recibido, cliente_id, cliente,
+        cliente_envio: cliente?.envio || null,
         pedidos_proveedor: provSent,
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
@@ -430,13 +431,18 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (!row.factura_numero) return NextResponse.json({ ok: false, error: "Primero facturá el pedido." }, { status: 409 });
       const pagado = ["pagado", "enviado"].includes(row.estado) || (row.pagos_recibidos || []).length > 0 || (plr.pagos_recibidos || []).length > 0;
       if (!pagado) return NextResponse.json({ ok: false, error: "Falta registrar el pago del cliente antes de despachar." }, { status: 409 });
-      if (!(plr.envio && plr.envio.completado)) return NextResponse.json({ ok: false, error: "Faltan los datos de envío validados (el cliente debe cargarlos desde el link, o cargalos vos en la solapa Envío)." }, { status: 409 });
+      // CRM = fuente única de los datos de envío: el remito toma el envío de la ficha del cliente.
+      // (fallback al envío que pudiera tener el pedido por compatibilidad con pedidos viejos).
+      const cidEnvio = await clienteIdDe(sql, plr);
+      const clEnvio = cidEnvio ? ((await sql`SELECT envio FROM clientes WHERE id=${cidEnvio} LIMIT 1` as any[])[0]?.envio || null) : null;
+      const env = (clEnvio && Object.keys(clEnvio).length ? clEnvio : null) || plr.envio || {};
+      const envCompleto = !!(env.nombre && env.direccion && env.localidad && env.provincia);
+      if (!envCompleto) return NextResponse.json({ ok: false, error: "Faltan los datos de envío del cliente. Cargalos en la ficha del cliente (CRM › Datos Envíos) o pedile que los complete desde el link." }, { status: 409 });
       if (plr.remito_numero) return NextResponse.json({ ok: true, ya: true, remito_numero: plr.remito_numero, remito_token: plr.remito_token });
       // El remito va al MISMO receptor que la factura (puede ser un cliente final del revendedor).
       const fac = (await sql`SELECT cliente_id, cliente_nombre FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0];
-      const cid = fac?.cliente_id ?? await clienteIdDe(sql, plr);
+      const cid = fac?.cliente_id ?? cidEnvio;
       const cnombre = fac?.cliente_nombre || plr.revendedor?.nombre || null;
-      const env = plr.envio || {};
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS talonario_id INT`.catch(() => {});

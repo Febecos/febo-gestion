@@ -523,6 +523,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const borrador = !facturado && ped.factura_estado === "borrador"; // facturado en gestión, falta autorizar ARCA
   const pagadoOk = ["pagado", "enviado"].includes(ped.estado) || (ped.pagos_recibidos || []).length > 0;
   const despachado = ped.estado === "enviado" || !!pl.remito_numero;
+  // CRM = fuente única de los datos de envío: se leen de la ficha del cliente (cliente_envio),
+  // con fallback al envío que pudiera tener el pedido (compatibilidad con pedidos viejos).
+  const envioCli = (ped.cliente_envio && Object.keys(ped.cliente_envio).length ? ped.cliente_envio : null) || pl.envio || {};
+  const envioCompleto = !!(envioCli.nombre && envioCli.direccion && envioCli.localidad && envioCli.provincia);
   // Receptor efectivo: el revendedor (default) o el cliente final elegido.
   const finalSel = receptorId ? finales.find((x) => x.id === receptorId) : null;
   const condCli = (finalSel?.condicion_fiscal) || cli.condicion_fiscal || rev.condicion_fiscal || "";
@@ -648,7 +652,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               { l: "Stock confirmado", ok: !!ped.proveedor_confirmado, tab: "prov" },
               { l: "Pago", ok: pagadoOk, tab: "pago" },
               { l: "Facturado", ok: facturado, tab: "factura" },
-              { l: "Datos de envío", ok: !!(pl.envio && pl.envio.completado), tab: "envio" },
+              { l: "Datos de envío", ok: envioCompleto, tab: "envio" },
               { l: "Despachado", ok: despachado, tab: "envio" },
             ];
             const hechos = pasos.filter((p) => p.ok).length;
@@ -955,26 +959,31 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
 
           {/* Datos de envío del cliente */}
           {tab === "envio" && (() => {
-            const env = pl.envio || {};
-            const completo = !!env.completado;
+            const env = envioCli;
+            const completo = envioCompleto;
             const link = `https://visor.febecos.com/envio/${ped.public_token || ""}`;
+            const tieneAlgo = !!(env.nombre || env.direccion || env.localidad || env.provincia || env.empresa);
             return (
               <div className="border border-gray-200 rounded-lg p-3">
-                <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📦 Datos de envío {completo ? <span className="text-emerald-600">· ✅ cargados por el cliente</span> : <span className="text-amber-600">· ⏳ pendientes</span>}</div>
-                {completo && (
-                  <div className="text-xs text-gray-600 mb-2 leading-relaxed">
-                    <b>{env.nombre}</b>{env.dni ? ` · ${env.dni}` : ""}<br />
-                    {env.direccion}{[env.localidad, env.provincia, env.cp].filter(Boolean).length ? " · " + [env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") : ""}<br />
+                <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📦 Datos de envío {completo ? <span className="text-emerald-600">· ✅ completos</span> : <span className="text-amber-600">· ⏳ pendientes</span>}</div>
+                {tieneAlgo ? (
+                  <div className="text-xs text-gray-700 mb-2 leading-relaxed bg-gray-50 border border-gray-100 rounded-lg p-2.5">
+                    <b>{env.nombre || "—"}</b>{env.dni ? ` · ${env.dni}` : ""}<br />
+                    {env.direccion || "(sin dirección)"}{[env.localidad, env.provincia, env.cp].filter(Boolean).length ? " · " + [env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") : ""}<br />
                     {[env.telefono, env.email].filter(Boolean).join(" · ")}
                     {(env.empresa || env.tipo_envio) && <><br />🚚 {[env.empresa, env.tipo_envio].filter(Boolean).join(" · ")}</>}
+                    {(env.domicilio_transporte || env.telefono_transporte || env.valor_declarado) && <><br /><span className="text-gray-400">{[env.domicilio_transporte, env.telefono_transporte, env.valor_declarado && `Valor decl. $${env.valor_declarado}`].filter(Boolean).join(" · ")}</span></>}
                   </div>
+                ) : (
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-2">⏳ Este cliente todavía no tiene datos de envío cargados. Cargalos en su ficha (CRM › Datos Envíos) o enviale el link para que los complete.</div>
                 )}
+                {!completo && tieneAlgo && <div className="text-[11px] text-amber-600 mb-2">Falta: {["nombre","direccion","localidad","provincia"].filter((k)=>!String((env as any)[k]||"").trim()).map((k)=>({nombre:"destinatario",direccion:"dirección",localidad:"localidad",provincia:"provincia"} as any)[k]).join(", ")}.</div>}
                 <div className="flex flex-wrap gap-2">
                   <button disabled={!ped.public_token} onClick={() => { navigator.clipboard.writeText(link); alert("Link copiado:\n" + link); }} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">🔗 Copiar link para el cliente</button>
-                  {ped.public_token && <a href={link} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">✏️ Abrir / editar formulario</a>}
+                  {ped.public_token && <a href={link} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">✏️ Abrir formulario</a>}
                   {emailCli && <button disabled={busy} onClick={() => accion({ accion: "pedir_envio", email: emailCli, link })} className="px-3 py-1.5 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold hover:bg-blue-50">✉️ Enviar link al cliente</button>}
                 </div>
-                <div className="text-[11px] text-gray-400 mt-1">El cliente carga sus datos desde el link (visor.febecos.com). Vos también podés editarlos abriendo el formulario.</div>
+                <div className="text-[11px] text-gray-400 mt-1">Los datos de envío se administran en la <b>ficha del cliente</b> (CRM › Datos Envíos) — acá se muestran de solo lectura. El cliente también puede cargarlos desde el link.</div>
 
                 {/* Remito / Despacho — se habilita SOLO con los datos de envío validados (+ facturado + pagado) */}
                 <div className="mt-4 pt-3 border-t border-gray-100">
@@ -985,7 +994,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                       {pl.remito_token && <a href={`/p/${pl.remito_token}?admin=1`} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-violet-300 text-violet-700 text-sm font-semibold hover:bg-violet-50">📦 Ver remito</a>}
                     </div>
                   ) : (() => {
-                    const faltan = [!completo && "validar los datos de envío", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean);
+                    const faltan = [!completo && "cargar los datos de envío del cliente", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean);
                     const habil = completo && facturado && pagadoOk;
                     return (
                       <div className="space-y-2">

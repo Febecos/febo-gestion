@@ -87,6 +87,20 @@ export async function POST(req: NextRequest, { params }: { params: { token: stri
     };
     await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{envio}', ${JSON.stringify(envio)}::jsonb) WHERE public_token = ${token}`;
 
+    // CRM = fuente única: volcar también a la ficha del cliente (clientes.envio) + sincronizar
+    // su transporte habitual. Resolvemos el cliente vía el presupuesto del pedido.
+    try {
+      const pn = (r[0].payload || {}).presupuesto_numero;
+      if (pn) {
+        const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pn} LIMIT 1` as any[];
+        const cid = pr[0]?.cliente_id;
+        if (cid) {
+          await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS envio JSONB DEFAULT '{}'::jsonb`.catch(() => {});
+          await sql`UPDATE clientes SET envio = ${JSON.stringify(envio)}::jsonb, transporte = ${envio.empresa || null}, updated_at = now() WHERE id = ${cid}`;
+        }
+      }
+    } catch { /* best-effort: el pedido ya quedó guardado */ }
+
     // Si el cliente indicó un transporte que NO está en el maestro, lo damos de alta.
     if (envio.empresa) {
       const lista = await listarTransportistas();
