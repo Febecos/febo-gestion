@@ -4,7 +4,10 @@ import { movCtaCte, delMov, delMovPrefijo } from "@/lib/ctacte";
 import { resolveProveedor } from "@/lib/proveedores";
 import { numeroDesdeTalonario, letraFacturaPara, leyendasFactura, condicionIvaReceptor } from "@/lib/talonarios";
 import { tipoPorCodigo } from "@/lib/talonarios-tipos";
-import { tipoCbteAfip, docTipoReceptor, condicionIvaReceptorId, alicIvaId } from "@/lib/afip-codigos";
+import { tipoCbteAfip, docTipoReceptor, condicionIvaReceptorId } from "@/lib/afip-codigos";
+import { desglosarFactura } from "@/lib/factura-calc";
+import { validarStock, descontarStock, restituirStock } from "@/lib/stock";
+import { getUser } from "@/lib/owner";
 
 // Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
 export const dynamic = "force-dynamic";
@@ -16,6 +19,41 @@ async function callSelector(action: string, body?: any): Promise<any> {
   if (internal) headers["Authorization"] = "Bearer " + internal; else if (fvTok) headers["X-Admin-Token"] = fvTok;
   const r = await fetch("https://febecos.com/api/admin?action=" + action, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined });
   return r.json().catch(() => ({ ok: false, error: "respuesta no-JSON del admin" }));
+}
+
+// Total a mostrarle al cliente en los emails (datos para abonar / pago recibido).
+// En pedidos FV los montos de `totales` están en USD base con `moneda` = la moneda de
+// la cotización (ej "ARS") + `tc`. Hay que convertir (neto+iva)*tc para que el email
+// muestre el MISMO total que vio el cliente en el presupuesto (ej $67.199), no el USD.
+// En pedidos de bomba `totales.total` ya viene en la moneda destino (sin `tc`) → tal cual.
+function totalParaCliente(tot: any): { total: number | null; moneda: string } {
+  const moneda = tot?.moneda || "USD";
+  const tc = Number(tot?.tc) || 0;
+  const neto = Number(tot?.neto) || 0, iva = Number(tot?.iva) || 0;
+  const baseTotal = Number(tot?.total) || +(neto + iva).toFixed(2);
+  if (moneda !== "USD" && tc > 0 && (neto > 0 || iva > 0)) {
+    return { total: Math.round((neto + iva) * tc), moneda };
+  }
+  return { total: tot?.total != null ? baseTotal : null, moneda };
+}
+
+// Comisión del revendedor (USD). RI → base TOTAL (c/IVA); otra condición → base NETO.
+async function calcComision(sql: any, revendedor_id: number | null, receptorFinalId: number, totalUsd: number, netoUsd: number): Promise<{ pct: number; monto: number }> {
+  if (!revendedor_id) return { pct: 0, monto: 0 };
+  await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS comision_propia_pct NUMERIC`.catch(() => {});
+  await sql`ALTER TABLE clientes ADD COLUMN IF NOT EXISTS comision_revende_pct NUMERIC`.catch(() => {});
+  const rc = await sql`SELECT comision_propia_pct, comision_revende_pct, revendedor_token, condicion_fiscal FROM clientes WHERE id=${revendedor_id} LIMIT 1` as any[];
+  let pct = 0;
+  if (receptorFinalId) { pct = Number(rc[0]?.comision_revende_pct) || 0; }
+  else {
+    pct = Number(rc[0]?.comision_propia_pct) || 0;
+    const tk = rc[0]?.revendedor_token;
+    if (tk) { const adm = await sql`SELECT descuento_pct FROM solicitudes_revendedor WHERE token_acceso=${tk} LIMIT 1` as any[]; if (adm.length && adm[0].descuento_pct != null) pct = Number(adm[0].descuento_pct) || 0; }
+  }
+  const condRev = String(rc[0]?.condicion_fiscal || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const esRI = condRev.includes('responsable') && condRev.includes('inscripto');
+  const base = esRI ? totalUsd : netoUsd;
+  return { pct, monto: +(base * pct / 100).toFixed(2) };
 }
 
 async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
@@ -46,7 +84,12 @@ async function ensureCols(sql: any) {
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS proforma_archivo jsonb`.catch(() => {});
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_numero text`.catch(() => {});
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_token text`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_estado text`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_borrador_id int`.catch(() => {});
   await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS pago_proveedor jsonb`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS stock_validado boolean DEFAULT false`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS stock_validado_at timestamptz`.catch(() => {});
+  await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS stock_override_by text`.catch(() => {});
 }
 
 // GET /api/pedidos/[ref]  → detalle completo de un pedido (FV: fv_pedidos por numero; bomba: pedidos por id)
@@ -58,7 +101,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
     try { const c = await sql`SELECT data FROM fv_config WHERE id=1`; dolar = Number((c[0] as any)?.data?.dolar) || 0; } catch {}
 
     await ensureCols(sql);
-    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago, proveedor_confirmado, proveedor_confirmado_at, proforma_archivo, factura_numero, factura_token, pago_proveedor FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
+    const fv = await sql`SELECT numero, estado, public_token, payload, recibido, comprobante_recibido, comprobante_archivo, verificacion_pago, pagos_recibidos, envio_data, metodo_pago, proveedor_confirmado, proveedor_confirmado_at, proforma_archivo, factura_numero, factura_token, factura_estado, factura_borrador_id, pago_proveedor, stock_validado, stock_validado_at, stock_override_by FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[];
     if (fv.length) {
       const p = fv[0];
       // nombre canónico del cliente desde el presupuesto/CRM
@@ -75,6 +118,9 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         cliente = cl[0] || null;
       }
       const provSent = await sql`SELECT proveedor, items, total_costo_usd, email_destinatario, gsa_numero, estado, created_at FROM pedidos_proveedores WHERE fv_numero=${ref} ORDER BY created_at`.catch(() => []) as any[];
+      // ¿Es el ÚLTIMO número emitido? (para habilitar "Revertir" solo en ese caso).
+      let es_ultimo = false;
+      try { const n = parseInt(String(ref).match(/(\d+)\s*$/)?.[1] || "0", 10); const cnt = await sql`SELECT ultimo_numero FROM pedidos_counter WHERE clave='PED' LIMIT 1` as any[]; es_ultimo = !!cnt[0] && n > 0 && Number(cnt[0].ultimo_numero) === n; } catch {}
       const payloadEnriq = p.payload || {};
       payloadEnriq.items = await enrichEmisor(sql, payloadEnriq.items || []);
       return NextResponse.json({ ok: true, pedido: {
@@ -84,7 +130,9 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
         proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
-        factura_numero: p.factura_numero, factura_token: p.factura_token, pago_proveedor: p.pago_proveedor || null,
+        factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, pago_proveedor: p.pago_proveedor || null,
+        stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
+        es_ultimo,
       }});
     }
 
@@ -119,6 +167,25 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       return NextResponse.json({ ok: false, error: "El pedido está CANCELADO: no se puede editar. Generá un nuevo pedido." }, { status: 409 });
     }
 
+    // Validación de STOCK propio (depósito). El pedido NO puede facturar sin esto, salvo override de Guillermo (owner).
+    if (b.accion === "validar_stock") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV/kit por ahora" }, { status: 400 });
+      const row = (await sql`SELECT payload, stock_validado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      if (row.stock_validado) return NextResponse.json({ ok: true, ya: true });
+      const items = row.payload?.items || [];
+      const { ok, faltantes } = await validarStock(sql, items);
+      const u = await getUser(req);
+      if (!ok && !(b.override && u?.es_owner)) {
+        // Falta stock y no hay override válido → NO continúa.
+        return NextResponse.json({ ok: false, error: "Falta stock para confirmar el pedido.", faltantes, puede_override: !!u?.es_owner }, { status: 409 });
+      }
+      // OK (o override de owner): descuenta el stock disponible y marca validado.
+      await descontarStock(sql, items, ref, u?.email || null);
+      await sql`UPDATE fv_pedidos SET stock_validado=true, stock_validado_at=now(), stock_override_by=${!ok ? (u?.email || "owner") : null} WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true, override: !ok });
+    }
+
     if (b.accion === "confirmar_proveedor") {
       if (esFv) {
         await sql`UPDATE fv_pedidos SET proveedor_confirmado=true, proveedor_confirmado_at=now(), proforma_archivo=${JSON.stringify(b.archivos || [])}::jsonb WHERE numero=${ref}`;
@@ -143,6 +210,48 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       return NextResponse.json({ ok: true });
     }
 
+    // Revertir el pedido (se confirmó por error): borra el fv_pedido y devuelve el presupuesto a 'emitido'.
+    // Solo si NO está facturado/despachado/pagado.
+    if (b.accion === "revertir") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const row = (await sql`SELECT payload, factura_numero, estado, pagos_recibidos, proveedor_confirmado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      const plr = row.payload || {};
+      if (row.factura_numero) return NextResponse.json({ ok: false, error: "El pedido ya está facturado: no se puede revertir (anulá la factura primero)." }, { status: 409 });
+      if (plr.remito_numero) return NextResponse.json({ ok: false, error: "El pedido ya tiene remito/despacho: no se puede revertir." }, { status: 409 });
+      if (["pagado", "enviado"].includes(row.estado) || (row.pagos_recibidos || plr.pagos_recibidos || []).length > 0)
+        return NextResponse.json({ ok: false, error: "El pedido tiene pago/envío registrado: no se puede revertir." }, { status: 409 });
+      if (row.proveedor_confirmado) return NextResponse.json({ ok: false, error: "El pedido ya tiene el stock confirmado con el proveedor: no se puede revertir." }, { status: 409 });
+      // Además: solo el ÚLTIMO número emitido (no dejar huecos en el medio).
+      {
+        const nn = parseInt(String(ref).match(/(\d+)\s*$/)?.[1] || "0", 10);
+        const cc = (await sql`SELECT ultimo_numero FROM pedidos_counter WHERE clave='PED' LIMIT 1` as any[])[0];
+        if (!cc || nn <= 0 || Number(cc.ultimo_numero) !== nn) return NextResponse.json({ ok: false, error: "Solo se puede revertir el último pedido emitido." }, { status: 409 });
+      }
+      const presup = plr.presupuesto_numero || null;
+      // Devolver el stock propio que se había descontado al confirmar (si se había validado/descontado).
+      if (row.stock_validado) await restituirStock(sql, plr.items || [], ref, (await getUser(req))?.email || null).catch(() => {});
+      // Si está en el medio → ANULAR (se mantiene el número, sin hueco fantasma).
+      const n = parseInt(String(ref).match(/(\d+)\s*$/)?.[1] || "0", 10);
+      let modo = "anulado";
+      const cnt = (await sql`SELECT ultimo_numero FROM pedidos_counter WHERE clave='PED' LIMIT 1` as any[])[0];
+      const esUltimo = cnt && n > 0 && Number(cnt.ultimo_numero) === n;
+      if (esUltimo) {
+        await sql`DELETE FROM fv_pedidos WHERE numero=${ref}`;
+        await sql`UPDATE pedidos_counter SET ultimo_numero = ${n - 1} WHERE clave='PED' AND ultimo_numero = ${n}`;
+        modo = "borrado_reusable";
+      } else {
+        await sql`UPDATE fv_pedidos SET estado='anulado', cancelado_at=now() WHERE numero=${ref}`;
+      }
+      if (presup) await sql`UPDATE presupuestos SET estado='emitido' WHERE numero=${presup} AND COALESCE(estado,'') IN ('confirmado','pedido','convertido')`;
+      // Si vino de un PEDIDO ONLINE (tienda), liberar el link para que VUELVA a la bandeja "Pedidos online".
+      const origenOnline = plr.origen_pedido_id || (plr.tipo_origen === "online" ? plr.origen_pedido_id : null);
+      if (origenOnline) {
+        await sql`ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS gestion_pedido_id TEXT`.catch(() => {});
+        await sql`UPDATE pedidos SET gestion_pedido_id = NULL, gestion_tomado_at = NULL WHERE id::text = ${String(origenOnline)}`.catch(() => {});
+      }
+      return NextResponse.json({ ok: true, revertido: ref, modo, presupuesto: presup, online_liberado: !!origenOnline });
+    }
     if (b.accion === "estado") {
       if (!ESTADOS_FV.includes(b.estado)) return NextResponse.json({ ok: false, error: "estado inválido" }, { status: 400 });
       // Compuerta: no se puede aprobar sin confirmación de stock del proveedor
@@ -154,7 +263,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         if (b.estado === "aprobado") await sql`UPDATE fv_pedidos SET estado='aprobado', aprobado_at=now() WHERE numero=${ref}`;
         else if (b.estado === "pagado") await sql`UPDATE fv_pedidos SET estado='pagado', pagado_at=now() WHERE numero=${ref}`;
         else if (b.estado === "enviado") await sql`UPDATE fv_pedidos SET estado='enviado', enviado_at=now() WHERE numero=${ref}`;
-        else if (b.estado === "cancelado") await sql`UPDATE fv_pedidos SET estado='cancelado', cancelado_at=now() WHERE numero=${ref}`;
+        else if (b.estado === "cancelado") {
+          // Al cancelar/rechazar, devolver el stock propio descontado al confirmar.
+          const cr = (await sql`SELECT payload, stock_validado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+          if (cr?.stock_validado) { await restituirStock(sql, cr.payload?.items || [], ref, (await getUser(req))?.email || null).catch(() => {}); await sql`UPDATE fv_pedidos SET stock_validado=false WHERE numero=${ref}`.catch(() => {}); }
+          await sql`UPDATE fv_pedidos SET estado='cancelado', cancelado_at=now() WHERE numero=${ref}`;
+        }
         else await sql`UPDATE fv_pedidos SET estado=${b.estado} WHERE numero=${ref}`;
       } else await sql`UPDATE pedidos SET estado=${b.estado} WHERE id::text=${ref} OR numero=${ref}`;
 
@@ -175,15 +289,33 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
             const internal = process.env.INTERNAL_SERVICE_SECRET; const fvTok = process.env.FV_ADMIN_TOKEN;
             const headers: Record<string, string> = { "Content-Type": "application/json" };
             if (internal) headers["Authorization"] = "Bearer " + internal; else if (fvTok) headers["X-Admin-Token"] = fvTok;
+            const tpc = totalParaCliente(pl.totales);
             const r = await fetch("https://febecos.com/api/admin?action=notificar-pago-cliente", {
               method: "POST", headers,
-              body: JSON.stringify({ email, nombre: rev.nombre || "", pedido_numero: ref, total: pl.totales?.total, moneda: pl.totales?.moneda || "USD", link }),
+              body: JSON.stringify({ email, nombre: rev.nombre || "", pedido_numero: ref, total: tpc.total, moneda: tpc.moneda, link }),
             });
             aviso_cliente = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON" }));
           }
         } catch (e: any) { aviso_cliente = { ok: false, error: e.message }; }
       }
       return NextResponse.json({ ok: true, estado: b.estado, aviso_cliente });
+    }
+    if (b.accion === "avisar_pago") {
+      // Avisa al cliente que su PAGO está OK (email desde administración) y marca el pedido como pagado.
+      // b.email es editable (para pruebas: ver el contenido sin mandarlo al cliente real).
+      const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const pl = row?.payload || {}; const rev = pl.revendedor || pl.cliente || {};
+      const email = String(b.email || rev.email || "").trim();
+      let aviso_cliente: any = { ok: false, error: "El cliente no tiene email" };
+      if (email) {
+        let link = "";
+        if (pl.presupuesto_numero) { const pr = await sql`SELECT public_token FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; if (pr[0]?.public_token) link = `https://fv.febecos.com/ver-presupuesto?token=${pr[0].public_token}`; }
+        const tpc = totalParaCliente(pl.totales);
+        try { aviso_cliente = await callSelector("confirmar-pago-cliente", { email, nombre: rev.nombre || "", pedido_numero: ref, total: tpc.total, moneda: tpc.moneda, link }); }
+        catch (e: any) { aviso_cliente = { ok: false, error: e.message }; }
+      }
+      if (esFv) await sql`UPDATE fv_pedidos SET estado='pagado' WHERE numero=${ref}`.catch(() => {});
+      return NextResponse.json({ ok: true, estado: "pagado", aviso_cliente });
     }
     if (b.accion === "comprobante") {
       // b.archivos = [{nombre, tipo, b64}]
@@ -205,6 +337,21 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
             concepto: "Pago recibido", pedido_ref: ref, haber: +Number(b.pago.monto_usd).toFixed(2),
             detalle: b.pago, uniq: `pcli:${ref}:${b.pago.fecha}` });
         }
+      }
+      return NextResponse.json({ ok: true });
+    }
+    if (b.accion === "eliminar_pago") {
+      // Borra un pago recibido (por índice) y revierte su movimiento en cuenta corriente.
+      if (esFv) {
+        const row = (await sql`SELECT payload, pagos_recibidos FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+        const pagos: any[] = Array.isArray(row?.pagos_recibidos) ? row.pagos_recibidos : [];
+        const idx = Number(b.index);
+        if (!(idx >= 0 && idx < pagos.length)) return NextResponse.json({ ok: false, error: "pago no encontrado" }, { status: 404 });
+        const p = pagos[idx];
+        const resto = pagos.filter((_, i) => i !== idx);
+        await sql`UPDATE fv_pedidos SET pagos_recibidos=${JSON.stringify(resto)}::jsonb, verificacion_pago=${resto.length ? JSON.stringify(resto[resto.length - 1]) : null}::jsonb, comprobante_recibido=${resto.length > 0} WHERE numero=${ref}`;
+        const cid = await clienteIdDe(sql, row?.payload);
+        if (cid && p?.fecha) await delMov(sql, `pcli:${ref}:${p.fecha}`).catch(() => {});
       }
       return NextResponse.json({ ok: true });
     }
@@ -268,8 +415,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (!row.factura_numero) return NextResponse.json({ ok: false, error: "Primero facturá el pedido." }, { status: 409 });
       const pagado = ["pagado", "enviado"].includes(row.estado) || (row.pagos_recibidos || []).length > 0 || (plr.pagos_recibidos || []).length > 0;
       if (!pagado) return NextResponse.json({ ok: false, error: "Falta registrar el pago del cliente antes de despachar." }, { status: 409 });
+      if (!(plr.envio && plr.envio.completado)) return NextResponse.json({ ok: false, error: "Faltan los datos de envío validados (el cliente debe cargarlos desde el link, o cargalos vos en la solapa Envío)." }, { status: 409 });
       if (plr.remito_numero) return NextResponse.json({ ok: true, ya: true, remito_numero: plr.remito_numero, remito_token: plr.remito_token });
-      const cid = await clienteIdDe(sql, plr);
+      // El remito va al MISMO receptor que la factura (puede ser un cliente final del revendedor).
+      const fac = (await sql`SELECT cliente_id, cliente_nombre FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0];
+      const cid = fac?.cliente_id ?? await clienteIdDe(sql, plr);
+      const cnombre = fac?.cliente_nombre || plr.revendedor?.nombre || null;
       const env = plr.envio || {};
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
@@ -291,7 +442,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const transp = env.empresa || plr.datos_venta?.tipo_transporte || null;
       const comp = (await sql`
         INSERT INTO fg_comprobantes (tipo, estado, numero, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, lugar_entrega, tipo_transporte)
-        VALUES ('remito','emitido',${numero},${remTalId},${cid},${plr.revendedor?.nombre || null}, now(), 0, 0, 'ARS', ${"Despacho del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${lugar}, ${transp})
+        VALUES ('remito','emitido',${numero},${remTalId},${cid},${cnombre}, now(), 0, 0, 'ARS', ${"Despacho del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${lugar}, ${transp})
         RETURNING id, token` as any[])[0];
       let orden = 0;
       for (const it of (plr.items || [])) {
@@ -324,20 +475,118 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const d = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON del admin" }));
       return NextResponse.json(d, { status: r.ok ? 200 : (r.status || 502) });
     }
+    // ── REVISIÓN PREVIA (dry-run): calcula TODO lo que se va a facturar (letra, condición IVA del
+    //    receptor, neto, IVA por alícuota, total, talonario/PV) SIN emitir CAE ni escribir nada.
+    //    Reusa el mismo desglose que la emisión real → los números coinciden exactamente. ──
+    if (b.accion === "facturar_preview") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const row = (await sql`SELECT payload, proveedor_confirmado, factura_numero, stock_validado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      const pl = row.payload || {}; const items = pl.items || []; const tot = pl.totales || {};
+      const rev = pl.revendedor || pl.cliente || {};
+      const bloqueos: string[] = [];
+      const avisos: string[] = [];
+      if (row.factura_numero) avisos.push(`Este pedido ya fue facturado (${row.factura_numero}).`);
+      if (!row.stock_validado) bloqueos.push("El stock del pedido no está validado.");
+      if (!row.proveedor_confirmado) bloqueos.push("Falta confirmar el stock con el proveedor.");
+
+      // Receptor (revendedor por defecto, o cliente final suyo)
+      let revendedor_id: number | null = null;
+      if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; revendedor_id = pr[0]?.cliente_id ?? null; }
+      const receptorFinalId = Number(b.receptor_cliente_id) || 0;
+      let cliente_id: number | null = revendedor_id;
+      let receptorNombre: string | null = rev.nombre || null;
+      if (receptorFinalId) {
+        const cf = await sql`SELECT id, nombre, razon_social, revendedor_padre_id FROM clientes WHERE id=${receptorFinalId} LIMIT 1` as any[];
+        if (!cf.length) return NextResponse.json({ ok: false, error: "Cliente final no encontrado." }, { status: 404 });
+        cliente_id = receptorFinalId;
+        receptorNombre = cf[0].razon_social || cf[0].nombre || receptorNombre;
+      }
+      let condicion: string | null = null; let clienteCuit: string = receptorFinalId ? "" : (rev.cuit || "");
+      if (cliente_id) { const cl = await sql`SELECT condicion_fiscal, cuit, razon_social, nombre FROM clientes WHERE id=${cliente_id} LIMIT 1` as any[]; condicion = cl[0]?.condicion_fiscal || null; clienteCuit = cl[0]?.cuit || clienteCuit; receptorNombre = cl[0]?.razon_social || cl[0]?.nombre || receptorNombre; }
+
+      // ── Auto-carga de condición fiscal desde ARCA (best-effort) si falta ──
+      const arca: any = { consultado: false, condicion_fiscal: null, persistida: false, nota: null };
+      if (!condicion && clienteCuit && String(clienteCuit).replace(/\D/g, "").length === 11) {
+        try {
+          const rc = await fetch(`https://febecos.com/api/admin?action=consultar_cuit&cuit=${String(clienteCuit).replace(/\D/g, "")}`, { signal: AbortSignal.timeout(12000) });
+          const dc = await rc.json(); arca.consultado = true;
+          if (dc?.condicionFiscal) {
+            condicion = String(dc.condicionFiscal); arca.condicion_fiscal = condicion;
+            if (cliente_id) { await sql`UPDATE clientes SET condicion_fiscal=${condicion} WHERE id=${cliente_id} AND COALESCE(condicion_fiscal,'')=''`.catch(() => {}); arca.persistida = true; }
+          } else {
+            arca.nota = "ARCA no devolvió la condición IVA (el padrón público no la expone). Cargala a mano en la ficha del cliente.";
+          }
+        } catch (e: any) { arca.nota = "No se pudo consultar ARCA: " + e.message; }
+      }
+
+      const letra = letraFacturaPara(condicion);
+      if (!letra) bloqueos.push(condicion ? `La condición fiscal "${condicion}" no mapea a una letra de factura.` : "El receptor no tiene condición fiscal cargada.");
+      const condId = condicionIvaReceptorId(condicion);
+
+      // Talonario que correspondería
+      const facturaTals = await sql`SELECT id, tipo_codigo, sucursal, defecto FROM fg_talonarios WHERE activo=true AND bloqueado=false AND tipo_codigo IN ('FAA','FAB','FAC','FAM','FAI','FBI','FAE','FEA','FEB','FEC','FEE') ORDER BY defecto DESC, orden, id`.catch(() => []) as any[];
+      const letraDe = (tc: string) => tipoPorCodigo(tc)?.letra || "";
+      let tal: any = null;
+      if (Number(b.talonario_id)) tal = facturaTals.find((x) => x.id === Number(b.talonario_id)) || null;
+      if (!tal && letra) tal = facturaTals.find((x) => letraDe(x.tipo_codigo) === letra) || null;
+      if (letra && !tal) bloqueos.push(`No hay talonario de Factura ${letra} cargado (Configuración → Talonarios).`);
+      const tipoTal = tal ? tipoPorCodigo(tal.tipo_codigo) : null;
+      const ptoVta = tal ? (Number(String(tal.sucursal || "1").replace(/\D/g, "")) || 1) : null;
+
+      // Moneda + desglose (mismo helper que la emisión real)
+      const facturaMoneda = (b.moneda === "ARS" || b.moneda === "$") ? "ARS" : "USD";
+      let tc = 1;
+      if (facturaMoneda === "ARS") { tc = Number(b.tc) || 0; if (!tc) { try { const cfg = await sql`SELECT data FROM fv_config WHERE id=1` as any[]; tc = Number(cfg[0]?.data?.dolar) || 0; } catch {} } if (!tc) bloqueos.push("Para facturar en pesos falta el tipo de cambio (TC)."); }
+      const conv = (n: any) => facturaMoneda === "ARS" ? Math.round((Number(n) || 0) * (tc || 0)) : +(Number(n) || 0).toFixed(2);
+      const esFacturaC = tipoTal?.letra === "C";
+      const des = desglosarFactura({ items, tot, conv, esFacturaC });
+      const doc = docTipoReceptor(clienteCuit);
+      if (letra === "A" && doc.tipo !== 80) bloqueos.push("Factura A requiere CUIT válido del receptor.");
+
+      return NextResponse.json({
+        ok: true, preview: true, ref,
+        receptor: { id: cliente_id, nombre: receptorNombre, cuit: clienteCuit || null, condicion_fiscal: condicion, doc_tipo: doc.tipo, doc_nro: doc.nro, es_cliente_final: !!receptorFinalId },
+        arca,
+        letra, condicion_iva_receptor_id: condId, condicion_iva_receptor_txt: condicionIvaReceptor(condicion),
+        talonario: tal ? { id: tal.id, tipo_codigo: tal.tipo_codigo, letra: tipoTal?.letra || letra, electronica: !!tipoTal?.electronica, punto_venta: ptoVta } : null,
+        moneda: facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null,
+        montos: { neto: des.neto, iva: des.ivaArr.map((x) => ({ id: x.id, base: x.base, importe: x.importe })), imp_iva: des.impIVA, total: des.total, es_factura_c: esFacturaC },
+        leyendas: leyendasFactura(condicion),
+        bloqueos, avisos, puede_facturar: bloqueos.length === 0,
+      });
+    }
+
     if (b.accion === "facturar") {
       if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
-      const row = (await sql`SELECT payload, proveedor_confirmado, factura_numero, factura_token FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const row = (await sql`SELECT payload, proveedor_confirmado, factura_numero, factura_token, stock_validado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
       if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      if (!row.stock_validado) return NextResponse.json({ ok: false, error: "No se puede facturar: el stock del pedido no está validado. Validá el stock (o pedí override a Guillermo)." }, { status: 409 });
       if (!row.proveedor_confirmado) return NextResponse.json({ ok: false, error: "Confirmá el stock con el proveedor antes de facturar." }, { status: 409 });
       if (row.factura_numero) return NextResponse.json({ ok: true, factura_numero: row.factura_numero, factura_token: row.factura_token, ya: true });
 
       const pl = row.payload || {}; const items = pl.items || []; const tot = pl.totales || {};
       const rev = pl.revendedor || pl.cliente || {};
-      let cliente_id: number | null = null;
-      if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; cliente_id = pr[0]?.cliente_id ?? null; }
+      // El presupuesto se cotiza al REVENDEDOR; ese es el revendedor de la operación.
+      let revendedor_id: number | null = null;
+      if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; revendedor_id = pr[0]?.cliente_id ?? null; }
 
-      // ── Validación AFIP: la letra de factura depende de la condición fiscal del cliente ──
-      let condicion: string | null = null; let clienteCuit: string = rev.cuit || "";
+      // Receptor de la factura: por defecto el revendedor; o un cliente final suyo (b.receptor_cliente_id).
+      const receptorFinalId = Number(b.receptor_cliente_id) || 0;
+      let cliente_id: number | null = revendedor_id;
+      let receptorNombre: string | null = rev.nombre || null;
+      if (receptorFinalId) {
+        const cf = await sql`SELECT id, nombre, razon_social, revendedor_padre_id FROM clientes WHERE id=${receptorFinalId} LIMIT 1` as any[];
+        if (!cf.length) return NextResponse.json({ ok: false, error: "Cliente final no encontrado." }, { status: 404 });
+        if (revendedor_id && cf[0].revendedor_padre_id && cf[0].revendedor_padre_id !== revendedor_id) {
+          return NextResponse.json({ ok: false, error: "El cliente final no pertenece al revendedor de esta operación." }, { status: 409 });
+        }
+        cliente_id = receptorFinalId;
+        receptorNombre = cf[0].razon_social || cf[0].nombre || receptorNombre;
+      }
+
+      // ── Validación AFIP: la letra de factura depende de la condición fiscal del RECEPTOR ──
+      let condicion: string | null = null; let clienteCuit: string = receptorFinalId ? "" : (rev.cuit || "");
       if (cliente_id) { const cl = await sql`SELECT condicion_fiscal, cuit FROM clientes WHERE id=${cliente_id} LIMIT 1` as any[]; condicion = cl[0]?.condicion_fiscal || null; clienteCuit = cl[0]?.cuit || clienteCuit; }
       const letraReq = letraFacturaPara(condicion);
       if (!letraReq) return NextResponse.json({ ok: false, error: "El cliente no tiene condición fiscal cargada: no se puede emitir factura. Cargala en la ficha del cliente." }, { status: 409 });
@@ -373,57 +622,21 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
             ? Object.fromEntries(Object.entries(tot.iva_detalle).map(([k, v]) => [k, conv(v)]))
             : null);
 
-      // ── Numeración + (si el talonario es ELECTRÓNICO) emisión AFIP/ARCA CAE (WSFEv1) ──
+      // ── ELECTRÓNICA = 2 pasos: (1) "Facturar en gestión" deja un BORRADOR (sin ARCA, sin cta cte)
+      //    y (2) "Autorizar y enviar a ARCA" pide el CAE. MANUAL = se finaliza directo (no hay ARCA). ──
       const tipoTal = tipoPorCodigo((facturaTals.find((x) => x.id === talId) || {}).tipo_codigo || "");
       const esElectronica = !!tipoTal?.electronica;
-      let facturaNum: string; let letraFac: string | null = tipoTal?.letra || letraReq || null;
-      let afip: any = null;
-      if (esElectronica) {
-        const talFull = (await sql`SELECT sucursal FROM fg_talonarios WHERE id=${talId} LIMIT 1` as any[])[0];
-        const ptoVta = Number(String(talFull?.sucursal || "1").replace(/\D/g, "")) || 1;
-        const cbteTipo = tipoCbteAfip(tipoTal!.grupo, tipoTal!.letra || "");
-        if (!cbteTipo) return NextResponse.json({ ok: false, error: "Tipo de comprobante AFIP no mapeado." }, { status: 400 });
-        const condId = condicionIvaReceptorId(condicion);
-        if (!condId) return NextResponse.json({ ok: false, error: "Condición IVA del receptor no mapeada para AFIP." }, { status: 409 });
-        const doc = docTipoReceptor(clienteCuit);
-        if (tipoTal!.letra === "A" && doc.tipo !== 80) return NextResponse.json({ ok: false, error: "Factura A requiere CUIT válido del receptor." }, { status: 409 });
-        const esFacturaC = tipoTal!.letra === "C";
-        // Neto declarado a AFIP (ya con descuento general aplicado, si lo hubiera).
-        const neto = conv(tot.neto || tot.total || 0);
-        // Bases de IVA por alícuota a partir del subtotal por ítem (sin IVA).
-        const byPct: Record<string, number> = {};
-        for (const it of items) { const pct = String(Number(it.iva_pct ?? 21)); byPct[pct] = (byPct[pct] || 0) + conv(it.subtotal); }
-        const pcts = Object.keys(byPct);
-        const brutoBases = pcts.reduce((a, p) => a + byPct[p], 0);
-        // Si hay descuento general (neto < Σ bases), se prorratea en cada alícuota para que
-        // Σ BaseImp == ImpNeto (lo exige AFIP) y el IVA se calcule SOBRE el precio con descuento.
-        const factor = brutoBases > 0 ? neto / brutoBases : 1;
-        const baseByPct: Record<string, number> = {}; let accBase = 0;
-        for (const p of pcts) { const b = +(byPct[p] * factor).toFixed(2); baseByPct[p] = b; accBase += b; }
-        // Ajuste de redondeo: el residuo va al bucket de mayor base → Σ base == neto exacto.
-        if (pcts.length) { const diff = +(neto - accBase).toFixed(2); if (Math.abs(diff) >= 0.01) { const big = pcts.reduce((a, b) => (baseByPct[b] > baseByPct[a] ? b : a)); baseByPct[big] = +(baseByPct[big] + diff).toFixed(2); } }
-        const ivaArr = esFacturaC ? [] : pcts.map((pct) => ({ id: alicIvaId(+pct), base: baseByPct[pct], importe: +(baseByPct[pct] * (+pct) / 100).toFixed(2) }));
-        const impIVA = +ivaArr.reduce((a, x) => a + x.importe, 0).toFixed(2);
-        // ImpTotal debe ser EXACTAMENTE ImpNeto + ImpIVA (requisito AFIP); no usar tot.total redondeado aparte.
-        const total = esFacturaC ? neto : +(neto + impIVA).toFixed(2);
-        let monId = "PES", monCotiz = 1, canMis: string | null = null;
-        if (facturaMoneda === "USD") { monId = "DOL"; canMis = "S"; try { const cz = await callSelector("wsfe-cotizacion&mon=DOL"); monCotiz = Number(cz?.cotiz) || tc || 1; } catch { monCotiz = tc || 1; } }
-        const d = new Date(); const p2 = (n: number) => String(n).padStart(2, "0");
-        const yyyymmdd = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
-        const fechaISO = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
-        const res = await callSelector("wsfe-emitir", { ptoVta, cbteTipo, concepto: 1, docTipo: doc.tipo, docNro: doc.nro, fecha: yyyymmdd, fechaISO, neto, iva: ivaArr, impIVA, impTotal: total, monId, monCotiz, canMisMonExt: canMis, condicionIvaReceptorId: condId, esFacturaC });
-        if (!res?.ok) return NextResponse.json({ ok: false, error: "AFIP: " + (res?.error || "no se pudo emitir el CAE") }, { status: 502 });
-        afip = res;
-        const pref = tipoTal!.grupo === "nc" ? "NC" : tipoTal!.grupo === "nd" ? "ND" : "FA";
-        facturaNum = `${pref} ${letraFac} ${String(ptoVta).padStart(5, "0")}-${String(res.cbteNro).padStart(8, "0")}`;
-      } else {
-        const n = await numeroDesdeTalonario(sql, talId);
-        if (!n) return NextResponse.json({ ok: false, error: "talonario inválido" }, { status: 400 });
-        facturaNum = n.numero; letraFac = n.letra || null;
-      }
-
+      const letraFac: string | null = tipoTal?.letra || letraReq || null;
+      const pref = tipoTal?.grupo === "nc" ? "NC" : tipoTal?.grupo === "nd" ? "ND" : "FA";
       const leyendas = leyendasFactura(condicion);
       const condRecept = condicionIvaReceptor(condicion);
+      const dvp = pl.datos_venta || {}; const cond = pl.condiciones || {};
+      const dvF = {
+        condiciones_venta: dvp.condiciones_venta || cond.pago || null,
+        forma_pago: dvp.forma_pago || cond.forma || null,
+        lugar_entrega: dvp.lugar_entrega || cond.lugar || null,
+        tipo_transporte: dvp.tipo_transporte || null,
+      };
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS vendedor TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS talonario_id INT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS letra TEXT`.catch(() => {});
@@ -438,32 +651,121 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS forma_pago TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
-      // Datos de venta: lo guardado o, si falta, lo del presupuesto FV (condiciones).
-      const dvp = pl.datos_venta || {}; const cond = pl.condiciones || {};
-      const dvF = {
-        condiciones_venta: dvp.condiciones_venta || cond.pago || null,
-        forma_pago: dvp.forma_pago || cond.forma || null,
-        lugar_entrega: dvp.lugar_entrega || cond.lugar || null,
-        tipo_transporte: dvp.tipo_transporte || null,
-      };
-      const estadoComp = afip ? "emitida" : "proforma";
-      const comp = (await sql`
-        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, afip_cae, afip_cae_vto, afip_qr, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte)
-        VALUES ('factura',${estadoComp},${facturaNum},${letraFac},${talId || null},${cliente_id},${rev.nombre || null}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${afip?.cae || null}, ${afip?.caeVto || null}, ${afip?.qr || null}, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null})
-        RETURNING id, token` as any[])[0];
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS revendedor_id INTEGER`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS comision_pct NUMERIC`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS comision_monto NUMERIC`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS afip_payload jsonb`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS afip_meta jsonb`.catch(() => {});
+      await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_estado text`.catch(() => {});
+      await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_borrador_id int`.catch(() => {});
 
-      let orden = 0;
-      for (const it of items) {
-        await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
-          VALUES (${comp.id}, ${(it.descripcion || it.codigo || "").slice(0, 300)}, ${it.cantidad || 1}, ${conv(it.pvp_sin_iva_usd)}, ${conv(it.subtotal)}, ${orden++})`;
+      const insertItems = async (compId: number) => {
+        let orden = 0;
+        for (const it of items) {
+          await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
+            VALUES (${compId}, ${(it.descripcion || it.codigo || "").slice(0, 300)}, ${it.cantidad || 1}, ${conv(it.pvp_sin_iva_usd)}, ${conv(it.subtotal)}, ${orden++})`;
+        }
+      };
+
+      if (esElectronica) {
+        // ── PASO 1: armar el payload AFIP y guardar el BORRADOR (NO se emite, NO mueve cta cte). ──
+        const talFull = (await sql`SELECT sucursal FROM fg_talonarios WHERE id=${talId} LIMIT 1` as any[])[0];
+        const ptoVta = Number(String(talFull?.sucursal || "1").replace(/\D/g, "")) || 1;
+        const cbteTipo = tipoCbteAfip(tipoTal!.grupo, tipoTal!.letra || "");
+        if (!cbteTipo) return NextResponse.json({ ok: false, error: "Tipo de comprobante AFIP no mapeado." }, { status: 400 });
+        const condId = condicionIvaReceptorId(condicion);
+        if (!condId) return NextResponse.json({ ok: false, error: "Condición IVA del receptor no mapeada para AFIP." }, { status: 409 });
+        const doc = docTipoReceptor(clienteCuit);
+        if (tipoTal!.letra === "A" && doc.tipo !== 80) return NextResponse.json({ ok: false, error: "Factura A requiere CUIT válido del receptor." }, { status: 409 });
+        const esFacturaC = tipoTal!.letra === "C";
+        const { neto, ivaArr, impIVA, total } = desglosarFactura({ items, tot, conv, esFacturaC });
+        let monId = "PES", monCotiz = 1, canMis: string | null = null;
+        if (facturaMoneda === "USD") { monId = "DOL"; canMis = "S"; try { const cz = await callSelector("wsfe-cotizacion&mon=DOL"); monCotiz = Number(cz?.cotiz) || tc || 1; } catch { monCotiz = tc || 1; } }
+        const afipPayload = { ptoVta, cbteTipo, concepto: 1, docTipo: doc.tipo, docNro: doc.nro, neto, iva: ivaArr, impIVA, impTotal: total, monId, monCotiz, canMisMonExt: canMis, condicionIvaReceptorId: condId, esFacturaC };
+        const afipMeta = { ref, pref, letraFac, ptoVta, cliente_id, revendedor_id, receptorFinalId, totalUsd: Number(tot.total || 0), netoUsd: Number(tot.neto || tot.total || 0), facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null };
+        const comp = (await sql`
+          INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, revendedor_id, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte, afip_payload, afip_meta)
+          VALUES ('factura','borrador',NULL,${letraFac},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null}, ${JSON.stringify(afipPayload)}::jsonb, ${JSON.stringify(afipMeta)}::jsonb)
+          RETURNING id, token` as any[])[0];
+        await insertItems(comp.id);
+        await sql`UPDATE fv_pedidos SET factura_estado='borrador', factura_borrador_id=${comp.id}, factura_token=${comp.token} WHERE numero=${ref}`;
+        return NextResponse.json({ ok: true, borrador: true, comprobante_id: comp.id, factura_token: comp.token, letra: letraFac, punto_venta: ptoVta, moneda: facturaMoneda, montos: { neto, iva: ivaArr.map((x) => ({ id: x.id, base: x.base, importe: x.importe })), imp_iva: impIVA, total } });
       }
-      await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_token=${comp.token} WHERE numero=${ref}`;
-      // Cta cte cliente: la factura genera la deuda (debe).
+
+      // ── MANUAL (sin ARCA): se finaliza directo (proforma). Mueve cta cte + comisión. ──
+      const n = await numeroDesdeTalonario(sql, talId);
+      if (!n) return NextResponse.json({ ok: false, error: "talonario inválido" }, { status: 400 });
+      const facturaNum = n.numero; const letraM = n.letra || letraFac;
+      const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, Number(tot.total || 0), Number(tot.neto || tot.total || 0));
+      const comp = (await sql`
+        INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, revendedor_id, comision_pct, comision_monto, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte)
+        VALUES ('factura','proforma',${facturaNum},${letraM},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, ${comisionPct || null}, ${comisionMonto || null}, now(), ${conv(tot.neto || tot.total || 0)}, ${conv(tot.total || 0)}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null})
+        RETURNING id, token` as any[])[0];
+      await insertItems(comp.id);
+      await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_token=${comp.token}, factura_estado='emitida' WHERE numero=${ref}`;
       if (cliente_id && Number(tot.total) > 0) {
-        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum,
-          comprobante: facturaNum, pedido_ref: ref, debe: +Number(tot.total).toFixed(2), uniq: `fac:${facturaNum}` });
+        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +Number(tot.total).toFixed(2), uniq: `fac:${facturaNum}` });
       }
-      return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: comp.token });
+      if (revendedor_id && comisionMonto > 0) {
+        await movCtaCte(sql, { ambito: "cliente", cliente_id: revendedor_id, fecha: hoy(), concepto: `Comisión ${comisionPct}% s/ ${facturaNum}${receptorFinalId ? " (venta a cliente)" : ""}`, comprobante: facturaNum, pedido_ref: ref, haber: comisionMonto, detalle: { tipo: "comision_revendedor", pct: comisionPct, factura: facturaNum }, uniq: `com:${facturaNum}` });
+      }
+      return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: comp.token, comision_monto: comisionMonto, comision_pct: comisionPct });
+    }
+
+    // ── PASO 2: AUTORIZAR Y ENVIAR A ARCA (emite el CAE sobre el borrador del paso 1). ──
+    if (b.accion === "autorizar_arca") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const fvr = (await sql`SELECT factura_numero, factura_borrador_id FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!fvr) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      if (fvr.factura_numero) return NextResponse.json({ ok: true, factura_numero: fvr.factura_numero, ya: true });
+      if (!fvr.factura_borrador_id) return NextResponse.json({ ok: false, error: "No hay un borrador de factura para autorizar. Facturá primero en gestión." }, { status: 409 });
+      const cb = (await sql`SELECT id, token, total, moneda, afip_payload, afip_meta, estado FROM fg_comprobantes WHERE id=${fvr.factura_borrador_id} LIMIT 1` as any[])[0];
+      if (!cb || cb.estado !== "borrador") return NextResponse.json({ ok: false, error: "El borrador ya no está disponible (¿ya autorizado?)." }, { status: 409 });
+      const payload = cb.afip_payload || {}; const meta = cb.afip_meta || {};
+      // Cotización del día + fecha (se resuelven al momento real de emitir).
+      let monCotiz = Number(payload.monCotiz) || 1;
+      if (payload.monId === "DOL") { try { const cz = await callSelector("wsfe-cotizacion&mon=DOL"); monCotiz = Number(cz?.cotiz) || monCotiz; } catch { /* usa la guardada */ } }
+      const d = new Date(); const p2 = (n: number) => String(n).padStart(2, "0");
+      const yyyymmdd = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}`;
+      const fechaISO = `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+      let res: any;
+      try {
+        res = await callSelector("wsfe-emitir", { ...payload, monCotiz, fecha: yyyymmdd, fechaISO });
+      } catch (e: any) {
+        return NextResponse.json({ ok: false, arca_caida: true, error: "No se pudo conectar con ARCA: " + e.message }, { status: 502 });
+      }
+      if (!res?.ok) {
+        // El borrador queda intacto. Distinguimos:
+        //  · CAÍDA (fault / sin afip / red): ARCA no respondió → reintentar más tarde sirve.
+        //  · RECHAZO (afip.tipo error|rechazo, con Errores/Observaciones y CÓDIGO): hay un dato a corregir.
+        const af = res?.afip || null;
+        const caida = !af || af.tipo === "fault";
+        return NextResponse.json({
+          ok: false,
+          arca_caida: caida,
+          arca_rechazo: !caida,
+          afip: af,                                   // { tipo, errores:[{code,msg}], observaciones:[{code,msg}], resultado }
+          errores: af?.errores || [],
+          observaciones: af?.observaciones || [],
+          error: res?.error || "ARCA no autorizó el comprobante",
+        }, { status: 502 });
+      }
+      const ptoVta = Number(meta.ptoVta) || Number(payload.ptoVta) || 1;
+      const facturaNum = `${meta.pref || "FA"} ${meta.letraFac || cb.letra || ""} ${String(ptoVta).padStart(5, "0")}-${String(res.cbteNro).padStart(8, "0")}`.replace(/\s+/g, " ").trim();
+      await sql`UPDATE fg_comprobantes SET estado='emitida', numero=${facturaNum}, afip_cae=${res.cae || null}, afip_cae_vto=${res.caeVto || null}, afip_qr=${res.qr || null} WHERE id=${cb.id}`;
+      await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_estado='emitida' WHERE numero=${ref}`;
+      // Recién ahora (CAE válido) se genera la deuda en cta cte y la comisión del revendedor.
+      const totalUsd = Number(meta.totalUsd) || 0; const netoUsd = Number(meta.netoUsd) || totalUsd;
+      const cliente_id = meta.cliente_id || null; const revendedor_id = meta.revendedor_id || null; const receptorFinalId = Number(meta.receptorFinalId) || 0;
+      if (cliente_id && totalUsd > 0) {
+        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +totalUsd.toFixed(2), uniq: `fac:${facturaNum}` });
+      }
+      const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, totalUsd, netoUsd);
+      if (revendedor_id && comisionMonto > 0) {
+        await sql`UPDATE fg_comprobantes SET comision_pct=${comisionPct}, comision_monto=${comisionMonto} WHERE id=${cb.id}`.catch(() => {});
+        await movCtaCte(sql, { ambito: "cliente", cliente_id: revendedor_id, fecha: hoy(), concepto: `Comisión ${comisionPct}% s/ ${facturaNum}${receptorFinalId ? " (venta a cliente)" : ""}`, comprobante: facturaNum, pedido_ref: ref, haber: comisionMonto, detalle: { tipo: "comision_revendedor", pct: comisionPct, factura: facturaNum }, uniq: `com:${facturaNum}` });
+      }
+      return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: cb.token, cae: res.cae, cae_vto: res.caeVto, comision_monto: comisionMonto, comision_pct: comisionPct });
     }
     return NextResponse.json({ ok: false, error: "acción inválida" }, { status: 400 });
   } catch (e: any) {
