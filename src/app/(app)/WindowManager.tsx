@@ -6,14 +6,15 @@ import ComprasClient from "./compras/ComprasClient";
 import TransportistasClient from "./transportistas/TransportistasClient";
 import VentasClient from "./ventas/VentasClient";
 import ProductosClient from "./productos/ProductosClient";
+import StockClient from "./productos/StockClient";
 import CotizadorEmbed from "./cotizadores/CotizadorEmbed";
 import ConfigClient from "./config/ConfigClient";
 
-export type WinKey = "clientes" | "proveedores" | "ventas" | "productos" | "compras" | "transportistas" | "cot-bomba" | "cot-fv" | "presup-edit" | "config";
+export type WinKey = "clientes" | "proveedores" | "ventas" | "productos" | "stock" | "compras" | "transportistas" | "cot-bomba" | "cot-fv" | "presup-edit" | "config";
 type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean; payload?: any };
 
 const TITULOS: Record<WinKey, string> = {
-  clientes: "👥 Clientes / CRM", proveedores: "🏭 Proveedores", ventas: "🧾 Ventas / Presupuestos", productos: "📦 Productos", compras: "🛒 Compras / Pedido a proveedor", transportistas: "🚚 Transportistas",
+  clientes: "👥 Clientes / CRM", proveedores: "🏭 Proveedores", ventas: "🧾 Ventas / Presupuestos", productos: "📦 Productos", stock: "📦 Stock / Depósito", compras: "🛒 Compras / Pedido a proveedor", transportistas: "🚚 Transportistas",
   "cot-bomba": "🔧 Cotizador de bombas", "cot-fv": "☀️ Cotizador fotovoltaico",
   "presup-edit": "✏️ Editar presupuesto",
   config: "⚙️ Configuración",
@@ -29,6 +30,7 @@ function Body({ k, payload }: { k: WinKey; payload?: any }) {
   if (k === "transportistas") return <TransportistasClient />;
   if (k === "ventas") return <VentasClient />;
   if (k === "productos") return <ProductosClient />;
+  if (k === "stock") return <StockClient />;
   if (k === "config") return <ConfigClient />;
   if (k === "presup-edit") return (
     <div className="flex flex-col h-full">

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, Fragment } from "react";
 import { useRouter } from "next/navigation";
 import { useWindows, WinKey } from "./WindowManager";
 
@@ -21,7 +21,20 @@ export default function TopNav() {
   const router = useRouter();
   const { open } = useWindows();
   const [esOwner, setEsOwner] = useState(false);
+  const [stockBajo, setStockBajo] = useState(0);
   useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setEsOwner(!!(d.ok && d.es_owner))).catch(() => {}); }, []);
+
+  // Stock bajo: poll del contador (sólo badge, sin sonido).
+  useEffect(() => {
+    let alive = true;
+    const tick = async () => {
+      try { const d = await (await fetch("/api/stock?count=1")).json(); if (alive && d.ok) setStockBajo(d.count || 0); } catch {}
+    };
+    tick();
+    const iv = setInterval(tick, 60000);
+    return () => { alive = false; clearInterval(iv); };
+  }, []);
+
   async function salir() { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }
 
   // "Cotizar FV" abre el cotizador FV en modo INTERNO, EMBEBIDO en una ventana de gestión
@@ -43,11 +56,21 @@ export default function TopNav() {
       </div>
       <nav className="flex gap-1 px-3 py-2 overflow-x-auto">
         {MODULOS.map((m) => (
-          <button key={m.key} onClick={() => (m.key === "cot-fv" ? abrirCotizarFv() : open(m.key))}
+          <Fragment key={m.key}>
+          <button onClick={() => (m.key === "cot-fv" ? abrirCotizarFv() : open(m.key))}
             className="flex flex-col items-center justify-center min-w-[80px] px-2 py-2 rounded-lg text-gray-600 hover:bg-febo-azul/10 hover:text-febo-azul transition">
             <span className="text-2xl">{m.icon}</span>
             <span className="text-[11px] mt-0.5 font-semibold whitespace-nowrap">{m.label}</span>
           </button>
+          {m.key === "productos" && (
+            <button onClick={() => open("stock")} title="Stock del depósito. El número = productos bajo el mínimo."
+              className={"relative flex flex-col items-center justify-center min-w-[80px] px-2 py-2 rounded-lg transition " + (stockBajo > 0 ? "bg-amber-50 text-amber-700" : "text-gray-600 hover:bg-febo-azul/10 hover:text-febo-azul")}>
+              <span className="text-2xl">🏬</span>
+              <span className="text-[11px] mt-0.5 font-semibold whitespace-nowrap">Stock</span>
+              {stockBajo > 0 && <span className="absolute top-1 right-2 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">{stockBajo}</span>}
+            </button>
+          )}
+          </Fragment>
         ))}
         {SOON.map((m) => (
           <div key={m.label} className="flex flex-col items-center justify-center min-w-[78px] px-2 py-2 rounded-lg text-gray-300 cursor-default">
