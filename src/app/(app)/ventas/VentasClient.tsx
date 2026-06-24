@@ -487,7 +487,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [monedaInit, setMonedaInit] = useState(false);
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => {
     if (d.ok) {
-      setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || "");
+      // Email del cliente: CRM (fuente única, resuelto por cliente_id) tiene prioridad sobre la copia del payload.
+      setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.cliente?.email || d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || "");
       // Datos de venta: lo guardado en el pedido o, si está vacío, lo que vino del presupuesto FV (condiciones).
       const dvp = d.pedido.payload?.datos_venta || {};
       const cond = d.pedido.payload?.condiciones || {};
@@ -690,7 +691,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               {pl.presupuesto_numero && <Cell l="Origen" v={<span className="font-mono font-bold text-febo-azul bg-blue-50 px-2 rounded">{pl.presupuesto_numero}</span>} />}
               <Cell l="Nombre" v={nombreCli} />
               {rev.empresa && <Cell l="Empresa" v={rev.empresa} />}
-              <Cell l="WhatsApp" v={rev.whatsapp || rev.wa || "—"} />
+              <Cell l="WhatsApp" v={cli.whatsapp || rev.whatsapp || rev.wa || "—"} />
               <div>
                 <div className="text-[10px] uppercase text-gray-400">Email {!emailCli && <span className="text-red-500">· falta (cargalo en la ficha del cliente / CRM)</span>}</div>
                 <div className="text-gray-800">{emailCli || "—"}</div>
