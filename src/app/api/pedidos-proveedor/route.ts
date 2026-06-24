@@ -70,3 +70,19 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "acción inválida" }, { status: 400 });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
+
+// POST → "Cargar a Compras": crea un pedido a proveedor (pendiente) desde el detalle del pedido.
+// El envío real al proveedor se hace desde el módulo Compras. Autocontenido.
+export async function POST(req: NextRequest) {
+  try {
+    const sql = getDb(); await ensure(sql);
+    const b = await req.json();
+    const items = (b.items || []).filter((it: any) => it.codigo && Number(it.cantidad) > 0);
+    if (!b.proveedor || !items.length) return NextResponse.json({ ok: false, error: "proveedor e ítems requeridos" }, { status: 400 });
+    const total = items.reduce((a: number, it: any) => a + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 1), 0);
+    const ccStr = (Array.isArray(b.cc) ? b.cc : []).map((x: any) => String(x || "").trim()).filter((x: string) => /\S+@\S+\.\S+/.test(x)).join(", ") || null;
+    const r = await sql`INSERT INTO pedidos_proveedores (proveedor, fv_numero, items, total_costo_usd, email_destinatario, mensaje, cc_emails, estado, origen, creado_por)
+      VALUES (${b.proveedor}, ${b.fv_numero || null}, ${JSON.stringify(items)}::jsonb, ${+total.toFixed(2)}, ${b.email_destinatario || null}, ${b.mensaje || null}, ${ccStr}, 'pendiente', ${b.origen || "compra"}, ${b.creado_por || null}) RETURNING id` as any[];
+    return NextResponse.json({ ok: true, id: r[0].id, estado: "pendiente" });
+  } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
+}
