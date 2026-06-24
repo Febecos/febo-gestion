@@ -19,6 +19,8 @@ async function ensure(sql: any) {
   )`;
   await sql`ALTER TABLE fg_compras ADD COLUMN IF NOT EXISTS creado_por TEXT`.catch(() => {});
   await sql`ALTER TABLE fg_compras ADD COLUMN IF NOT EXISTS enviado_at TIMESTAMPTZ`.catch(() => {});
+  await sql`ALTER TABLE fg_compras ADD COLUMN IF NOT EXISTS recepcion JSONB`.catch(() => {});
+  await sql`ALTER TABLE fg_compras ADD COLUMN IF NOT EXISTS remito_archivo JSONB`.catch(() => {});
 }
 
 export async function GET(req: NextRequest) {
@@ -81,17 +83,30 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (accion === "recibir") {
-      if (c.estado === "recibido") return NextResponse.json({ ok: false, error: "ya estaba recibida" }, { status: 409 });
+      if (c.estado === "recibido" || c.estado === "recibido_dif") return NextResponse.json({ ok: false, error: "ya estaba recibida" }, { status: 409 });
+      // recepcion: [{codigo, cant_recibida}] (checklist ítem por ítem). Si no viene, recibe todo.
+      const recep = Array.isArray(body.recepcion) ? body.recepcion : null;
+      const recMap: Record<string, number> = {};
+      if (recep) for (const r of recep) recMap[r.codigo] = Number(r.cant_recibida) || 0;
+      const remito = body.remito && body.remito.b64 ? { nombre: body.remito.nombre, b64: body.remito.b64, tipo: body.remito.tipo || "application/octet-stream", fecha: new Date().toISOString() } : null;
+      let conDif = false;
+      const detalle: any[] = [];
       const pool = new Pool({ connectionString: process.env.DATABASE_URL });
       try {
         await pool.query(`ALTER TABLE fg_productos ADD COLUMN IF NOT EXISTS stock NUMERIC`).catch(() => {});
         for (const it of (c.items || [])) {
-          const cant = Number(it.cantidad) || 0; if (!it.codigo || cant <= 0) continue;
-          await pool.query(`UPDATE fg_productos SET stock = COALESCE(stock,0) + $1 WHERE codigo = $2`, [cant, it.codigo]);
+          const ped = Number(it.cantidad) || 0;
+          const rec = recep ? (recMap[it.codigo] ?? 0) : ped;
+          if (rec !== ped) conDif = true;
+          detalle.push({ codigo: it.codigo, descripcion: it.descripcion, cant_pedida: ped, cant_recibida: rec });
+          if (it.codigo && rec > 0) await pool.query(`UPDATE fg_productos SET stock = COALESCE(stock,0) + $1 WHERE codigo = $2`, [rec, it.codigo]);
         }
       } finally { await pool.end(); }
-      await sql`UPDATE fg_compras SET estado='recibido', recibido_at=now() WHERE id=${id}`;
-      return NextResponse.json({ ok: true });
+      const nuevoEstado = conDif ? "recibido_dif" : "recibido";
+      await sql`UPDATE fg_compras SET estado=${nuevoEstado}, recibido_at=now(),
+        recepcion=${JSON.stringify({ items: detalle, con_diferencia: conDif, fecha: new Date().toISOString() })}::jsonb,
+        remito_archivo=${remito ? JSON.stringify(remito) : null}::jsonb WHERE id=${id}`;
+      return NextResponse.json({ ok: true, estado: nuevoEstado, con_diferencia: conDif });
     }
 
     if (accion === "editar") {
