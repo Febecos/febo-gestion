@@ -486,7 +486,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   useEffect(() => { fetch("/api/talonarios?facturacion=1").then((r) => r.json()).then((d) => { if (d.ok) { setTals(d.talonarios); const def = d.talonarios.find((t: any) => t.defecto) || d.talonarios[0]; if (def) setTalSel(String(def.id)); } }).catch(() => {}); }, []);
   const [tab, setTab] = useState<"cliente" | "prov" | "venta" | "envio" | "pago" | "factura">("cliente");
   const [monedaInit, setMonedaInit] = useState(false);
-  const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then((r) => r.json()).then((d) => {
+  const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then(async (r) => { const t = await r.text(); return t ? JSON.parse(t) : { ok: false, error: `El servidor no respondió (HTTP ${r.status})` }; }).then((d) => {
     if (d.ok) {
       // Email del cliente: CRM (fuente única, resuelto por cliente_id) tiene prioridad sobre la copia del payload.
       setPed(d.pedido); setNota(d.pedido.payload?.notas_internas || ""); setEmailCli(d.pedido.cliente?.email || d.pedido.payload?.revendedor?.email || d.pedido.payload?.cliente?.email || "");
@@ -508,7 +508,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
         setMonedaInit(true);
       }
     }
-  }), [refId, monedaInit]);
+  }).catch((e: any) => console.error("[load pedido]", e?.message || e)), [refId, monedaInit]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setEsOwner(!!d.es_owner)).catch(() => {}); }, []);
   // Clientes finales del revendedor + sus % de comisión (para elegir receptor y previsualizar comisión).
@@ -588,7 +588,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     setBusy(true);
     try {
       const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "validar_stock", override }) });
-      const d = await r.json();
+      const _t = await r.text();
+      const d = _t ? JSON.parse(_t) : { ok: false, error: `El servidor no respondió (HTTP ${r.status})${r.status === 504 ? " — timeout" : ""}. Reintentá.` };
       if (d.ok) { await load(); onChanged(); return; }
       const falt = (d.faltantes || []).map((f: any) => `• ${f.codigo} — pedido ${f.pedido}, en stock ${f.stock}`).join("\n");
       if (d.puede_override) {
@@ -602,7 +603,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const accion = async (body: any, msg?: string) => {
     if (msg && !confirm(msg)) return;
     setBusy(true);
-    try { const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const d = await r.json(); if (!d.ok) throw new Error(d.error); await load(); onChanged(); return d; }
+    try { const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); const _t = await r.text(); const d = _t ? JSON.parse(_t) : { ok: false, error: `El servidor no respondió (HTTP ${r.status})${r.status === 504 ? " — timeout" : ""}. Reintentá.` }; if (!d.ok) throw new Error(d.error); await load(); onChanged(); return d; }
     catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
   };
   // Revisión previa (dry-run): muestra letra, condición IVA, neto, IVA, total SIN emitir CAE.
@@ -734,8 +735,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   const ivaDet = Array.isArray(tot.iva_detalle) ? tot.iva_detalle.filter((d: any) => Number(d.monto) > 0) : [];
                   // Total = neto (con descuento) + IVA discriminado, redondeando por línea (igual que el PDF).
                   const _totNI = (v(tot.neto) || 0) + (ivaDet.length ? ivaDet.reduce((a: number, d: any) => a + (v(d.monto) || 0), 0) : (v(tot.iva) || 0));
-                  // Fallback: pedidos con total cargado pero neto=0 (ej. kit de bombas con precio global) → no mostrar 0.
-                  const totPesos = _totNI > 0 ? _totNI : (v(Number(tot.total) || 0) || 0);
+                  // Fallback: pedidos con total cargado pero neto=0 (ej. kit de bombas con precio global).
+                  // OJO: si tot.moneda ya es ARS, tot.total está en pesos → NO aplicar v() (que multiplica por TC).
+                  const _totGlobal = String(tot.moneda || "").toUpperCase() === "ARS" ? (Number(tot.total) || 0) : (v(Number(tot.total) || 0) || 0);
+                  const totPesos = _totNI > 0 ? _totNI : _totGlobal;
                   return (<>
                     <tr><td colSpan={4} className="text-right px-2 py-1 text-gray-500">Subtotal s/IVA</td><td className="text-right px-2 py-1">{money(subLista)}</td></tr>
                     {desc > 0 && <tr><td colSpan={4} className="text-right px-2 py-1 text-gray-500">Descuento {tot.descuento_pct || ""}%</td><td className="text-right px-2 py-1 text-rose-600">– {money(desc)}</td></tr>}
