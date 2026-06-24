@@ -97,7 +97,11 @@ export async function GET(req: NextRequest) {
           lr.nombre AS cliente_nombre, NULL AS cliente_apellido, NULL AS cliente_cuit,
           lr.email AS cliente_email, NULL AS cliente_razon_social, lr.telefono AS cliente_telefono,
           lr.pump_codigo AS bomba_codigo, lr.pump_nombre AS bomba_descripcion,
-          lr.precio_ofrecido, lr.precio_publico, lr.descuento_pct,
+          -- ROI: el monto es la inversión calculada (results.totalInvestment, en $), porque
+          -- precio_ofrecido/precio_publico suelen venir null en leads_roi.
+          COALESCE(lr.precio_ofrecido, CASE WHEN lr.results->>'totalInvestment' ~ '^[0-9.]+$'
+                   THEN ROUND((lr.results->>'totalInvestment')::numeric) END) AS precio_ofrecido,
+          lr.precio_publico, lr.descuento_pct,
           NULL AS tipo_precio, NULL AS moneda, NULL AS tc,
           NULL AS revendedor_nombre, NULL AS revendedor_email, NULL AS revendedor_token, NULL AS public_token,
           lr.created_at, NULL AS vendedor, NULL AS vendedor_email,
