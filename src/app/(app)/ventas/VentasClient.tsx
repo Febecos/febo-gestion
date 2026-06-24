@@ -7,6 +7,16 @@ import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 // Presupuestos = tabla real `presupuestos` (revendedores/coti). Pedidos = `pedidos`+`fv_pedidos`.
 // Factura/Remito = fg_comprobantes. Pagos = fg_pagos. Proveedor = pedidos_proveedores.
 // Vista/PDF/edición pública en coti.febecos.com (/p/{token}); edición interna embebida con ?rev.
+// Parseo de respuestas a prueba de balas: si el server devuelve vacío (timeout/crash) o algo
+// que no es JSON, NUNCA tira "Unexpected end of JSON input" → devuelve {ok:false, error claro}.
+// Aislado: solo cambia el parseo, no toca ninguna lógica de negocio.
+async function safeJson(r: Response): Promise<any> {
+  let t = "";
+  try { t = await r.text(); } catch { /* body ilegible */ }
+  if (!t || !t.trim()) return { ok: false, error: `El servidor no respondió (HTTP ${r.status}${r.status === 504 ? " — timeout, reintentá" : ""}).` };
+  try { return JSON.parse(t); } catch { return { ok: false, error: `Respuesta inválida del servidor (HTTP ${r.status}).` }; }
+}
+
 const COTI = "https://coti.febecos.com";
 // Link al presupuesto público según tipo: FV usa el visor FV; bombas usa coti.
 const linkPresup = (tipo: string, token: string) =>
@@ -76,7 +86,7 @@ function ComisionesInternos() {
   const load = useCallback(() => {
     setLoading(true);
     fetch(`/api/comisiones-internos?desde=${desde}&hasta=${hasta}`)
-      .then((r) => r.json()).then((d) => { setData(d.ok ? d : null); setLoading(false); })
+      .then(safeJson).then((d) => { setData(d.ok ? d : null); setLoading(false); })
       .catch(() => setLoading(false));
   }, [desde, hasta]);
   useEffect(() => { load(); }, [load]);
@@ -152,7 +162,7 @@ function Presupuestos() {
   const abrirConfirmar = async (r: Presup) => {
     try {
       const res = await fetch("/api/presupuestos?detalle=" + encodeURIComponent(r.numero));
-      const d = await res.json();
+      const d = await safeJson(res);
       if (!d.ok) { alert("Error: " + (d.error || "no se pudo leer el detalle")); return; }
       setConfFor({ p: d.presupuesto, items: d.items || [] });
     } catch (e: any) { alert("Error: " + e.message); }
@@ -162,7 +172,7 @@ function Presupuestos() {
     setLoading(true);
     try {
       const r = await fetch("/api/presupuestos?" + new URLSearchParams({ tipo, q, estado, vendedor }));
-      const d = await r.json();
+      const d = await safeJson(r);
       if (d.ok) { setRows(d.presupuestos); if (d.estados) setEstados(d.estados); if (d.vendedores) setVendedores(d.vendedores); }
     } finally { setLoading(false); }
   }, [tipo, q, estado, vendedor]);
@@ -171,7 +181,7 @@ function Presupuestos() {
   // Abre el visor/cotizador FV en modo INTERNO (con todos los botones): pide a gestión
   // un token efímero (server↔server) y lo pasa en el hash que fv lee como sesión admin.
   async function tokenInterno(): Promise<string> {
-    try { const r = await fetch("/api/fv-session"); const d = await r.json(); if (d.ok && d.token) return "#admin_jwt=" + d.token; } catch {}
+    try { const r = await fetch("/api/fv-session"); const d = await safeJson(r); if (d.ok && d.token) return "#admin_jwt=" + d.token; } catch {}
     return "";
   }
   async function abrirFvInterno(token: string, numero: string, cliente?: string) {
@@ -282,7 +292,7 @@ function ConfirmarClienteModal({ data, onClose, onDone }: { data: { p: any; item
     setBusy(true);
     try {
       const r = await fetch("/api/confirmar-cliente", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numero: p.numero, force_sin_stock }) });
-      const d = await r.json();
+      const d = await safeJson(r);
       // Sin stock en el depósito → cartel para confirmar pedido SIN STOCK (pedir equipo al proveedor).
       if (!d.ok && d.sin_stock) {
         const falt = (d.faltantes || []).map((f: any) => `• ${f.codigo}${f.marca ? " (" + f.marca + ")" : ""} — pedido ${f.pedido}, en stock ${f.stock}`).join("\n");
@@ -361,7 +371,7 @@ function EnviarMailRev({ p, onClose }: { p: any; onClose: () => void }) {
     setBusy(true);
     try {
       const r = await fetch("/api/presupuesto-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numero: p.numero, email: email.trim(), link, tipo: dest, nombre, mensaje, pdf_b64: pdf?.b64 || null, pdf_nombre: pdf?.nombre || null }) });
-      const d = await r.json(); if (!d.ok) throw new Error(d.error);
+      const d = await safeJson(r); if (!d.ok) throw new Error(d.error);
       alert("✅ Email enviado a " + email.trim()); onClose();
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
   };
@@ -418,7 +428,7 @@ function Pedidos() {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
   const { openFicha } = useWindows();
-  const load = () => fetch("/api/pedidos").then((r) => r.json()).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); });
+  const load = () => fetch("/api/pedidos").then(safeJson).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); });
   useEffect(() => { load(); }, []);
   // Refrescar al volver a la ventana (ej. tras generar un pedido en el cotizador)
   useEffect(() => { const onFocus = () => load(); window.addEventListener("focus", onFocus); return () => window.removeEventListener("focus", onFocus); }, []);
@@ -483,7 +493,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [receptorId, setReceptorId] = useState<number>(0);
   const [finales, setFinales] = useState<any[]>([]);
   const [revCom, setRevCom] = useState<{ propia: number; revende: number }>({ propia: 0, revende: 0 });
-  useEffect(() => { fetch("/api/talonarios?facturacion=1").then((r) => r.json()).then((d) => { if (d.ok) { setTals(d.talonarios); const def = d.talonarios.find((t: any) => t.defecto) || d.talonarios[0]; if (def) setTalSel(String(def.id)); } }).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/talonarios?facturacion=1").then(safeJson).then((d) => { if (d.ok) { setTals(d.talonarios); const def = d.talonarios.find((t: any) => t.defecto) || d.talonarios[0]; if (def) setTalSel(String(def.id)); } }).catch(() => {}); }, []);
   const [tab, setTab] = useState<"cliente" | "prov" | "venta" | "envio" | "pago" | "factura">("cliente");
   const [monedaInit, setMonedaInit] = useState(false);
   const load = useCallback(() => fetch("/api/pedidos/" + encodeURIComponent(refId)).then(async (r) => { const t = await r.text(); return t ? JSON.parse(t) : { ok: false, error: `El servidor no respondió (HTTP ${r.status})` }; }).then((d) => {
@@ -510,12 +520,12 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     }
   }).catch((e: any) => console.error("[load pedido]", e?.message || e)), [refId, monedaInit]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setEsOwner(!!d.es_owner)).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/me").then(safeJson).then((d) => setEsOwner(!!d.es_owner)).catch(() => {}); }, []);
   // Clientes finales del revendedor + sus % de comisión (para elegir receptor y previsualizar comisión).
   useEffect(() => {
     const id = ped?.cliente?.id; if (!id) return;
-    fetch(`/api/clientes/${id}/finales`).then((r) => r.json()).then((d) => setFinales(d.ok ? d.finales : [])).catch(() => {});
-    fetch(`/api/clientes/${id}`).then((r) => r.json()).then((d) => { if (d.ok && d.cliente) setRevCom({ propia: Number(d.admin_descuento_pct ?? d.cliente.comision_propia_pct) || 0, revende: Number(d.cliente.comision_revende_pct) || 0 }); }).catch(() => {});
+    fetch(`/api/clientes/${id}/finales`).then(safeJson).then((d) => setFinales(d.ok ? d.finales : [])).catch(() => {});
+    fetch(`/api/clientes/${id}`).then(safeJson).then((d) => { if (d.ok && d.cliente) setRevCom({ propia: Number(d.admin_descuento_pct ?? d.cliente.comision_propia_pct) || 0, revende: Number(d.cliente.comision_revende_pct) || 0 }); }).catch(() => {});
   }, [ped?.cliente?.id]);
   if (!ped) return null;
   const pl = ped.payload || {}; const items = pl.items || []; const tot = pl.totales || {};
@@ -612,7 +622,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     try {
       const tcUsar = Number(facTc) || dolar || 0;
       const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "facturar_preview", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: facMoneda, tc: facMoneda === "ARS" ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined }) });
-      const d = await r.json(); if (!d.ok) throw new Error(d.error);
+      const d = await safeJson(r); if (!d.ok) throw new Error(d.error);
       setPreview(d);
       if (d.arca?.persistida) { await load(); onChanged(); } // ARCA cargó la condición fiscal → refrescar ficha
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
@@ -630,7 +640,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     setBusy(true);
     try {
       const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "revertir" }) });
-      const d = await r.json();
+      const d = await safeJson(r);
       if (!d.ok) throw new Error(d.error);
       onChanged(); onClose();
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
@@ -839,7 +849,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               try {
                 let monto = 0;
                 if (/pdf/i.test(a.tipo || "")) {
-                  const d = await (await fetch("/api/parse-proforma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: a.b64, tipo: a.tipo }) })).json();
+                  const d = await safeJson(await fetch("/api/parse-proforma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: a.b64, tipo: a.tipo }) }));
                   monto = Number(d?.monto?.monto) || 0;
                 } else if (/image/i.test(a.tipo || "")) {
                   const T: any = await import("tesseract.js");
@@ -893,7 +903,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             const sel = (prov: string, idx: number) => provSel[prov]?.[idx] !== false; // default checked
             const toggle = (prov: string, idx: number) => setProvSel({ ...provSel, [prov]: { ...(provSel[prov] || {}), [idx]: !sel(prov, idx) } });
             const desbloquear = async (prov: string) => {
-              try { const d = await (await fetch("/api/me")).json(); if (d.ok && d.es_owner) { setUnlockedProv((p) => ({ ...p, [prov]: true })); } else alert("🔒 Solo el administrador (owner) puede desbloquear para re-enviar ítems ya pedidos."); }
+              try { const d = await safeJson(await fetch("/api/me")); if (d.ok && d.es_owner) { setUnlockedProv((p) => ({ ...p, [prov]: true })); } else alert("🔒 Solo el administrador (owner) puede desbloquear para re-enviar ítems ya pedidos."); }
               catch { alert("No se pudo validar el permiso."); }
             };
             // Carga los ítems elegidos a Compras → Pedidos a proveedores (PENDIENTE), identificados
@@ -906,7 +916,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               setBusy(true);
               try {
                 const r = await fetch("/api/pedidos-proveedor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proveedor: prov, fv_numero: refId, email_destinatario: info.email || null, mensaje: info.mensaje || null, origen: "fv", items: elegidos.map((it) => ({ codigo: it.codigo, descripcion: it.descripcion, cantidad: it.cantidad, costo_usd: it.costo_usd })) }) });
-                const d = await r.json(); if (!d.ok) throw new Error(d.error);
+                const d = await safeJson(r); if (!d.ok) throw new Error(d.error);
                 alert(`📥 Cargado a Compras: ${elegidos.length} ítem(s) de ${prov} (pendiente${d.id ? " #" + d.id : ""}).\n\nCompletá el envío desde Compras → Pedidos a proveedores.`);
                 await load();
               } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
@@ -1177,7 +1187,7 @@ function AvisarPagoModal({ refId, defaultEmail, onClose, onDone }: { refId: stri
     setBusy(true);
     try {
       const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "avisar_pago", email: email.trim() }) });
-      const d = await r.json(); if (!d.ok) throw new Error(d.error);
+      const d = await safeJson(r); if (!d.ok) throw new Error(d.error);
       const av = d.aviso_cliente;
       if (av?.ok) alert("✅ Pedido marcado como pagado y aviso de pago OK enviado a " + email.trim());
       else alert("✅ Pedido marcado como pagado, pero el email NO salió:\n" + (av?.error || "error") + "\n\nRevisá el email.");
@@ -1237,7 +1247,7 @@ function AutorizarArcaModal({ refId, onClose, onDone }: { refId: string; onClose
     const tick = setInterval(() => setFase((f) => Math.min(f + 1, PASOS.length - 1)), 900);
     try {
       const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "autorizar_arca" }) });
-      const d = await r.json();
+      const d = await safeJson(r);
       clearInterval(tick);
       if (d.ok) { setFase(PASOS.length); setRes(d); setEstado("ok"); }
       else {
@@ -1387,7 +1397,7 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(0);
-  const cargar = () => { setLoading(true); fetch("/api/ventas?tipo=" + tipo).then((r) => r.json()).then((d) => { setRows(d.ok ? d.comprobantes : []); setLoading(false); }); };
+  const cargar = () => { setLoading(true); fetch("/api/ventas?tipo=" + tipo).then(safeJson).then((d) => { setRows(d.ok ? d.comprobantes : []); setLoading(false); }); };
   useEffect(() => { cargar(); }, [tipo]);
   const emitirNota = async (c: any, clase: "nota_credito" | "nota_debito") => {
     const nom = clase === "nota_credito" ? "Nota de Crédito" : "Nota de Débito";
@@ -1396,7 +1406,7 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
     setBusy(c.id);
     try {
       const r = await fetch(`/api/ventas/${c.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: clase, motivo }) });
-      const d = await r.json();
+      const d = await safeJson(r);
       if (d.ok) { alert(`✅ ${nom} emitida: ${d.numero}\nCAE: ${d.cae}`); if (d.token) window.open(`/p/${d.token}?admin=1`, "_blank"); cargar(); }
       else alert("⚠️ " + (d.error || "No se pudo emitir"));
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(0); }
@@ -1430,7 +1440,7 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
 // ---------- PAGOS (fg_pagos) ----------
 function Pagos() {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
-  useEffect(() => { fetch("/api/pagos").then((r) => r.json()).then((d) => { setRows(d.ok ? d.pagos : []); setLoading(false); }); }, []);
+  useEffect(() => { fetch("/api/pagos").then(safeJson).then((d) => { setRows(d.ok ? d.pagos : []); setLoading(false); }); }, []);
   return (
     <Tabla loading={loading} count={rows.length} unidad="pagos"
       cols={["Comprobante", "Cliente", "Medio", "Fecha", "Monto"]} vacio="Todavía no hay pagos registrados.">
@@ -1456,14 +1466,14 @@ function CuentasCorrientes() {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [dolar, setDolar] = useState(0); const [owner, setOwner] = useState(false);
   const [sel, setSel] = useState<{ tipo: string; key: string | number; nombre: string } | null>(null);
-  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?listar=" + amb).then((r) => r.json()).then((d) => { setRows(d.ok ? d.cuentas : []); setDolar(d.dolar || 0); setLoading(false); }); }, [amb]);
+  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?listar=" + amb).then(safeJson).then((d) => { setRows(d.ok ? d.cuentas : []); setDolar(d.dolar || 0); setLoading(false); }); }, [amb]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { fetch("/api/me").then((r) => r.json()).then((d) => setOwner(!!d.es_owner)).catch(() => {}); }, []);
+  useEffect(() => { fetch("/api/me").then(safeJson).then((d) => setOwner(!!d.es_owner)).catch(() => {}); }, []);
   const totalSaldo = rows.reduce((a, r) => a + Number(r.saldo || 0), 0);
   const ars = (usd: number) => dolar > 0 ? ` · $ ${Math.round(usd * dolar).toLocaleString("es-AR")}` : "";
   const resetear = async () => {
     if (!confirm("¿PONER EN CERO toda la cuenta corriente (clientes y proveedores)? Esto borra todos los movimientos. Usar solo después de las pruebas.")) return;
-    const r = await fetch("/api/ctacte?reset=1", { method: "DELETE" }); const d = await r.json();
+    const r = await fetch("/api/ctacte?reset=1", { method: "DELETE" }); const d = await safeJson(r);
     if (d.ok) { alert("✅ Cuenta corriente en cero."); load(); } else alert("Error: " + d.error);
   };
   return (
@@ -1505,7 +1515,7 @@ function CtaCteDetalle({ ambito, keyVal, nombre, onClose }: { ambito: string; ke
   const qs = ambito === "cliente"
     ? "ambito=cliente&cliente_id=" + keyVal
     : (typeof keyVal === "number" ? "ambito=proveedor&proveedor_id=" + keyVal : "ambito=proveedor&proveedor=" + encodeURIComponent(String(keyVal)));
-  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?" + qs).then((r) => r.json()).then((d) => { setMovs(d.ok ? d.movimientos : []); setSaldo(d.saldo || 0); setDolar(d.dolar || 0); setLoading(false); }); }, [qs]);
+  const load = useCallback(() => { setLoading(true); fetch("/api/ctacte?" + qs).then(safeJson).then((d) => { setMovs(d.ok ? d.movimientos : []); setSaldo(d.saldo || 0); setDolar(d.dolar || 0); setLoading(false); }); }, [qs]);
   useEffect(() => { load(); }, [load]);
   // Pesos por movimiento al TC pactado del comprobante (factura) o del pago; si no, dólar del día.
   const tcDe = (m: any) => Number(m.comp_tc) || Number(m.detalle?.tc) || dolar || 0;
@@ -1582,13 +1592,13 @@ function EditarPresupuesto({ id, onClose, onSaved }: { id: number; onClose: () =
   const [saving, setSaving] = useState(false);
   const [busq, setBusq] = useState(""); const [sug, setSug] = useState<any[]>([]);
   useEffect(() => {
-    fetch("/api/presupuestos/" + id).then((r) => r.json()).then((d) => {
+    fetch("/api/presupuestos/" + id).then(safeJson).then((d) => {
       if (d.ok) { const x = d.presupuesto; setP(x); setF({ descuento_pct: x.descuento_pct ?? "", precio_ofrecido: x.precio_ofrecido ?? "", estado: x.estado || "", cliente_nombre: [x.cliente_nombre, x.cliente_apellido].filter(Boolean).join(" ") || "", cliente_cuit: x.cliente_cuit || "", cliente_email: x.cliente_email || "", cliente_telefono: x.cliente_telefono || "" }); }
     });
   }, [id]);
-  useEffect(() => { if (busq.length < 2) { setSug([]); return; } const t = setTimeout(async () => { const r = await fetch("/api/clientes?limit=6&q=" + encodeURIComponent(busq)); const d = await r.json(); if (d.ok) setSug(d.clientes); }, 250); return () => clearTimeout(t); }, [busq]);
+  useEffect(() => { if (busq.length < 2) { setSug([]); return; } const t = setTimeout(async () => { const r = await fetch("/api/clientes?limit=6&q=" + encodeURIComponent(busq)); const d = await safeJson(r); if (d.ok) setSug(d.clientes); }, 250); return () => clearTimeout(t); }, [busq]);
   const set = (k: string, v: any) => setF((s: any) => ({ ...s, [k]: v }));
-  async function guardar() { setSaving(true); try { const r = await fetch("/api/presupuestos/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) }); const d = await r.json(); if (!d.ok) throw new Error(d.error); onSaved(); } catch (e: any) { alert("Error: " + e.message); } finally { setSaving(false); } }
+  async function guardar() { setSaving(true); try { const r = await fetch("/api/presupuestos/" + id, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) }); const d = await safeJson(r); if (!d.ok) throw new Error(d.error); onSaved(); } catch (e: any) { alert("Error: " + e.message); } finally { setSaving(false); } }
   const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm w-full"; const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
   if (!p) return null;
   return (
