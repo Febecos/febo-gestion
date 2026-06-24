@@ -67,8 +67,10 @@ export async function descontarStock(sql: any, items: any[], ref: string, usuari
         VALUES (${codigo}, ${r.descripcion || null}, ${-baja}, 'salida', ${"Pedido " + ref + (marca ? " (" + marca + ")" : "")}, ${ref}, ${usuario}, ${nuevo})`;
       need -= baja;
     }
-    await syncCatalogStock(sql, codigo);   // refleja el consumo en el catálogo de bombas
   }
+  // Reflejar el consumo en el catálogo de bombas UNA sola vez (syncCatalogStock recalcula TODO;
+  // llamarlo por ítem hacía N recálculos pesados → timeout en pedidos con muchos ítems/kits).
+  await syncCatalogStock(sql);
 }
 
 // Devuelve el stock descontado por un pedido (inverso de descontarStock). Suma a la primera fila
@@ -88,6 +90,6 @@ export async function restituirStock(sql: any, items: any[], ref: string, usuari
     await sql`UPDATE fg_productos SET stock=${nuevo} WHERE id=${r.id}`;
     await sql`INSERT INTO fg_stock_mov (codigo, descripcion, delta, tipo, motivo, ref, usuario, stock_resultante)
       VALUES (${codigo}, ${r.descripcion || null}, ${need}, 'entrada', ${"Reversa pedido " + ref + (marca ? " (" + marca + ")" : "")}, ${ref}, ${usuario}, ${nuevo})`;
-    await syncCatalogStock(sql, codigo);
   }
+  await syncCatalogStock(sql);   // recálculo del catálogo UNA sola vez (evita N recálculos → timeout)
 }

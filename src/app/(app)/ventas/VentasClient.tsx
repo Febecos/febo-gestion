@@ -732,7 +732,9 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   const subLista = (Number(tot.neto) || 0) + desc;   // subtotal de lista (antes del descuento)
                   const ivaDet = Array.isArray(tot.iva_detalle) ? tot.iva_detalle.filter((d: any) => Number(d.monto) > 0) : [];
                   // Total = neto (con descuento) + IVA discriminado, redondeando por línea (igual que el PDF).
-                  const totPesos = (v(tot.neto) || 0) + (ivaDet.length ? ivaDet.reduce((a: number, d: any) => a + (v(d.monto) || 0), 0) : (v(tot.iva) || 0));
+                  const _totNI = (v(tot.neto) || 0) + (ivaDet.length ? ivaDet.reduce((a: number, d: any) => a + (v(d.monto) || 0), 0) : (v(tot.iva) || 0));
+                  // Fallback: pedidos con total cargado pero neto=0 (ej. kit de bombas con precio global) → no mostrar 0.
+                  const totPesos = _totNI > 0 ? _totNI : (v(Number(tot.total) || 0) || 0);
                   return (<>
                     <tr><td colSpan={4} className="text-right px-2 py-1 text-gray-500">Subtotal s/IVA</td><td className="text-right px-2 py-1">{money(subLista)}</td></tr>
                     {desc > 0 && <tr><td colSpan={4} className="text-right px-2 py-1 text-gray-500">Descuento {tot.descuento_pct || ""}%</td><td className="text-right px-2 py-1 text-rose-600">– {money(desc)}</td></tr>}
