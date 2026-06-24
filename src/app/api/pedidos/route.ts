@@ -23,11 +23,24 @@ export async function GET(_req: NextRequest) {
         SELECT fp.numero, fp.estado, fp.public_token, fp.payload, fp.metodo_pago,
                fp.factura_numero, fp.proveedor_confirmado, fp.pagos_recibidos,
                pr.public_token AS presup_token,
-               pr.cliente_id,
+               c.id AS cliente_id,
                COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,'')) AS cliente_crm
         FROM fv_pedidos fp
         LEFT JOIN presupuestos pr ON pr.numero = fp.payload->>'presupuesto_numero'
-        LEFT JOIN clientes c ON c.id = pr.cliente_id AND (c.crm_eliminado IS NULL OR c.crm_eliminado = false)
+        -- Resolver el cliente del CRM como en Presupuestos: por id, y si el presupuesto no quedó
+        -- enlazado, por cuit/email/teléfono/nombre. Así el 👤 (ficha CRM) aparece igual.
+        LEFT JOIN LATERAL (
+          SELECT cc.id, cc.nombre, cc.razon_social FROM clientes cc
+          WHERE (cc.crm_eliminado IS NULL OR cc.crm_eliminado = false) AND (
+                cc.id = pr.cliente_id
+             OR (coalesce(pr.cliente_cuit,'') <> '' AND cc.cuit = pr.cliente_cuit)
+             OR (coalesce(pr.cliente_email,'') <> '' AND lower(cc.email) = lower(pr.cliente_email))
+             OR (coalesce(pr.cliente_telefono,'') <> '' AND length(regexp_replace(coalesce(cc.whatsapp,''),'\D','','g')) >= 8
+                 AND right(regexp_replace(cc.whatsapp,'\D','','g'),10) = right(regexp_replace(pr.cliente_telefono,'\D','','g'),10))
+             OR (coalesce(pr.cliente_nombre,'') <> '' AND lower(cc.nombre) = lower(pr.cliente_nombre)))
+          ORDER BY (cc.id = pr.cliente_id) DESC, (cc.cuit = pr.cliente_cuit) DESC NULLS LAST, cc.id ASC
+          LIMIT 1
+        ) c ON true
         ORDER BY fp.numero DESC LIMIT 300` as any[];
     } catch { fv = []; }
 
@@ -46,7 +59,10 @@ export async function GET(_req: NextRequest) {
         const tt = pl.totales || {};
         const ivaSum = Array.isArray(tt.iva_detalle) ? tt.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
         const netoN = Number(tt.neto);
-        const totalReal = (!isNaN(netoN) && Array.isArray(tt.iva_detalle) && tt.iva_detalle.length) ? +(netoN + ivaSum).toFixed(2) : (Number(tt.total) || 0);
+        // neto+IVA cuando está poblado (>0); si no (algunos pedidos guardan total pero neto=0),
+        // caer al total guardado para no mostrar "0".
+        const sumNI = (!isNaN(netoN) && Array.isArray(tt.iva_detalle) && tt.iva_detalle.length) ? +(netoN + ivaSum).toFixed(2) : 0;
+        const totalReal = sumNI > 0 ? sumNI : (Number(tt.total) || 0);
         return {
           origen: "fv", ref: p.numero, numero: p.numero,
           cliente_id: p.cliente_id ? Number(p.cliente_id) : null,
