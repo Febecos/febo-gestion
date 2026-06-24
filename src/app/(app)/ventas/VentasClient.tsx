@@ -237,6 +237,7 @@ function Presupuestos() {
                       {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token, r.numero, r.cliente_display)} title="Editar/Operar FV (modo interno)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                     </>}
                   {r.public_token && <a href={linkPresup(r.tipo, r.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
+                  {r.tipo === "roi" && <a href={`/api/roi-pdf?lead_id=${String(r.id).replace("roi-", "")}`} target="_blank" rel="noreferrer" title="Ver / Descargar PDF del análisis ROI" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                   {!["anulado", "pagado", "enviado"].includes((r.estado || "").toLowerCase()) && (
                     tienePedido(r)
                       ? <span title="Ya pasado a pedido" className="inline-flex items-center justify-center w-5 h-5 rounded bg-gray-200 text-gray-400 text-xs font-bold align-middle mr-2">✔</span>
