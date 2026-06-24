@@ -64,18 +64,33 @@ async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
 }
 const hoy = () => new Date().toISOString().slice(0, 10);
 
-// Enriquece los ítems con el `emisor` (Multiradio/Multisolar/Multipoint) buscándolo en
-// fg_productos por código. Así un pedido se puede dividir por emisor (proforma/cuenta).
+// Enriquece los ítems con el `emisor` (Multiradio/Multisolar/Multipoint) y el `costo_usd`
+// buscándolos en fg_productos por código. El costo se usa para mostrar la columna Costo en
+// pedidos sin precio por ítem (ej. kit de bombas con precio global). Aditivo: solo rellena lo
+// que falta, nunca pisa lo que el ítem ya trae.
 async function enrichEmisor(sql: any, items: any[]): Promise<any[]> {
   if (!Array.isArray(items) || !items.length) return items || [];
-  const faltan = items.filter((it) => !it.emisor && it.codigo).map((it) => String(it.codigo));
-  if (!faltan.length) return items;
-  let map: Record<string, string> = {};
-  try {
-    const rows = await sql`SELECT codigo, emisor FROM fg_productos WHERE emisor IS NOT NULL AND codigo = ANY(${faltan})` as any[];
-    for (const r of rows) map[String(r.codigo)] = r.emisor;
-  } catch {}
-  return items.map((it) => (it.emisor || !map[String(it.codigo)]) ? it : { ...it, emisor: map[String(it.codigo)] });
+  const faltanEmi = items.filter((it) => !it.emisor && it.codigo).map((it) => String(it.codigo));
+  const faltanCosto = items.filter((it) => it.costo_usd == null && it.codigo).map((it) => String(it.codigo));
+  if (!faltanEmi.length && !faltanCosto.length) return items;
+  const emi: Record<string, string> = {};
+  const costo: Record<string, number> = {};
+  if (faltanEmi.length) {
+    try { const rows = await sql`SELECT codigo, emisor FROM fg_productos WHERE emisor IS NOT NULL AND codigo = ANY(${faltanEmi})` as any[];
+      for (const r of rows) if (emi[String(r.codigo)] == null) emi[String(r.codigo)] = r.emisor; } catch {}
+  }
+  if (faltanCosto.length) {
+    // Excluir los espejos del catálogo (origen pumps/kit_bomba): queremos el costo del depósito real.
+    try { const rows = await sql`SELECT codigo, costo_usd FROM fg_productos WHERE costo_usd IS NOT NULL AND codigo = ANY(${faltanCosto}) AND COALESCE(origen,'') NOT IN ('pumps','kit_bomba')` as any[];
+      for (const r of rows) if (costo[String(r.codigo)] == null) costo[String(r.codigo)] = Number(r.costo_usd); } catch {}
+  }
+  return items.map((it) => {
+    const k = String(it.codigo);
+    let out = it;
+    if (!it.emisor && emi[k] != null) out = { ...out, emisor: emi[k] };
+    if (it.costo_usd == null && costo[k] != null) out = { ...out, costo_usd: costo[k] };
+    return out;
+  });
 }
 
 async function ensureCols(sql: any) {
