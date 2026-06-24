@@ -319,7 +319,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
 // Hoja A4 real (210×297mm), imagen de fondo y datos posicionados en % + fuentes en pt,
 // CALCADO del modelo 00005-00000596 (coordenadas extraídas del PDF original).
 const POS = {
-  numero: { top: 9.9, left: 57.8, w: 40, size: 18, bold: true, serif: true },
+  numero: { top: 9.9, left: 59.2, w: 40, size: 18, bold: true, serif: true },
   dia: { top: 16.2, left: 72.3, w: 5, size: 11 },
   mes: { top: 16.2, left: 76.8, w: 5, size: 11 },
   anio: { top: 16.2, left: 81.2, w: 9, size: 11 },
