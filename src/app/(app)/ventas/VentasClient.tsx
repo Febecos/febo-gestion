@@ -605,8 +605,9 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const totalPagado = +pagosRec.reduce((a, p) => a + pagoEnMonedaFactura(p), 0).toFixed(2);
   const saldoCobrar = +(totalCobrar - totalPagado).toFixed(2);
   const pagoCubierto = pagosRec.length > 0 && Math.abs(saldoCobrar) <= (enPesos ? 1 : 0.02);
-  // Gate: NO se factura hasta que el pago cubra el total EXACTO (saldo 0).
-  const puedeFacturar = !cancelado && !!ped.stock_validado && !!ped.proveedor_confirmado && !!letraReq && talsLetra.length > 0 && pagoCubierto;
+  // Se PUEDE facturar sin estar pagado: muchas empresas piden la factura antes de emitir su OC.
+  // El pago deja de ser requisito; el saldo se sigue mostrando y se refleja en cta cte / recibo.
+  const puedeFacturar = !cancelado && !!ped.stock_validado && !!ped.proveedor_confirmado && !!letraReq && talsLetra.length > 0;
 
   // Validar STOCK propio (depósito). Si faltan ítems → bloquea (salvo override de Guillermo/owner).
   const validarStockPed = async (override = false) => {
@@ -858,23 +859,39 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               await accion({ accion: "comprobante", archivos: [...archivos, ...arr] });
             };
             // Lee el MONTO del último comprobante (PDF → texto; imagen → OCR gratis en el navegador).
+            // Infiere el medio de pago del texto/nombre del comprobante (cheque, depósito, MP, etc.).
+            const detectarMedio = (txt: string): string | null => {
+              const s = (txt || "").toLowerCase();
+              if (/\bcheque\b|\be-?cheq|echeq/.test(s)) return "Cheque";
+              if (/mercado\s*pago|\bmp\b/.test(s)) return "Mercado Pago";
+              if (/dep[oó]sito/.test(s)) return "Depósito";
+              if (/efectivo/.test(s)) return "Efectivo";
+              if (/transferenc/.test(s)) return "Transferencia";
+              return null;
+            };
             const leerComprobante = async () => {
               const a = archivos[archivos.length - 1];
               if (!a) { alert("Subí primero el comprobante (PDF o imagen)."); return; }
               try {
-                let monto = 0;
+                let monto = 0; let texto = a.nombre || "";
                 if (/pdf/i.test(a.tipo || "")) {
                   const d = await safeJson(await fetch("/api/parse-proforma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: a.b64, tipo: a.tipo }) }));
                   monto = Number(d?.monto?.monto) || 0;
+                  texto += " " + String(d?.texto || d?.text || "");
                 } else if (/image/i.test(a.tipo || "")) {
                   const T: any = await import("tesseract.js");
                   const { data } = await T.recognize(`data:${a.tipo};base64,${a.b64}`, "spa");
+                  texto += " " + String(data?.text || "");
                   const nums = String(data?.text || "").match(/\d{1,3}(?:[.\s]\d{3})+(?:,\d{2})?|\d+,\d{2}/g) || [];
                   const vals = nums.map((s) => Number(s.replace(/[.\s]/g, "").replace(",", "."))).filter((n) => n > 0);
                   monto = vals.length ? Math.max(...vals) : 0; // el importe suele ser el mayor
                 }
-                if (monto > 0) { setVf({ ...vf, monto: String(monto), moneda: enPesos ? "ars" : "usd" }); }
-                else alert("No pude leer el monto. Cargalo a mano.");
+                const medio = detectarMedio(texto);
+                const upd: any = { ...vf };
+                if (monto > 0) { upd.monto = String(monto); upd.moneda = enPesos ? "ars" : "usd"; }
+                if (medio) upd.medio = medio;
+                setVf(upd);
+                if (!(monto > 0)) alert("No pude leer el monto." + (medio ? ` (Detecté medio: ${medio}.)` : "") + " Cargalo a mano.");
               } catch (e: any) { alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano."); }
             };
             const esRet = vf.medio === "Retención";
@@ -1156,7 +1173,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     <li>{ped.proveedor_confirmado ? "✓" : "○"} Stock confirmado con el proveedor</li>
                     <li>{condCli ? "✓" : "○"} Condición fiscal del cliente {letraReq ? `→ Factura ${letraReq}` : ""}</li>
                     <li>{talsLetra.length > 0 ? "✓" : "○"} Talonario de Factura {letraReq || ""} cargado</li>
-                    <li className={pagoCubierto ? "" : "text-amber-600 font-semibold"}>{pagoCubierto ? "✓" : "○"} Pago recibido = total {pagoCubierto ? "(saldo 0)" : "— falta que el pago cubra el total exacto"}</li>
+                    <li className="text-gray-400">{pagoCubierto ? "✓ Pago recibido = total (saldo 0)" : "○ Pago — opcional: se puede facturar antes de cobrar (queda saldo en cta cte)"}</li>
                   </ul>
                   <div className="text-xs text-gray-500">Cuando esté todo, usá el botón <b>Facturar</b> de abajo. Elegís talonario y moneda ahí mismo.</div>
                 </div>

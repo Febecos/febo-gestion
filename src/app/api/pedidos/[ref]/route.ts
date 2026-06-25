@@ -399,8 +399,24 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const fac = row.factura_numero ? (await sql`SELECT id, cliente_id, cliente_nombre, total, moneda FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0] : null;
       const cid = fac?.cliente_id ?? cidEnvio;
       const cnombre = fac?.cliente_nombre || plr.revendedor?.nombre || plr.cliente?.nombre || null;
-      const monedaFac = String(fac?.moneda || pagos[0]?.moneda_factura || "ARS").toUpperCase();
-      const totalCobrar = fac?.total != null ? Number(fac.total) : 0;
+      const monedaFac = String(fac?.moneda || (pagos[0]?.moneda_factura === "ars" ? "ARS" : pagos[0]?.moneda_factura === "usd" ? "USD" : "") || "ARS").toUpperCase();
+      // Total a cobrar: si hay factura, su total; si todavía NO se facturó, el total del PEDIDO
+      // (neto+IVA del presupuesto), convertido a la moneda en que se registraron los pagos.
+      let totalCobrar = fac?.total != null ? Number(fac.total) : 0;
+      let totalLabel = fac?.total != null ? "Total facturado" : "Total del pedido";
+      const referencia = row.factura_numero || ref;
+      if (fac?.total == null) {
+        const tt = plr.totales || {};
+        const ivaSum = Array.isArray(tt.iva_detalle) ? tt.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
+        const netoN = Number(tt.neto);
+        const totalReal = (!isNaN(netoN) && Array.isArray(tt.iva_detalle) && tt.iva_detalle.length) ? +(netoN + ivaSum).toFixed(2) : (Number(tt.total) || 0);
+        const pedMon = String(tt.moneda || "USD").toUpperCase();
+        const tc = Number(tt.tc) || Number(pagos[0]?.tc) || 0;
+        if (monedaFac === pedMon) totalCobrar = totalReal;
+        else if (monedaFac === "ARS" && pedMon === "USD") totalCobrar = tc ? Math.round(totalReal * tc) : 0;
+        else if (monedaFac === "USD" && pedMon === "ARS") totalCobrar = tc ? +(totalReal / tc).toFixed(2) : 0;
+        else totalCobrar = totalReal;
+      }
       const det = pagos.map((p: any) => ({
         fecha: String(p.fecha || "").slice(0, 10),
         medio: p.medio || "Transferencia",
@@ -413,7 +429,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const saldo = +(totalCobrar - totalPagado).toFixed(2);
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS datos_recibo JSONB`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS letra TEXT`.catch(() => {});
-      const datosRecibo = { factura_nro: row.factura_numero || null, total_cobrar: totalCobrar, total_pagado: totalPagado, saldo, moneda: monedaFac, pagos: det, emitido_at: new Date().toISOString() };
+      const datosRecibo = { factura_nro: row.factura_numero || null, referencia, total_label: totalLabel, total_cobrar: totalCobrar, total_pagado: totalPagado, saldo, moneda: monedaFac, pagos: det, emitido_at: new Date().toISOString() };
       const n = ((await sql`SELECT count(*)::int c FROM fg_comprobantes WHERE tipo='recibo'` as any[])[0]?.c || 0) + 1;
       const numero = `REC X ${String(n).padStart(8, "0")}`;
       const comp = (await sql`

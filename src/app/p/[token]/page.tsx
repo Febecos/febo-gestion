@@ -493,7 +493,7 @@ function ReciboX({ c, cli, emp, admin, onEmail, sending }: { c: any; cli: any; e
             <div className="t">RECIBO</div>
             <div className="n">Nº: {c.numero || ""}</div>
             <div className="meta">Fecha: {fmtF(c.fecha)}</div>
-            {dr.factura_nro && <div className="meta">Ref. Factura: {dr.factura_nro}</div>}
+            {(dr.factura_nro || dr.referencia) && <div className="meta">Ref.: {dr.factura_nro || dr.referencia}</div>}
           </div>
         </div>
 
@@ -520,7 +520,7 @@ function ReciboX({ c, cli, emp, admin, onEmail, sending }: { c: any; cli: any; e
         </table>
 
         <div className="tot">
-          {totalCobrar > 0 && <div className="row"><span>Total a cobrar</span><span>{fmt(totalCobrar)}</span></div>}
+          {totalCobrar > 0 && <div className="row"><span>{dr.total_label || "Total a cobrar"}</span><span>{fmt(totalCobrar)}</span></div>}
           <div className="row"><span>Total recibido</span><span style={{ fontWeight: 700, color: "#059669" }}>{fmt(totalPagado)}</span></div>
           <div className="row saldo"><span>Saldo pendiente</span><span style={{ color: saldo > 0.009 ? "#dc2626" : "#059669" }}>{fmt(saldo)}</span></div>
         </div>
