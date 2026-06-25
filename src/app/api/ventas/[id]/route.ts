@@ -24,7 +24,28 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     if (!comp.length) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
     const items = await sql`SELECT * FROM fg_items WHERE comprobante_id = ${id} ORDER BY orden`;
     const pagos = await sql`SELECT * FROM fg_pagos WHERE comprobante_id = ${id} ORDER BY fecha DESC`;
-    return NextResponse.json({ ok: true, comprobante: comp[0], items, pagos });
+    // Detalle de la operación (para el panel de la factura): presupuesto, cómo se pagó y si se despachó.
+    let detalle: any = null;
+    const c = comp[0];
+    if (c.tipo === "factura") {
+      const ped = (await sql`SELECT numero, estado, payload, pagos_recibidos FROM fv_pedidos WHERE factura_numero=${c.numero} LIMIT 1` as any[])[0];
+      if (ped) {
+        const pl = ped.payload || {};
+        let presupuesto: any = null;
+        if (pl.presupuesto_numero) { const pr = (await sql`SELECT numero, public_token FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[])[0]; if (pr) presupuesto = { numero: pr.numero, token: pr.public_token }; }
+        const pr2 = (Array.isArray(ped.pagos_recibidos) && ped.pagos_recibidos.length ? ped.pagos_recibidos : (pl.pagos_recibidos || [])) as any[];
+        const medios = [...new Set(pr2.map((p) => p.medio).filter(Boolean))];
+        const despachado = !!pl.despacho_confirmado || ped.estado === "enviado";
+        detalle = {
+          pedido_numero: ped.numero, pedido_estado: ped.estado,
+          presupuesto,
+          factura_proforma: c.estado === "proforma" && !c.afip_cae,
+          pago: { pagado: ["pagado", "enviado"].includes(ped.estado) || pr2.length > 0, cantidad: pr2.length, medios },
+          despacho: { despachado, remitos: (pl.remitos || []).map((r: any) => r.numero), remito_externo: !!pl.remito_externo, transporte: pl.envio?.empresa || pl.remito_externo?.validacion?.es_remito_transporte ? (pl.envio?.empresa || "transporte") : null },
+        };
+      }
+    }
+    return NextResponse.json({ ok: true, comprobante: c, items, pagos, detalle });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }

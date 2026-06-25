@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Fragment } from "react";
 import { useWindows } from "../WindowManager";
 import { letraFacturaPara } from "@/lib/talonarios";
 import { tipoPorCodigo } from "@/lib/talonarios-tipos";
@@ -1848,50 +1848,87 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
   const [busy, setBusy] = useState(0);
   const cargar = () => { setLoading(true); fetch("/api/ventas?tipo=" + tipo).then(safeJson).then((d) => { setRows(d.ok ? d.comprobantes : []); setLoading(false); }); };
   useEffect(() => { cargar(); }, [tipo]);
+  const [exp, setExp] = useState<number | null>(null);
+  const [det, setDet] = useState<Record<number, any>>({});
+  const esFactura = tipo === "factura";
+  const toggle = async (c: any) => {
+    if (exp === c.id) { setExp(null); return; }
+    setExp(c.id);
+    if (!det[c.id]) { const d = await safeJson(await fetch(`/api/ventas/${c.id}`)); if (d?.ok) setDet((s) => ({ ...s, [c.id]: d })); }
+  };
   const emitirNota = async (c: any, clase: "nota_credito" | "nota_debito") => {
     const nom = clase === "nota_credito" ? "Nota de Crédito" : "Nota de Débito";
-    if (!confirm(`¿Emitir ${nom} (electrónica, con CAE) por el total de ${c.numero}?\nReferencia la factura original ante AFIP.`)) return;
+    const detalle = clase === "nota_credito"
+      ? `Va a emitir una NOTA DE CRÉDITO electrónica (con CAE) que:\n\n• Referencia la factura ${c.numero} ante AFIP.\n• Anula/acredita su total (${fmt(c.total)}) → genera saldo a favor del cliente en cuenta corriente.\n• El comprobante queda asociado a esta factura.\n\n¿Emitir la Nota de Crédito?`
+      : `Va a emitir una NOTA DE DÉBITO electrónica (con CAE) que:\n\n• Referencia la factura ${c.numero} ante AFIP.\n• Suma su total (${fmt(c.total)}) a la deuda del cliente.\n\n¿Emitir la Nota de Débito?`;
+    if (!confirm(detalle)) return;
     const motivo = prompt(`Motivo de la ${nom} (opcional):`, "") || "";
     setBusy(c.id);
     try {
       const r = await fetch(`/api/ventas/${c.id}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: clase, motivo }) });
       const d = await safeJson(r);
-      if (d.ok) { alert(`✅ ${nom} emitida: ${d.numero}\nCAE: ${d.cae}`); if (d.token) window.open(`/p/${d.token}?admin=1`, "_blank"); cargar(); }
+      if (d.ok) { alert(`✅ ${nom} emitida: ${d.numero}\nCAE: ${d.cae}`); if (d.token) window.open(`/p/${d.token}?admin=1`, "_blank"); setDet((s) => { const n = { ...s }; delete n[c.id]; return n; }); cargar(); }
       else alert("⚠️ " + (d.error || "No se pudo emitir"));
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(0); }
   };
-  const esFactura = tipo === "factura";
   return (
     <Tabla loading={loading} count={rows.length} unidad={titulo.toLowerCase()}
       cols={["Número", "Cliente", "Estado", "Fecha", "Total", ""]} vacio={`Todavía no hay ${titulo.toLowerCase()} (se generan desde un pedido).`}>
-      {rows.map((c) => (
-        <tr key={c.id} className="border-t border-gray-100 hover:bg-gray-50">
-          <td className="px-4 py-2 font-semibold">{c.numero}</td>
+      {rows.map((c) => {
+        const notas: any[] = Array.isArray(c.notas) ? c.notas : [];
+        const nc = notas.find((n) => n.tipo === "nota_credito");
+        const nd = notas.find((n) => n.tipo === "nota_debito");
+        const abierto = exp === c.id;
+        const d = det[c.id];
+        return (
+        <Fragment key={c.id}>
+        <tr className={`border-t border-gray-100 ${esFactura ? "hover:bg-blue-50 cursor-pointer" : "hover:bg-gray-50"}`} onClick={esFactura ? () => toggle(c) : undefined}>
+          <td className="px-4 py-2 font-semibold">{esFactura && <span className="text-gray-300 mr-1">{abierto ? "▾" : "▸"}</span>}{c.numero}</td>
           <td className="px-4 py-2">{titleCase(c.cliente_nombre) || "—"}</td>
-          <td className="px-4 py-2">{chip(c.estado || "—", EST_COL[c.estado] || "#888")}</td>
+          <td className="px-4 py-2">{chip(c.estado || "—", EST_COL[c.estado] || "#888")}{nc && <span className="ml-1 text-[10px] font-semibold text-rose-600" title={"Tiene " + nc.numero}>NC</span>}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(c.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold">{fmt(c.total)}</td>
           <td className="px-4 py-2 text-right whitespace-nowrap">
-            {c.cliente_id && <button onClick={() => openFicha(c.cliente_id as number, "operaciones")} title="Ver cliente en el CRM (ventas y cuenta)" className="text-gray-400 hover:text-febo-azul mr-2">👤</button>}
-            {c.token && <a href={`/p/${c.token}?admin=1`} target="_blank" rel="noreferrer" className="text-febo-azul hover:underline text-xs font-semibold">🧾 Ver</a>}
-            {esFactura && c.afip_cae && (() => {
-              const notas: any[] = Array.isArray(c.notas) ? c.notas : [];
-              const nc = notas.find((n) => n.tipo === "nota_credito");
-              const nd = notas.find((n) => n.tipo === "nota_debito");
-              return (
-                <>
-                  {nc
-                    ? <a href={`/p/${nc.token}?admin=1`} target="_blank" rel="noreferrer" title={`Ver ${nc.numero}`} className="ml-2 text-xs font-semibold text-rose-600 hover:underline">↩️ NC</a>
-                    : <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_credito")} title="Emitir Nota de Crédito electrónica" className="ml-2 text-xs font-semibold text-rose-600 hover:underline disabled:opacity-40">{busy === c.id ? "…" : "NC"}</button>}
-                  {nd
-                    ? <a href={`/p/${nd.token}?admin=1`} target="_blank" rel="noreferrer" title={`Ver ${nd.numero}`} className="ml-2 text-xs font-semibold text-amber-600 hover:underline">↪️ ND</a>
-                    : <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_debito")} title="Emitir Nota de Débito electrónica" className="ml-2 text-xs font-semibold text-amber-600 hover:underline disabled:opacity-40">{busy === c.id ? "…" : "ND"}</button>}
-                </>
-              );
-            })()}
+            {c.cliente_id && <button onClick={(e) => { e.stopPropagation(); openFicha(c.cliente_id as number, "operaciones"); }} title="Ver cliente en el CRM (ventas y cuenta)" className="text-gray-400 hover:text-febo-azul mr-2">👤</button>}
+            {c.token && <a href={`/p/${c.token}?admin=1`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="text-febo-azul hover:underline text-xs font-semibold">🧾 Ver</a>}
           </td>
         </tr>
-      ))}
+        {esFactura && abierto && (
+          <tr className="bg-blue-50/40"><td colSpan={6} className="px-6 py-3">
+            {!d ? <div className="text-xs text-gray-400">Cargando detalle…</div> : (() => {
+              const dt = d.detalle || {};
+              return (
+                <div className="grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Factura</span><a href={`/p/${c.token}?admin=1`} target="_blank" rel="noreferrer" className="text-febo-azul font-semibold hover:underline">🧾 Ver / Imprimir {c.numero}</a>{c.afip_cae ? <span className="text-[10px] text-emerald-600 font-semibold">CAE ✓</span> : <span className="text-[10px] text-amber-600 font-semibold">PROFORMA</span>}</div>
+                    <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Pedido</span><span className="text-gray-700">{dt.pedido_numero || "—"}{dt.pedido_estado ? ` · ${dt.pedido_estado}` : ""}</span></div>
+                    <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Presupuesto</span>{dt.presupuesto?.token ? <a href={`https://fv.febecos.com/ver-presupuesto?token=${dt.presupuesto.token}`} target="_blank" rel="noreferrer" className="text-febo-azul font-semibold hover:underline">☀️ {dt.presupuesto.numero}</a> : <span className="text-gray-400">{dt.presupuesto?.numero || "—"}</span>}</div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Pago</span>{dt.pago?.pagado ? <span className="text-emerald-700 font-semibold">✅ Pagado{dt.pago.medios?.length ? ` · ${dt.pago.medios.join(", ")}` : ""}</span> : <span className="text-amber-600">⏳ Sin pago registrado</span>}</div>
+                    <div className="flex items-center gap-2"><span className="text-gray-500 w-28">Despacho</span>{dt.despacho?.despachado ? <span className="text-emerald-700 font-semibold">📦 Despachado{dt.despacho.remitos?.length ? ` · ${dt.despacho.remitos.join(", ")}` : (dt.despacho.remito_externo ? " · comprobante del transporte" : "")}</span> : <span className="text-gray-400">○ Sin despachar</span>}</div>
+                  </div>
+                  <div className="sm:col-span-2 border-t border-blue-100 pt-2 mt-1 flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-bold text-gray-400 uppercase mr-1">Nota de Crédito / Débito</span>
+                    {!c.afip_cae
+                      ? <span className="text-xs text-amber-600">La factura es proforma (sin CAE): primero pasala a electrónica para poder emitir NC/ND.</span>
+                      : <>
+                        {nc
+                          ? <a href={`/p/${nc.token}?admin=1`} target="_blank" rel="noreferrer" className="px-2.5 py-1 rounded-lg border border-rose-300 text-rose-700 text-xs font-semibold hover:bg-rose-50">↩️ Ver {nc.numero}</a>
+                          : <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_credito")} className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-xs font-semibold hover:bg-rose-700 disabled:opacity-40">{busy === c.id ? "…" : "↩️ Emitir Nota de Crédito"}</button>}
+                        {nd
+                          ? <a href={`/p/${nd.token}?admin=1`} target="_blank" rel="noreferrer" className="px-2.5 py-1 rounded-lg border border-amber-300 text-amber-700 text-xs font-semibold hover:bg-amber-50">↪️ Ver {nd.numero}</a>
+                          : <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_debito")} className="px-2.5 py-1 rounded-lg border border-amber-400 text-amber-700 text-xs font-semibold hover:bg-amber-50 disabled:opacity-40">{busy === c.id ? "…" : "↪️ Emitir Nota de Débito"}</button>}
+                      </>}
+                  </div>
+                </div>
+              );
+            })()}
+          </td></tr>
+        )}
+        </Fragment>
+        );
+      })}
     </Tabla>
   );
 }
