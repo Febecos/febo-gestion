@@ -964,7 +964,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             const eliminarPago = (i: number) => { if (confirm("¿Eliminar este pago? Se revierte su movimiento en cuenta corriente.")) accion({ accion: "eliminar_pago", index: i }); };
             // Redondeo automático: si queda un saldo chico (≤ $1000 en pesos), se carga un ajuste que lo lleva a 0.
             const saldoEnPesos = enPesos ? saldoCobrar : saldoCobrar * tcPed;
-            const puedeRedondear = saldoCobrar > (enPesos ? 1 : 0.02) && saldoEnPesos > 0 && saldoEnPesos <= 1000;
+            const puedeRedondear = saldoCobrar > 0.009 && saldoEnPesos <= 1000; // cualquier saldo positivo chico (incluido centavos)
             const redondearSaldo = () => {
               const m = +saldoCobrar.toFixed(2);
               accion({ accion: "verificar", pago: { monto: m, moneda: enPesos ? "ars" : "usd", tc: tcPed, monto_usd: enPesos ? +(m / (tcPed || 1)).toFixed(2) : m, monto_factura: m, moneda_factura: enPesos ? "ars" : "usd", ok: true, fecha: new Date().toISOString(), medio: "Redondeo", archivo_nombre: null, banco: null, ref_numero: null, retencion: null } },
@@ -1017,10 +1017,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   <span className="font-semibold ml-auto">{p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} {p.ok ? "✔" : ""}</span>
                   <button onClick={() => eliminarPago(i)} title="Eliminar este pago" className="text-red-400 hover:text-red-600">🗑</button></div>)}</div>}
                 {puedeRedondear && <div className="mt-2 flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2">
-                  <span className="text-xs text-amber-700">Queda un saldo chico de <b>{fmtP(saldoCobrar)}</b> (≤ $1000).</span>
+                  <span className="text-xs text-amber-700">Queda un saldo chico de <b>{fmtP(saldoCobrar)}</b> (≤ $1000). Aplicá el redondeo para que el recibo quede en $0.</span>
                   <button disabled={busy} onClick={redondearSaldo} className="px-2.5 py-1 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">↪ Redondear a $0</button>
                 </div>}
-                {pagoCubierto && <div className="mt-2 text-xs text-emerald-700 font-semibold">✓ Pago completo (saldo 0) — ya podés facturar.</div>}
+                {pagoCubierto && !puedeRedondear && <div className="mt-2 text-xs text-emerald-700 font-semibold">✓ Pago completo (saldo 0) — ya podés facturar.</div>}
                 {pagosRec.length > 0 && (() => {
                   // Recibo por el TOTAL ya emitido (saldo 0) → no se genera otro, solo se ve el existente.
                   const reciboPorTotal = !!ped.recibo_token && pagoCubierto && Number(ped.recibo_saldo) === 0;
