@@ -479,8 +479,11 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const ivaUsd = Array.isArray(tt.iva_detalle) ? tt.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
       const netoUsd = Number(tt.neto);
       const totalUsdReal = (Array.isArray(tt.iva_detalle) && tt.iva_detalle.length && !isNaN(netoUsd)) ? +(netoUsd + ivaUsd).toFixed(2) : (Number(tt.total) || 0);
+      // Presupuestos que guardan SOLO el total (bombas): el total ya está en su moneda (pesos), no se aplica TC.
+      const sinNeto = !(Number(tt.neto) > 0) && Number(tt.total) > 0;
       const totalCobrar = fac?.total != null
         ? (enPesos ? Math.round(Number(fac.total)) : +Number(fac.total).toFixed(2))
+        : sinNeto ? (enPesos ? Math.round(Number(tt.total)) : +Number(tt.total).toFixed(2))
         : (enPesos ? Math.round(totalUsdReal * tcPed) : +totalUsdReal.toFixed(2));
       // Convierte un pago a la moneda de cobro, igual que pagoEnMonedaFactura del tab Pago.
       const aRec = (p: any) => { const m = Number(p.monto) || 0; if (enPesos) return p.moneda === "usd" ? Math.round(m * tcPed) : +m.toFixed(2); return p.moneda === "ars" ? (tcPed ? +(m / tcPed).toFixed(2) : 0) : +m.toFixed(2); };
