@@ -418,27 +418,23 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const cid = fac?.cliente_id ?? cidEnvio;
       const cnombre = fac?.cliente_nombre || plr.revendedor?.nombre || plr.cliente?.nombre || null;
       const tt = plr.totales || {};
-      // Moneda del RECIBO = la del presupuesto/pedido (USD presupuesto → todo USD; Pesos → todo pesos).
-      // Si ya se facturó, la de la factura emitida. Todos los pagos se convierten a esta moneda.
-      const pedMon = String(tt.moneda || "USD").toUpperCase();
-      const monedaRec = String(fac?.moneda || pedMon).toUpperCase();
+      // ESPEJO EXACTO del tab Pago. La "moneda" del pedido es la moneda de COBRO; neto/total están en
+      // base USD y, si se cobra en pesos, se multiplican por el TC pactado. Si ya hay factura, manda
+      // la factura. Así el recibo da idéntico a "Total a cobrar / Pagado / Saldo" del tab Pago.
+      const pedMoneda = String(fac?.moneda || tt.moneda || "USD").toUpperCase();
+      const tcPed = Number(fac?.tc) || Number(tt.tc) || 0;
+      const enPesos = pedMoneda === "ARS";
+      const monedaRec = pedMoneda;
       const totalLabel = fac?.total != null ? "Total facturado" : "Total del pedido";
       const referencia = row.factura_numero || ref;
-      let totalCobrar = 0;
-      if (fac?.total != null) totalCobrar = Number(fac.total);
-      else {
-        const ivaSum = Array.isArray(tt.iva_detalle) ? tt.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
-        const netoN = Number(tt.neto);
-        totalCobrar = (!isNaN(netoN) && Array.isArray(tt.iva_detalle) && tt.iva_detalle.length) ? +(netoN + ivaSum).toFixed(2) : (Number(tt.total) || 0);
-      }
-      const tcGlobal = Number(tt.tc) || Number(pagos[0]?.tc) || 0;
-      // Convierte un pago a la moneda del recibo: USD usa monto_usd; ARS usa el monto en pesos.
-      const aRec = (p: any) => {
-        const tc = Number(p.tc) || tcGlobal || 0;
-        if (monedaRec === "USD") return +(Number(p.monto_usd) || (String(p.moneda).toLowerCase() === "usd" ? Number(p.monto) : (tc ? Number(p.monto) / tc : 0))).toFixed(2);
-        if (String(p.moneda).toLowerCase() === "ars") return Math.round(Number(p.monto));
-        return Math.round((Number(p.monto_usd) || Number(p.monto)) * (tc || 0));
-      };
+      const ivaUsd = Array.isArray(tt.iva_detalle) ? tt.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
+      const netoUsd = Number(tt.neto);
+      const totalUsdReal = (Array.isArray(tt.iva_detalle) && tt.iva_detalle.length && !isNaN(netoUsd)) ? +(netoUsd + ivaUsd).toFixed(2) : (Number(tt.total) || 0);
+      const totalCobrar = fac?.total != null
+        ? (enPesos ? Math.round(Number(fac.total)) : +Number(fac.total).toFixed(2))
+        : (enPesos ? Math.round(totalUsdReal * tcPed) : +totalUsdReal.toFixed(2));
+      // Convierte un pago a la moneda de cobro, igual que pagoEnMonedaFactura del tab Pago.
+      const aRec = (p: any) => { const m = Number(p.monto) || 0; if (enPesos) return p.moneda === "usd" ? Math.round(m * tcPed) : +m.toFixed(2); return p.moneda === "ars" ? (tcPed ? +(m / tcPed).toFixed(2) : 0) : +m.toFixed(2); };
       const det = pagos.map((p: any) => ({
         fecha: String(p.fecha || "").slice(0, 10),
         medio: p.medio || "Transferencia",

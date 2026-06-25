@@ -901,10 +901,19 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 const upd: any = { ...vf, archivo_nombre: a.nombre || "" };
                 if (monto > 0) { upd.monto = String(monto); upd.moneda = enPesos ? "ars" : "usd"; }
                 if (medio) upd.medio = medio;
-                // Datos desde el CONTENIDO: N° de cheque / operación y banco.
-                if (medio === "Cheque" && !vf.ref_numero) { const mch = texto.match(/cheque[^0-9]*0*(\d{3,})|n[°º.]?\s*0*(\d{4,})/i); if (mch) upd.ref_numero = mch[1] || mch[2]; }
-                if (!vf.ref_numero && /transferenc/i.test(texto)) { const mop = texto.match(/(?:operaci[oó]n|comprobante|n[°º.])\s*[:#]?\s*0*(\d{4,})/i); if (mop) upd.ref_numero = mop[1]; }
-                if (!vf.banco) { const mb = texto.match(/banco\s+([a-záéíóúñ.\s]{3,30})/i); if (mb) upd.banco = mb[1].trim().replace(/\s+/g, " "); }
+                // Datos desde el CONTENIDO (no del nombre): N° de cheque/operación, banco y fecha de pago.
+                if (medio === "Cheque" && !vf.ref_numero) {
+                  // Apuntar a "N° de cheque" (conservando ceros), NO al importe.
+                  const mch = texto.match(/n[°º]?\.?\s*de\s*cheque[\s:]*([0-9]{5,})/i) || texto.match(/cheque\s*n[°º]?\.?\s*([0-9]{5,})/i);
+                  if (mch) upd.ref_numero = mch[1];
+                }
+                if (medio !== "Cheque" && !vf.ref_numero) { const mop = texto.match(/(?:n[°º]?\.?\s*de\s*)?operaci[oó]n[\s:#]*([0-9]{4,})|comprobante[\s:#]*([0-9]{4,})/i); if (mop) upd.ref_numero = mop[1] || mop[2]; }
+                if (!vf.banco) { const mb = texto.match(/banco\s+([a-záéíóúñ.\s]{3,30})/i); if (mb) upd.banco = mb[1].trim().replace(/\s+/g, " ").replace(/[.,]$/, ""); }
+                // Fecha de pago del comprobante (no la de carga). "Fecha de pago 23/06/2026".
+                if (!vf.fecha) {
+                  const mf = texto.match(/fecha\s*(?:de\s*pago|valor|acreditaci[oó]n)?[\s:]*([0-3]?\d)[\/.\-]([0-1]?\d)[\/.\-](\d{2,4})/i);
+                  if (mf) { const yy = mf[3].length === 2 ? "20" + mf[3] : mf[3]; upd.fecha = `${yy}-${mf[2].padStart(2, "0")}-${mf[1].padStart(2, "0")}`; }
+                }
                 setVf(upd);
                 if (!(monto > 0)) alert("No pude leer el monto del contenido." + (medio ? ` (Medio detectado: ${medio}.)` : "") + " Cargalo a mano.");
               } catch (e: any) { alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano."); }
