@@ -1397,6 +1397,7 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 
 // ---------- FACTURAS / REMITOS (fg_comprobantes) ----------
 function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
+  const { openFicha } = useWindows();
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(0);
   const cargar = () => { setLoading(true); fetch("/api/ventas?tipo=" + tipo).then(safeJson).then((d) => { setRows(d.ok ? d.comprobantes : []); setLoading(false); }); };
@@ -1425,13 +1426,23 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
           <td className="px-4 py-2 text-gray-600">{fmtF(c.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold">{fmt(c.total)}</td>
           <td className="px-4 py-2 text-right whitespace-nowrap">
+            {c.cliente_id && <button onClick={() => openFicha(c.cliente_id as number, "operaciones")} title="Ver cliente en el CRM (ventas y cuenta)" className="text-gray-400 hover:text-febo-azul mr-2">👤</button>}
             {c.token && <a href={`/p/${c.token}?admin=1`} target="_blank" rel="noreferrer" className="text-febo-azul hover:underline text-xs font-semibold">🧾 Ver</a>}
-            {esFactura && c.afip_cae && (
-              <>
-                <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_credito")} title="Emitir Nota de Crédito electrónica" className="ml-2 text-xs font-semibold text-rose-600 hover:underline disabled:opacity-40">{busy === c.id ? "…" : "NC"}</button>
-                <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_debito")} title="Emitir Nota de Débito electrónica" className="ml-2 text-xs font-semibold text-amber-600 hover:underline disabled:opacity-40">{busy === c.id ? "…" : "ND"}</button>
-              </>
-            )}
+            {esFactura && c.afip_cae && (() => {
+              const notas: any[] = Array.isArray(c.notas) ? c.notas : [];
+              const nc = notas.find((n) => n.tipo === "nota_credito");
+              const nd = notas.find((n) => n.tipo === "nota_debito");
+              return (
+                <>
+                  {nc
+                    ? <a href={`/p/${nc.token}?admin=1`} target="_blank" rel="noreferrer" title={`Ver ${nc.numero}`} className="ml-2 text-xs font-semibold text-rose-600 hover:underline">↩️ NC</a>
+                    : <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_credito")} title="Emitir Nota de Crédito electrónica" className="ml-2 text-xs font-semibold text-rose-600 hover:underline disabled:opacity-40">{busy === c.id ? "…" : "NC"}</button>}
+                  {nd
+                    ? <a href={`/p/${nd.token}?admin=1`} target="_blank" rel="noreferrer" title={`Ver ${nd.numero}`} className="ml-2 text-xs font-semibold text-amber-600 hover:underline">↪️ ND</a>
+                    : <button disabled={busy === c.id} onClick={() => emitirNota(c, "nota_debito")} title="Emitir Nota de Débito electrónica" className="ml-2 text-xs font-semibold text-amber-600 hover:underline disabled:opacity-40">{busy === c.id ? "…" : "ND"}</button>}
+                </>
+              );
+            })()}
           </td>
         </tr>
       ))}

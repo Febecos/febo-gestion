@@ -16,7 +16,9 @@ export async function GET(req: NextRequest) {
       SELECT fc.id, fc.tipo, fc.estado, fc.numero, fc.cliente_id,
              COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,''), fc.cliente_nombre) AS cliente_nombre,
              COALESCE(NULLIF(c.cuit,''), fc.cliente_cuit) AS cliente_cuit,
-             fc.ref_id, fc.fecha, fc.total, fc.moneda, fc.token, fc.afip_cae, fc.letra, fc.created_at
+             fc.ref_id, fc.fecha, fc.total, fc.moneda, fc.token, fc.afip_cae, fc.letra, fc.created_at,
+             COALESCE((SELECT json_agg(json_build_object('tipo', n.tipo, 'numero', n.numero, 'token', n.token) ORDER BY n.id)
+               FROM fg_comprobantes n WHERE n.operacion_id = fc.id AND n.tipo IN ('nota_credito','nota_debito')), '[]'::json) AS notas
       FROM fg_comprobantes fc
       LEFT JOIN clientes c ON c.id = fc.cliente_id AND (c.crm_eliminado IS NULL OR c.crm_eliminado = false)
       WHERE (${tipo} = '' OR fc.tipo = ANY(string_to_array(${tipo}, ',')))
