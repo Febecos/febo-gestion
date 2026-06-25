@@ -1160,7 +1160,9 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 {/* Remito / Despacho — se habilita SOLO con los datos de envío validados (+ facturado + pagado) */}
                 <div className="mt-4 pt-3 border-t border-gray-100">
                   <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📦 Remito / Despacho</div>
-                  {(() => {
+                  {ped.anulado_por_nc ? (
+                    <div className="text-sm font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">⛔ Factura anulada por Nota de Crédito — no corresponde generar remito ni despachar (no hay nada vendido).</div>
+                  ) : (() => {
                     const remitos = pl.remitos || [];
                     const legacyFull = !!pl.remito_numero && !remitos.length;       // pedidos viejos (remito único, todo despachado)
                     const despachoCompleto = !!pl.despacho_completo || legacyFull;
@@ -1218,6 +1220,18 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 <div className="text-sm text-gray-700 space-y-2">
                   <div>✅ Factura emitida: <b>{ped.factura_numero}</b></div>
                   {ped.factura_token && <a href={`/p/${ped.factura_token}?admin=1`} target="_blank" rel="noreferrer" className="inline-block px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 Ver / Imprimir factura</a>}
+                  {Array.isArray(ped.notas_credito) && ped.notas_credito.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+                      <div className="text-[11px] font-bold text-rose-400 uppercase">Notas de Crédito</div>
+                      {ped.notas_credito.map((nc: any, i: number) => (
+                        <div key={i} className="flex flex-wrap items-center gap-2">
+                          <span>↩️ NC <b className="text-rose-700">{nc.numero}</b></span>
+                          {nc.token && <a href={`/p/${nc.token}?admin=1`} target="_blank" rel="noreferrer" className="px-2 py-0.5 rounded border border-rose-300 text-rose-700 text-xs font-semibold hover:bg-rose-50">↩️ Ver NC</a>}
+                        </div>
+                      ))}
+                      {ped.anulado_por_nc && <div className="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded px-2 py-1 mt-1">⛔ Factura anulada por Nota de Crédito — el pedido quedó sin saldo vendido. No corresponde despachar.</div>}
+                    </div>
+                  )}
                 </div>
               ) : borrador ? (
                 <div className="text-sm text-gray-700 space-y-2 rounded-lg border border-amber-300 bg-amber-50/60 p-2.5">
@@ -1285,7 +1299,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor"} onClick={aprobar} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ped.proveedor_confirmado ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
           </>}
           {(ped.estado === "aprobado" || (ped.estado === "pagado" && pagosRec.length === 0)) && <button disabled={busy} onClick={() => setAvisarPagoOpen(true)} title="Confirma al cliente que su pago está OK (email desde administración) y marca el pedido como pagado" className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">✅ Avisar pago OK al cliente</button>}
-          {ped.estado === "pagado" && pagosRec.length > 0 && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}
+          {ped.estado === "pagado" && pagosRec.length > 0 && !ped.anulado_por_nc && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}
           {ped.es_ultimo && !facturado && !despachado && !pagadoOk && !ped.proveedor_confirmado && !["cancelado", "anulado"].includes(ped.estado) &&
             <button disabled={busy} onClick={revertir} title="Deshacer: borra el último pedido (sin pasos iniciados), libera el número y devuelve el presupuesto a Presupuestos" className="px-4 py-2 rounded-lg border border-amber-400 text-amber-700 text-sm font-semibold hover:bg-amber-50">↩ Revertir pedido</button>}
         </div>

@@ -140,6 +140,18 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         const fc = await sql`SELECT numero, moneda, tc, total FROM fg_comprobantes WHERE id=${p.factura_borrador_id || -1} OR numero=${p.factura_numero || ''} LIMIT 1`.catch(() => []) as any[];
         if (fc[0]) factura = { numero: fc[0].numero, moneda: fc[0].moneda, tc: fc[0].tc != null ? Number(fc[0].tc) : null, total: fc[0].total != null ? Number(fc[0].total) : null };
       }
+      // Notas de Crédito de la factura (si las hay) + si cancelan TODO el comprobante (pedido anulado).
+      let notas_credito: any[] = []; let anulado_por_nc = false;
+      if (p.factura_numero) {
+        const facRow = (await sql`SELECT id, total FROM fg_comprobantes WHERE numero=${p.factura_numero} AND tipo='factura' LIMIT 1`.catch(() => []) as any[])[0];
+        if (facRow) {
+          const ncs = await sql`SELECT numero, token, total FROM fg_comprobantes WHERE tipo='nota_credito' AND operacion_id=${facRow.id} ORDER BY id`.catch(() => []) as any[];
+          notas_credito = ncs.map((n: any) => ({ numero: n.numero, token: n.token, total: n.total != null ? Number(n.total) : null }));
+          const sumNc = ncs.reduce((a: number, n: any) => a + (Number(n.total) || 0), 0);
+          const totFac = Number(facRow.total) || 0;
+          anulado_por_nc = ncs.length > 0 && totFac > 0 && sumNc >= totFac - 0.5; // NC cubre toda la factura
+        }
+      }
       // ¿Es el ÚLTIMO número emitido? (para habilitar "Revertir" solo en ese caso).
       let es_ultimo = false;
       try { const n = parseInt(String(ref).match(/(\d+)\s*$/)?.[1] || "0", 10); const cnt = await sql`SELECT ultimo_numero FROM pedidos_counter WHERE clave='PED' LIMIT 1` as any[]; es_ultimo = !!cnt[0] && n > 0 && Number(cnt[0].ultimo_numero) === n; } catch {}
@@ -156,6 +168,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, factura, pago_proveedor: p.pago_proveedor || null,
         stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
         recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null,
+        notas_credito, anulado_por_nc,
         es_ultimo,
       }});
     }
