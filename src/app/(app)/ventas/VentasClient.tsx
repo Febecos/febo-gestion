@@ -1213,6 +1213,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         onGenerar={(sel: any[]) => accion({ accion: "remitir", items: sel }, "¿Generar el REMITO con los ítems marcados?")}
                         onRegenerar={(numero: string) => accion({ accion: "regenerar_remito", numero }, `¿Regenerar el remito ${numero} con los datos de envío/transporte actuales? Mantiene el mismo número.`)}
                         onEliminar={(numero: string) => accion({ accion: "eliminar_remito", numero }, `¿Eliminar el remito ${numero}? Solo se puede si es el último emitido.`)}
+                        onConfirmar={(numero: string, archivo: any) => accion({ accion: "confirmacion_despacho", numero, archivo })}
+                        onEnviarConfirmacion={(numero: string) => { const to = window.prompt("Enviar la confirmación de despacho a:", emailCli || ""); if (to === null) return; const t = to.trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) { alert("Email inválido."); return; } accion({ accion: "enviar_confirmacion", numero, email: t }, `¿Enviar la confirmación de despacho del remito ${numero} a ${t}?`); }}
                       />
                     );
                   })()}
@@ -1571,7 +1573,8 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyToken, envioCompleto, transporteOk, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyToken, envioCompleto, transporteOk, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion }: any) {
+  const leerArchivo = (file: File, cb: (a: any) => void) => { const fr = new FileReader(); fr.onload = () => cb({ nombre: file.name, tipo: file.type, b64: String(fr.result) }); fr.readAsDataURL(file); };
   // Cuánto se despachó por índice de ítem, sumando todos los remitos previos.
   const desp: Record<number, number> = {};
   (remitos || []).forEach((r: any) => (r.items || []).forEach((it: any) => { desp[it.idx] = (desp[it.idx] || 0) + (Number(it.cantidad) || 0); }));
@@ -1602,12 +1605,27 @@ function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyTok
         <div className="space-y-1">
           <div className="text-[11px] font-bold text-gray-400 uppercase">Remitos generados</div>
           {links.map((r: any, i: number) => (
-            <div key={i} className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
-              <span>{r.parcial ? "🚚" : "✅"} Remito <b>{r.numero}</b> {r.parcial && <span className="text-amber-600 text-xs">(parcial)</span>}</span>
-              <span className="text-xs text-gray-400">{(r.items || []).reduce((a: number, x: any) => a + (Number(x.cantidad) || 0), 0)} u.</span>
-              {r.token && <a href={`/p/${r.token}?admin=1`} target="_blank" rel="noreferrer" className="px-2 py-0.5 rounded border border-violet-300 text-violet-700 text-xs font-semibold hover:bg-violet-50">📦 Ver</a>}
-              {onRegenerar && <button disabled={busy} onClick={() => onRegenerar(r.numero)} title="Regenerar este remito con los datos de envío/transporte actuales (mantiene el mismo número)" className="px-2 py-0.5 rounded border border-amber-300 text-amber-700 text-xs font-semibold hover:bg-amber-50">🔄 Regenerar</button>}
-              {onEliminar && i === links.length - 1 && <button disabled={busy} onClick={() => onEliminar(r.numero)} title="Eliminar este remito (solo el último emitido)" className="px-2 py-0.5 rounded border border-red-300 text-red-600 text-xs font-semibold hover:bg-red-50">🗑 Eliminar</button>}
+            <div key={i} className="border-b border-gray-50 pb-1.5 mb-1">
+              <div className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+                <span>{r.parcial ? "🚚" : "✅"} Remito <b>{r.numero}</b> {r.parcial && <span className="text-amber-600 text-xs">(parcial)</span>}</span>
+                <span className="text-xs text-gray-400">{(r.items || []).reduce((a: number, x: any) => a + (Number(x.cantidad) || 0), 0)} u.</span>
+                {r.token && <a href={`/p/${r.token}?admin=1`} target="_blank" rel="noreferrer" className="px-2 py-0.5 rounded border border-violet-300 text-violet-700 text-xs font-semibold hover:bg-violet-50">📦 Ver</a>}
+                {onRegenerar && <button disabled={busy} onClick={() => onRegenerar(r.numero)} title="Regenerar este remito con los datos de envío/transporte actuales (mantiene el mismo número)" className="px-2 py-0.5 rounded border border-amber-300 text-amber-700 text-xs font-semibold hover:bg-amber-50">🔄 Regenerar</button>}
+                {onEliminar && i === links.length - 1 && <button disabled={busy} onClick={() => onEliminar(r.numero)} title="Eliminar este remito (solo el último emitido)" className="px-2 py-0.5 rounded border border-red-300 text-red-600 text-xs font-semibold hover:bg-red-50">🗑 Eliminar</button>}
+              </div>
+              {/* Confirmación de despacho: remito sellado por el transporte + envío al cliente */}
+              <div className="flex flex-wrap items-center gap-2 mt-1 pl-5">
+                {r.confirmacion ? (
+                  <span className="text-xs text-emerald-700">📎 Confirmación cargada{r.confirmacion.enviada_at ? ` · ✉️ enviada${r.confirmacion.email ? " a " + r.confirmacion.email : ""}` : ""}</span>
+                ) : (
+                  <span className="text-xs text-gray-400">Sin confirmación de despacho</span>
+                )}
+                <label className={`px-2 py-0.5 rounded border border-gray-300 text-xs font-semibold cursor-pointer hover:bg-gray-50 ${busy ? "opacity-40" : ""}`} title="Subí el remito firmado/sellado por el transporte (PDF o imagen)">
+                  📎 {r.confirmacion ? "Reemplazar" : "Cargar confirmación"}
+                  <input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) leerArchivo(f, (a) => onConfirmar(r.numero, a)); e.target.value = ""; }} />
+                </label>
+                {r.confirmacion && onEnviarConfirmacion && <button disabled={busy} onClick={() => onEnviarConfirmacion(r.numero)} className="px-2 py-0.5 rounded border border-blue-300 text-blue-700 text-xs font-semibold hover:bg-blue-50">✉️ Enviar al cliente</button>}
+              </div>
             </div>
           ))}
         </div>

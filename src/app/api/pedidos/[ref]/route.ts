@@ -693,6 +693,49 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`UPDATE fg_comprobantes SET lugar_entrega=${lugar}, tipo_transporte=${transp}, datos_remito=${JSON.stringify(datosRemito)}::jsonb WHERE id=${rem.id}`;
       return NextResponse.json({ ok: true, remito_numero: numero });
     }
+    // Confirmación de despacho: subir el remito sellado por el transporte (PDF/imagen) y guardarlo en el remito.
+    if (b.accion === "confirmacion_despacho") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const numero = String(b.numero || "").trim();
+      const arch = b.archivo || null;
+      if (!numero || !arch?.b64) return NextResponse.json({ ok: false, error: "Falta el N° de remito o el archivo." }, { status: 400 });
+      const rem = (await sql`SELECT id FROM fg_comprobantes WHERE numero=${numero} AND tipo='remito' LIMIT 1` as any[])[0];
+      if (!rem) return NextResponse.json({ ok: false, error: "Remito no encontrado." }, { status: 404 });
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS confirmacion_archivo JSONB`.catch(() => {});
+      const conf = { nombre: String(arch.nombre || "confirmacion").slice(0, 120), tipo: String(arch.tipo || "application/octet-stream").slice(0, 60), b64: String(arch.b64), at: new Date().toISOString() };
+      await sql`UPDATE fg_comprobantes SET confirmacion_archivo=${JSON.stringify(conf)}::jsonb WHERE id=${rem.id}`;
+      // Espejo (sin b64) en payload.remitos para que el front sepa que hay confirmación.
+      const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const remitos = ((row?.payload || {}).remitos || []).map((r: any) => r.numero === numero ? { ...r, confirmacion: { nombre: conf.nombre, at: conf.at } } : r);
+      await sql`UPDATE fv_pedidos SET payload = coalesce(payload,'{}'::jsonb) || ${JSON.stringify({ remitos })}::jsonb WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true, remito_numero: numero });
+    }
+    // Enviar la confirmación de despacho por email al cliente (con el remito sellado adjunto).
+    if (b.accion === "enviar_confirmacion") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const numero = String(b.numero || "").trim();
+      const email = String(b.email || "").trim();
+      if (!numero) return NextResponse.json({ ok: false, error: "Falta el N° de remito." }, { status: 400 });
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return NextResponse.json({ ok: false, error: "Email inválido." }, { status: 400 });
+      const rem = (await sql`SELECT id, confirmacion_archivo, cliente_nombre FROM fg_comprobantes WHERE numero=${numero} AND tipo='remito' LIMIT 1` as any[])[0];
+      if (!rem) return NextResponse.json({ ok: false, error: "Remito no encontrado." }, { status: 404 });
+      const conf = rem.confirmacion_archivo;
+      if (!conf?.b64) return NextResponse.json({ ok: false, error: "Primero cargá la confirmación de despacho (remito sellado)." }, { status: 409 });
+      const b64 = String(conf.b64).split(",").pop() || "";
+      const nombreArch = /\.(pdf|jpe?g|png|webp|gif)$/i.test(conf.nombre || "") ? conf.nombre : (conf.nombre || "remito") + (/pdf/i.test(conf.tipo || "") ? ".pdf" : ".jpg");
+      const html = `<div style="font-family:'Trebuchet MS',Segoe UI,Verdana,sans-serif;font-size:15px;color:#374151;line-height:1.7">
+        <p>Hola${rem.cliente_nombre ? " " + rem.cliente_nombre : ""},</p>
+        <p>Te adjuntamos la <b>confirmación de despacho</b> de tu pedido <b>${ref}</b> (remito <b>${numero}</b>), con la conformidad del transporte.</p>
+        <p>Cualquier consulta, respondé este correo.</p>
+        <p style="margin-top:18px;color:#0b3d6b"><b>FEBECOS — Energía Solar</b></p>
+      </div>`;
+      const r = await callSelector("mail_send_internal", { to: email, subject: `Confirmación de despacho — pedido ${ref} (remito ${numero})`, html, attachments: [{ filename: nombreArch, content: b64 }] });
+      if (!r?.ok) return NextResponse.json({ ok: false, error: r?.error || "No se pudo enviar el email" }, { status: 502 });
+      const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const remitos = ((row?.payload || {}).remitos || []).map((rr: any) => rr.numero === numero ? { ...rr, confirmacion: { ...(rr.confirmacion || {}), enviada_at: new Date().toISOString(), email } } : rr);
+      await sql`UPDATE fv_pedidos SET payload = coalesce(payload,'{}'::jsonb) || ${JSON.stringify({ remitos })}::jsonb WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true, email });
+    }
     // Datos de venta (Condiciones de Venta / Forma de Pago / Lugar de Entrega / Tipo de Transporte) → factura.
     if (b.accion === "datos_venta") {
       const dv = b.datos_venta || {};
