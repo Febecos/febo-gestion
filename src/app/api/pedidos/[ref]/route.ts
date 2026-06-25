@@ -924,7 +924,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (letra === "A" && doc.tipo !== 80) bloqueos.push("Factura A requiere CUIT válido del receptor.");
 
       // Renglones que saldrán en la factura (para mostrar en la revisión).
-      const esPanelIt = (it: any) => /pan(el)?|fotovolt|m[oó]dulo\s*solar/i.test(String(it.codigo || "") + " " + String(it.descripcion || ""));
+      const esPanelIt = (it: any) => { const s = (String(it.codigo || "") + " " + String(it.descripcion || "")).toLowerCase(); if (/soporte|estructura|caja|cable|soga|jabalina|controlador|bomba/.test(s)) return false; return /^pan[-\s]|panel\s*solar|fotovolt|m[oó]dulo\s*solar/.test(s); };
       const detIt = (arr: any[]) => arr.map((it) => `${(it.descripcion || it.codigo || "").trim()} x${it.cantidad || 1}`).join("; ");
       let items_factura: any[];
       if (panelNetoP > 0) {
@@ -1084,7 +1084,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
 
       // KIT DE BOMBA con split de paneles: 2 renglones (Paneles 10,5% / Resto 21%) con el detalle de
       // los componentes y cantidades en la descripción, valuados con el neto de cada alícuota.
-      const esPanelItem = (it: any) => /pan(el)?|fotovolt|m[oó]dulo\s*solar/i.test(String(it.codigo || "") + " " + String(it.descripcion || ""));
+      // Panel solar real (10,5%): NO confundir con "Soporte para 3 paneles", caja, etc.
+      const esPanelItem = (it: any) => { const s = (String(it.codigo || "") + " " + String(it.descripcion || "")).toLowerCase(); if (/soporte|estructura|caja|cable|soga|jabalina|controlador|bomba/.test(s)) return false; return /^pan[-\s]|panel\s*solar|fotovolt|m[oó]dulo\s*solar/.test(s); };
       const detalleItems = (arr: any[]) => arr.map((it) => `${(it.descripcion || it.codigo || "").trim()} x${it.cantidad || 1}`).join("; ");
       const insertItems = async (compId: number) => {
         if (panelNetoF > 0) {
