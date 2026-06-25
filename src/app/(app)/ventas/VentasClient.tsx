@@ -1740,7 +1740,7 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
       {/* Remito del TRANSPORTE (Via Cargo, etc.): cargar directo sin generar el nuestro → confirma despacho */}
       {onRemitoExterno && (
         <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-2.5">
-          <div className="text-[11px] font-bold text-indigo-500 uppercase mb-1">🚚 Remito del transporte (sin remito propio)</div>
+          <div className="text-[11px] font-bold text-indigo-500 uppercase mb-1">🚚 Comprobante del transporte (sin remito propio)</div>
           {remitoExterno ? (
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="text-emerald-700">📎 Cargado{remitoExterno.validacion ? (remitoExterno.validacion.tiene_firma_o_sello ? " · ✅ firma/sello" : " · ⚠️ sin firma/sello") : ""}{remitoExterno.enviada_at ? ` · ✉️ enviado${remitoExterno.email ? " a " + remitoExterno.email : ""}` : ""}</span>
@@ -1750,8 +1750,8 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-500">Si el transporte (ej. Via Cargo) emite su propio remito, cargalo acá y el pedido queda <b>despachado</b> sin generar remito nuestro.</span>
-              <label className={`px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold cursor-pointer hover:bg-indigo-700 ${busy ? "opacity-40" : ""}`}>📎 Cargar remito del transporte<input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) cargarRemitoExterno(f); e.target.value = ""; }} /></label>
+              <span className="text-xs text-gray-500">Si el transporte emite su propio comprobante (remito de Via Cargo, <b>ticket de despacho de Correo Argentino</b>, guía de Andreani, etc.), cargalo acá y el pedido queda <b>despachado</b> sin generar remito nuestro.</span>
+              <label className={`px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold cursor-pointer hover:bg-indigo-700 ${busy ? "opacity-40" : ""}`}>📎 Cargar comprobante del transporte<input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) cargarRemitoExterno(f); e.target.value = ""; }} /></label>
             </div>
           )}
         </div>
