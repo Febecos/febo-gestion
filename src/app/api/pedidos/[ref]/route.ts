@@ -387,6 +387,20 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       }
       return NextResponse.json({ ok: true });
     }
+    // Editar el MEDIO (y datos de retención) de un pago ya cargado, sin borrarlo ni tocar el monto.
+    if (b.accion === "editar_pago") {
+      if (esFv) {
+        const row = (await sql`SELECT pagos_recibidos FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+        const pagos: any[] = Array.isArray(row?.pagos_recibidos) ? row.pagos_recibidos : [];
+        const idx = Number(b.index);
+        if (!(idx >= 0 && idx < pagos.length)) return NextResponse.json({ ok: false, error: "pago no encontrado" }, { status: 404 });
+        const esRet = b.medio === "Retención";
+        pagos[idx] = { ...pagos[idx], medio: String(b.medio || pagos[idx].medio || "Transferencia"),
+          retencion: esRet ? { pct: b.ret_pct ? Number(b.ret_pct) : (pagos[idx].retencion?.pct ?? null), certificado: b.ret_cert ?? pagos[idx].retencion?.certificado ?? null } : null };
+        await sql`UPDATE fv_pedidos SET pagos_recibidos=${JSON.stringify(pagos)}::jsonb WHERE numero=${ref}`;
+      }
+      return NextResponse.json({ ok: true });
+    }
     // Recibo X (no fiscal): detalle de cada pago recibido + saldo. Snapshot inmutable en datos_recibo.
     if (b.accion === "recibo") {
       if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });

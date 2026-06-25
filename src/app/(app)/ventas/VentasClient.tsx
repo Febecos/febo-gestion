@@ -936,7 +936,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     <span className="text-[11px] text-amber-700">Subí el certificado arriba (📄) — se computa como pago y baja el saldo.</span>
                   </div>
                 )}
-                {pagosRec.length > 0 && <div className="mt-2 space-y-0.5">{pagosRec.map((p: any, i: number) => <div key={i} className="text-xs text-gray-600 flex items-center gap-2"><span>• {new Date(p.fecha).toLocaleDateString("es-AR")} · {p.medio || "Pago"}{p.retencion ? ` (ret${p.retencion.pct ? " " + p.retencion.pct + "%" : ""})` : ""}: {p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} {p.ok ? "✔" : ""}</span><button onClick={() => eliminarPago(i)} title="Eliminar este pago" className="text-red-400 hover:text-red-600">🗑</button></div>)}</div>}
+                {pagosRec.length > 0 && <div className="mt-2 space-y-0.5">{pagosRec.map((p: any, i: number) => <div key={i} className="text-xs text-gray-600 flex items-center gap-2"><span>• {new Date(p.fecha).toLocaleDateString("es-AR")}:</span>
+                  <select value={p.medio || "Transferencia"} disabled={busy} onChange={(e) => accion({ accion: "editar_pago", index: i, medio: e.target.value })} title="Medio de pago (editable)" className="border border-gray-200 rounded px-1 py-0.5 text-xs bg-white"><option>Transferencia</option><option>Cheque</option><option>Efectivo</option><option>Depósito</option><option>Mercado Pago</option><option>Retención</option></select>
+                  {p.retencion && <span className="text-amber-600">ret{p.retencion.pct ? " " + p.retencion.pct + "%" : ""}</span>}
+                  <span>{p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} {p.ok ? "✔" : ""}</span>
+                  <button onClick={() => eliminarPago(i)} title="Eliminar este pago" className="text-red-400 hover:text-red-600">🗑</button></div>)}</div>}
                 {pagoCubierto && <div className="mt-2 text-xs text-emerald-700 font-semibold">✓ Pago completo (saldo 0) — ya podés facturar.</div>}
                 {pagosRec.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
