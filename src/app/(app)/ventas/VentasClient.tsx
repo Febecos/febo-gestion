@@ -440,9 +440,9 @@ function PasosPedido({ p }: { p: any }) {
     { ic: "✔", on: true, color: "#ea580c", t: "Pedido confirmado por el cliente" },
     { ic: "🏭", on: !!p.prov_confirmado, t: p.prov_confirmado ? "Stock confirmado con el proveedor" : "Falta confirmar stock con el proveedor" },
     { ic: "💰", on: !!p.pagado, t: p.pagado ? "Pagado" : "Falta el pago del cliente" },
-    { txt: "FA", on: !!p.factura_numero, color: "#059669", t: p.factura_numero ? "Factura " + p.factura_numero : "Sin facturar", token: p.factura_token },
-    // La NC solo aparece si existe (no es un paso de todo pedido)
-    ...(p.nc_numero ? [{ txt: "NC", on: true, color: "#e11d48", t: "Nota de Crédito " + p.nc_numero, token: p.nc_token }] : []),
+    { txt: p.factura_numero ? (p.factura_electronica ? "FAE" : "FAP") : "FA", on: !!p.factura_numero, color: p.factura_numero ? (p.factura_electronica ? "#059669" : "#d97706") : "#059669", t: p.factura_numero ? (p.factura_electronica ? "Factura electrónica " + p.factura_numero + " (con CAE)" : "Factura PROFORMA " + p.factura_numero + " (sin CAE)") : "Sin facturar", token: p.factura_token },
+    // La NC solo aparece si existe (no es un paso de todo pedido). Las NC son electrónicas (con CAE) → NCE.
+    ...(p.nc_numero ? [{ txt: "NCE", on: true, color: "#e11d48", t: "Nota de Crédito electrónica " + p.nc_numero, token: p.nc_token }] : []),
     { ic: "📦", on: !!p.remito_numero || p.estado === "enviado" || !!p.despacho_confirmado, color: (p.remito_numero && !p.despacho_confirmado) ? "#2563eb" : undefined, t: p.despacho_confirmado ? "Despacho completo" + (p.remito_numero ? " · " + p.remito_numero : " (comprobante del transporte)") : (p.remito_numero ? "Remito preparado " + p.remito_numero + " — falta confirmación del transporte" : "Sin remito / despacho") },
   ] as { ic?: string; txt?: string; on: boolean; color?: string; t: string; token?: string }[];
   return <span className="inline-flex items-center gap-1 text-[15px]">{pasos.map((s, i) => {

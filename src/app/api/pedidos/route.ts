@@ -44,7 +44,7 @@ export async function GET(_req: NextRequest) {
         ) c ON true
         -- Factura emitida del pedido (por número) + su Nota de Crédito si existe (operacion_id = factura.id)
         LEFT JOIN LATERAL (
-          SELECT f.token AS fac_token, nc.numero AS nc_numero, nc.token AS nc_token
+          SELECT f.token AS fac_token, f.afip_cae AS fac_cae, nc.numero AS nc_numero, nc.token AS nc_token
           FROM fg_comprobantes f
           LEFT JOIN LATERAL (
             SELECT n.numero, n.token FROM fg_comprobantes n
@@ -89,6 +89,7 @@ export async function GET(_req: NextRequest) {
           pagado: ["pagado", "enviado"].includes(p.estado) || (p.pagos_recibidos || pl.pagos_recibidos || []).length > 0,
           factura_numero: p.factura_numero || null,
           factura_token: p.fac_token || null,
+          factura_electronica: !!p.fac_cae, // con CAE = electrónica (FAE); sin CAE = proforma (FAP)
           nc_numero: p.nc_numero || null,
           nc_token: p.nc_token || null,
           remito_numero: pl.remito_numero || null,
