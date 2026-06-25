@@ -168,6 +168,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, factura, pago_proveedor: p.pago_proveedor || null,
         stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
         recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null, recibo_saldo: payloadEnriq.recibo_saldo ?? null,
+        despacho_confirmado: !!payloadEnriq.despacho_confirmado, remito_preparado: !!payloadEnriq.remito_numero,
         notas_credito, anulado_por_nc,
         es_ultimo,
       }});
@@ -555,10 +556,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (!envCompleto) return NextResponse.json({ ok: false, error: "Faltan los datos de envío del cliente. Cargalos en la ficha del cliente (CRM › Datos Envíos) o pedile que los complete desde el link." }, { status: 409 });
       if (!String(env.empresa || "").trim()) return NextResponse.json({ ok: false, error: "Falta el TRANSPORTE en los datos de envío del cliente. Cargalo antes de generar el remito." }, { status: 409 });
       // REMITOS PARCIALES: se puede despachar de a tandas. Lo ya despachado vive en payload.remitos.
+      // El FLETE INTERNO no es mercadería: no se despacha ni cuenta para completar el remito.
+      const esFlete = (it: any) => /flete/i.test(String(it?.codigo || "") + " " + String(it?.descripcion || ""));
       const itemsPed = (plr.items || []);
       const yaDesp: Record<number, number> = {};
       for (const rr of (plr.remitos || [])) for (const it of (rr.items || [])) yaDesp[it.idx] = (yaDesp[it.idx] || 0) + (Number(it.cantidad) || 0);
-      const pend = itemsPed.map((it: any, idx: number) => ({ idx, codigo: it.codigo || "", descripcion: it.descripcion || it.codigo || "", pendiente: Math.max(0, (Number(it.cantidad) || 0) - (yaDesp[idx] || 0)) }));
+      const pend = itemsPed.map((it: any, idx: number) => ({ idx, codigo: it.codigo || "", descripcion: it.descripcion || it.codigo || "", pendiente: esFlete(it) ? 0 : Math.max(0, (Number(it.cantidad) || 0) - (yaDesp[idx] || 0)) }));
       // Selección a despachar: lo que marque el front, o TODO lo pendiente (compatibilidad).
       let aDespachar: { idx: number; codigo: string; descripcion: string; cantidad: number }[];
       if (Array.isArray(b.items) && b.items.length) {
@@ -570,7 +573,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       // ¿Queda todo despachado con esta tanda? (para marcar el pedido como 'enviado')
       const despAcc: Record<number, number> = { ...yaDesp };
       for (const it of aDespachar) despAcc[it.idx] = (despAcc[it.idx] || 0) + it.cantidad;
-      const completo = itemsPed.every((it: any, idx: number) => (despAcc[idx] || 0) >= (Number(it.cantidad) || 0));
+      const completo = itemsPed.every((it: any, idx: number) => esFlete(it) || (despAcc[idx] || 0) >= (Number(it.cantidad) || 0));
       // El remito va al MISMO receptor que la factura (puede ser un cliente final del revendedor).
       const fac = (await sql`SELECT cliente_id, cliente_nombre FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0];
       const cid = fac?.cliente_id ?? cidEnvio;
@@ -627,8 +630,10 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       // Acumular este remito en payload.remitos. Solo se marca 'enviado' cuando se despachó TODO.
       const nuevoRemito = { numero, token: comp.token, fecha: new Date().toISOString(), parcial: !completo, items: aDespachar.map((x) => ({ idx: x.idx, codigo: x.codigo, descripcion: x.descripcion, cantidad: x.cantidad })) };
       const remitosAll = [...(plr.remitos || []), nuevoRemito];
-      const merge = JSON.stringify({ remitos: remitosAll, remito_numero: numero, remito_token: comp.token, despacho_completo: completo });
-      await sql`UPDATE fv_pedidos SET estado=${completo ? "enviado" : row.estado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
+      // Estado: al generar el remito el pedido queda "remito preparado" (NO despachado). El despacho se
+      // confirma recién cuando se sube el remito sellado por el transporte (acción confirmacion_despacho).
+      const merge = JSON.stringify({ remitos: remitosAll, remito_numero: numero, remito_token: comp.token, despacho_completo: completo, despacho_confirmado: false, remito_preparado: true });
+      await sql`UPDATE fv_pedidos SET payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
       return NextResponse.json({ ok: true, remito_numero: numero, remito_token: comp.token, completo, despachados: aDespachar });
     }
     // Eliminar un remito — SOLO si es el último emitido (no hay otro remito con número/id posterior).
@@ -653,7 +658,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`DELETE FROM fg_comprobantes WHERE id=${rem.id}`;
       const remitosAll = (plr.remitos || []).filter((r: any) => r.numero !== numero);
       const last = remitosAll[remitosAll.length - 1] || null;
-      const merge = JSON.stringify({ remitos: remitosAll, remito_numero: last?.numero || null, remito_token: last?.token || null, despacho_completo: false });
+      const merge = JSON.stringify({ remitos: remitosAll, remito_numero: last?.numero || null, remito_token: last?.token || null, despacho_completo: false, despacho_confirmado: false, remito_preparado: remitosAll.length > 0 });
       // Si ya no queda ningún remito, el pedido vuelve de 'enviado' a 'pagado'.
       const nuevoEstado = remitosAll.length === 0 && row.estado === "enviado" ? "pagado" : row.estado;
       await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
@@ -707,10 +712,20 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const conf = { nombre: String(arch.nombre || "confirmacion").slice(0, 120), tipo: String(arch.tipo || "application/octet-stream").slice(0, 60), b64: String(arch.b64), at: new Date().toISOString() };
       await sql`UPDATE fg_comprobantes SET confirmacion_archivo=${JSON.stringify(conf)}::jsonb WHERE id=${rem.id}`;
       // Espejo (sin b64) en payload.remitos para que el front sepa que hay confirmación.
-      const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
-      const remitos = ((row?.payload || {}).remitos || []).map((r: any) => r.numero === numero ? { ...r, confirmacion: { nombre: conf.nombre, at: conf.at } } : r);
-      await sql`UPDATE fv_pedidos SET payload = coalesce(payload,'{}'::jsonb) || ${JSON.stringify({ remitos })}::jsonb WHERE numero=${ref} RETURNING numero`;
-      return NextResponse.json({ ok: true, remito_numero: numero });
+      const row = (await sql`SELECT payload, estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const plr = row?.payload || {};
+      const remitos = (plr.remitos || []).map((r: any) => r.numero === numero ? { ...r, confirmacion: { ...(r.confirmacion || {}), nombre: conf.nombre, at: conf.at } } : r);
+      // Despacho COMPLETO = todos los ítems (sin flete) tienen remito Y todos los remitos están confirmados (sellados).
+      const esFlete = (it: any) => /flete/i.test(String(it?.codigo || "") + " " + String(it?.descripcion || ""));
+      const yaDesp: Record<number, number> = {};
+      for (const rr of remitos) for (const it of (rr.items || [])) yaDesp[it.idx] = (yaDesp[it.idx] || 0) + (Number(it.cantidad) || 0);
+      const itemsCompletos = (plr.items || []).every((it: any, idx: number) => esFlete(it) || (yaDesp[idx] || 0) >= (Number(it.cantidad) || 0));
+      const todosConfirmados = remitos.length > 0 && remitos.every((r: any) => r.confirmacion);
+      const confirmado = itemsCompletos && todosConfirmados;
+      const merge = JSON.stringify({ remitos, despacho_completo: itemsCompletos, despacho_confirmado: confirmado, remito_preparado: true });
+      const nuevoEstado = confirmado ? "enviado" : row?.estado;
+      await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true, remito_numero: numero, despacho_confirmado: confirmado });
     }
     // Enviar la confirmación de despacho por email al cliente (con el remito sellado adjunto).
     if (b.accion === "enviar_confirmacion") {

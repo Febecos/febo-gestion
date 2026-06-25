@@ -38,7 +38,7 @@ const EST_COL: Record<string, string> = { emitido: "#64748b", enviada: "#2563eb"
 function estadoPedido(p: any): { txt: string; col: string } {
   const e = String(p.estado || "").toLowerCase();
   if (["cancelado", "anulado", "rechazado"].includes(e)) return { txt: e, col: "#e53935" };
-  if (p.remito_numero) return p.despacho_completo === false ? { txt: "despacho parcial", col: "#d97706" } : { txt: "enviado", col: "#059669" };
+  if (p.remito_numero) return p.despacho_confirmado ? { txt: "despacho completo", col: "#059669" } : { txt: "remito preparado", col: "#2563eb" };
   if (p.factura_numero) return { txt: p.pagado ? "facturado y pagado" : "facturado", col: "#0b3d6b" };
   if (p.pagado) return { txt: "pagado", col: "#059669" };
   if (e === "aprobado") return { txt: "aprobado", col: "#059669" };
@@ -435,7 +435,7 @@ function PasosPedido({ p }: { p: any }) {
     { txt: "FA", on: !!p.factura_numero, color: "#059669", t: p.factura_numero ? "Factura " + p.factura_numero : "Sin facturar", token: p.factura_token },
     // La NC solo aparece si existe (no es un paso de todo pedido)
     ...(p.nc_numero ? [{ txt: "NC", on: true, color: "#e11d48", t: "Nota de Crédito " + p.nc_numero, token: p.nc_token }] : []),
-    { ic: "📦", on: !!p.remito_numero || p.estado === "enviado", color: p.remito_numero && p.despacho_completo === false ? "#d97706" : undefined, t: p.remito_numero ? (p.despacho_completo === false ? "Despacho PARCIAL · último remito " + p.remito_numero : "Remito " + p.remito_numero) : "Sin remito / despacho" },
+    { ic: "📦", on: !!p.remito_numero || p.estado === "enviado", color: p.remito_numero && !p.despacho_confirmado ? "#2563eb" : undefined, t: p.remito_numero ? (p.despacho_confirmado ? "Despacho completo · " + p.remito_numero : "Remito preparado " + p.remito_numero + " — falta confirmación del transporte") : "Sin remito / despacho" },
   ] as { ic?: string; txt?: string; on: boolean; color?: string; t: string; token?: string }[];
   return <span className="inline-flex items-center gap-1 text-[15px]">{pasos.map((s, i) => {
     const style = { opacity: s.on ? 1 : 0.25, filter: s.on ? "none" : "grayscale(1)", color: s.color, fontWeight: (s.color || s.txt) ? 800 : undefined } as React.CSSProperties;
@@ -573,7 +573,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const facturado = !!ped.factura_numero;
   const borrador = !facturado && ped.factura_estado === "borrador"; // facturado en gestión, falta autorizar ARCA
   const pagadoOk = ["pagado", "enviado"].includes(ped.estado) || (ped.pagos_recibidos || []).length > 0;
-  const despachado = ped.estado === "enviado" || !!pl.remito_numero;
+  const despachado = ped.estado === "enviado" || !!pl.remito_numero;       // hay remito (preparado o confirmado)
+  const despachoConfirmado = !!ped.despacho_confirmado || ped.estado === "enviado"; // remito sellado por el transporte cargado
   // CRM = fuente única de los datos de envío: se leen EN VIVO de la ficha del cliente (cliente_envio).
   // Si el pedido tiene cliente resuelto en el CRM, manda SIEMPRE el CRM (aunque esté vacío) — nada de
   // copias viejas del payload. El fallback a pl.envio es solo para pedidos sin cliente en CRM.
@@ -707,7 +708,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               { l: "Pago", ok: pagadoOk, tab: "pago" },
               { l: "Facturado", ok: facturado, tab: "factura" },
               { l: "Datos de envío", ok: envioCompleto, tab: "envio" },
-              { l: "Despachado", ok: despachado, tab: "envio" },
+              { l: despachado && !despachoConfirmado ? "Remito preparado" : "Despachado", ok: despachoConfirmado, tab: "envio" },
             ];
             const hechos = pasos.filter((p) => p.ok).length;
             return (
@@ -1203,6 +1204,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         items={items}
                         remitos={remitos}
                         despachoCompleto={despachoCompleto}
+                        despachoConfirmado={despachoConfirmado}
                         legacyNumero={legacyFull ? pl.remito_numero : null}
                         legacyToken={legacyFull ? pl.remito_token : null}
                         envioCompleto={completo}
@@ -1573,15 +1575,17 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyToken, envioCompleto, transporteOk, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion }: any) {
   const leerArchivo = (file: File, cb: (a: any) => void) => { const fr = new FileReader(); fr.onload = () => cb({ nombre: file.name, tipo: file.type, b64: String(fr.result) }); fr.readAsDataURL(file); };
   // Cuánto se despachó por índice de ítem, sumando todos los remitos previos.
   const desp: Record<number, number> = {};
   (remitos || []).forEach((r: any) => (r.items || []).forEach((it: any) => { desp[it.idx] = (desp[it.idx] || 0) + (Number(it.cantidad) || 0); }));
+  // El FLETE INTERNO no es mercadería: no se despacha ni va al remito.
+  const esFlete = (it: any) => /flete/i.test(String(it?.codigo || "") + " " + String(it?.descripcion || ""));
   const lineas = (items || []).map((it: any, idx: number) => {
     const cant = Number(it.cantidad) || 0; const ya = desp[idx] || 0;
     return { idx, codigo: it.codigo || "", descripcion: it.descripcion || "", cant, ya, pendiente: Math.max(0, cant - ya) };
-  });
+  }).filter((l: any) => !esFlete(l));
   const hayPendientes = lineas.some((l: any) => l.pendiente > 0);
   // Selección: idx -> cantidad a despachar ahora (default = todo lo pendiente).
   const [sel, setSel] = useState<Record<number, number>>(() => Object.fromEntries(lineas.filter((l: any) => l.pendiente > 0).map((l: any) => [l.idx, l.pendiente])));
@@ -1631,8 +1635,10 @@ function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyTok
         </div>
       )}
 
-      {despachoCompleto ? (
-        !legacyNumero && <div className="text-sm text-emerald-700 font-semibold">✅ Pedido despachado por completo.</div>
+      {despachoConfirmado ? (
+        !legacyNumero && <div className="text-sm text-emerald-700 font-semibold">✅ Despacho completo — remito sellado por el transporte cargado.</div>
+      ) : (despachoCompleto || (links.length > 0 && !hayPendientes)) ? (
+        <div className="text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 font-semibold">📦 Remito preparado. Cargá el <b>remito sellado por el transporte</b> (arriba, en cada remito) para confirmar el despacho.</div>
       ) : (
         <>
           {faltan.length > 0 && <div className="text-xs text-amber-600">Para generar un remito primero: {faltan.join(" · ")}.</div>}
