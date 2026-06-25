@@ -85,7 +85,8 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     let empresa: any = null;
     try { const e = await sql`SELECT cuit, razon_social, nombre_fantasia, domicilio, localidad, provincia, cod_postal, condicion_iva, iibb, inicio_actividades FROM fg_empresa WHERE id=1`; empresa = e[0] || null; } catch {}
 
-    return NextResponse.json({ ok: true, comprobante: c, items, cliente, empresa });
+    // no-store: el comprobante cambia de estado (borrador→emitida con CAE/QR); nunca servir cacheado.
+    return NextResponse.json({ ok: true, comprobante: c, items, cliente, empresa }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }

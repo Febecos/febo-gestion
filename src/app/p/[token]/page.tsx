@@ -56,7 +56,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
   const [sending, setSending] = useState(false);
   useEffect(() => {
     setAdmin(new URLSearchParams(window.location.search).get("admin") === "1");
-    fetch("/api/public/" + params.token).then((r) => r.json()).then((j) => {
+    fetch("/api/public/" + params.token, { cache: "no-store" }).then((r) => r.json()).then((j) => {
       if (!j.ok) { setErr(j.error || "No encontrado"); return; }
       setD(j);
       try {
