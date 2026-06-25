@@ -96,19 +96,26 @@ export default function ComprobantePublico({ params }: { params: { token: string
   // Remito: se imprime sobre el formulario preimpreso de ARCA (imagen de fondo + datos encima).
   if (tipoDoc === "remito") return <RemitoForm c={c} cli={cli} items={items} onPrint={() => window.print()} />;
 
-  // Subtotal BRUTO (suma de ítems, antes de descuento)
-  const subtotalBruto = items.reduce((a: number, it: any) => a + (Number(it.total) || 0), 0) || Number(c.subtotal_bruto) || Number(c.subtotal) || 0;
+  const letra = (c.letra || "").toUpperCase();
+  // Solo las Facturas A y M discriminan IVA. B (consumidor final/exento) y C (monotributo) NO: el precio ya lo incluye.
+  const discriminaIva = letra === "A" || letra === "M";
   // Descuento general (pct + monto)
   const descPct = Number(c.descuento_general_pct ?? c.descuento_pct ?? 0);
-  const descMonto = Number(c.descuento_general_monto ?? c.descuento_monto ?? (descPct ? subtotalBruto * descPct / 100 : 0));
+  const descMonto0 = Number(c.descuento_general_monto ?? c.descuento_monto ?? 0);
+  const netoStored = Number(c.neto ?? c.subtotal);
+  const itemsSum = items.reduce((a: number, it: any) => a + (Number(it.total) || 0), 0);
+  // Subtotal BRUTO (antes de descuento). Para Factura A/M con neto FISCAL guardado, se deriva del
+  // neto (neto + descuento) para que el bloque cierre exacto (SubTotal − Desc + IVA == Total) aunque
+  // la suma de renglones difiera unos centavos por el redondeo de AFIP (IVA = base × alícuota).
+  const subtotalBruto = (discriminaIva && Number.isFinite(netoStored) && netoStored > 0)
+    ? +(netoStored + descMonto0).toFixed(2)
+    : (itemsSum || Number(c.subtotal_bruto) || Number(c.subtotal) || 0);
+  const descMonto = descMonto0 || (descPct ? +(subtotalBruto * descPct / 100).toFixed(2) : 0);
   const tieneDesc = descMonto > 0.009;
   // Neto gravado (después de descuento)
   const neto = Number(c.neto ?? c.subtotal ?? (subtotalBruto - descMonto));
 
   const emisorCond = emp.condicion_iva || "Responsable Inscripto";
-  const letra = (c.letra || "").toUpperCase();
-  // Solo las Facturas A y M discriminan IVA. B (consumidor final/exento) y C (monotributo) NO: el precio ya lo incluye.
-  const discriminaIva = letra === "A" || letra === "M";
 
   // Detalle de IVA: acepta objeto {"21":monto,"10.5":monto} o array [{pct,monto}]
   let ivaLines: { pct: string; monto: number }[] = [];
