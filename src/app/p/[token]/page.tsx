@@ -346,6 +346,7 @@ const POS = {
     monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
   itemsTop: 46.0, itemRowH: 2.74, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 11, detMaxChars: 70,
+  valorDeclarado: { top: 88.0, left: 8.5, w: 50, size: 11, bold: true },
 };
 
 // Recorta una frase al máximo de caracteres SIN cortar palabras (corta la frase, no la palabra).
@@ -376,6 +377,8 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
   // Transporte: empresa en su renglón y el DOMICILIO del transporte en el renglón que corresponde.
   const transpEmpresa = snap?.transporte?.empresa || c.tipo_transporte || "";
   const transpDom = snap?.transporte?.domicilio || "";
+  const vdNum = Number(String(snap?.valor_declarado ?? "").replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+  const valorDeclTxt = vdNum > 0 ? `VALOR DECLARADO $ ${vdNum.toLocaleString("es-AR")}` : "";
   const fondo = "/images/" + (snap?.imagen_fondo || "remito-fondo.png");
   const leyendas: string[] = Array.isArray(c.leyendas) ? c.leyendas : [];
   const FONT = "Arial, Helvetica, sans-serif";
@@ -415,6 +418,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {ivaPos && <div style={{ position: "absolute", top: ivaPos.top + "%", left: ivaPos.left + "%", fontSize: "11pt", fontWeight: 700, color: "#111", lineHeight: 1, fontFamily: FONT }}>X</div>}
         {transpEmpresa && T(POS.transporte, transpEmpresa)}
         {transpDom && T(POS.transporteDom, transpDom)}
+        {valorDeclTxt && T(POS.valorDeclarado, valorDeclTxt)}
         {items.map((it, i) => (
           <div key={i}>
             <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "pt", textAlign: "center", color: "#111", lineHeight: 1, fontFamily: FONT }}>{it.cantidad}</div>

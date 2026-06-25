@@ -612,6 +612,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         imagen_fondo: (remTal && remTal.imagen_fondo) ? remTal.imagen_fondo : "remito-fondo.png",
         emitido_at: new Date().toISOString(),
         parcial: !completo,
+        valor_declarado: plr.valor_declarado || null,
         items: aDespachar.map((x) => ({ codigo: x.codigo, descripcion: x.descripcion, cantidad: x.cantidad })),
       };
       const comp = (await sql`
@@ -688,6 +689,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         },
         transporte: { empresa: env.empresa || "", domicilio: env.domicilio_transporte || "", telefono: env.telefono_transporte || "" },
         entrega: lugar,
+        valor_declarado: plr.valor_declarado ?? prev?.valor_declarado ?? null,
         regenerado_at: new Date().toISOString(),
       };
       await sql`UPDATE fg_comprobantes SET lugar_entrega=${lugar}, tipo_transporte=${transp}, datos_remito=${JSON.stringify(datosRemito)}::jsonb WHERE id=${rem.id}`;
