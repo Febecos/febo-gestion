@@ -23,6 +23,7 @@ export async function GET(_req: NextRequest) {
         SELECT fp.numero, fp.estado, fp.public_token, fp.payload, fp.metodo_pago,
                fp.factura_numero, fp.proveedor_confirmado, fp.pagos_recibidos,
                pr.public_token AS presup_token,
+               fac.fac_token, fac.nc_numero, fac.nc_token,
                c.id AS cliente_id,
                COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,'')) AS cliente_crm
         FROM fv_pedidos fp
@@ -41,6 +42,17 @@ export async function GET(_req: NextRequest) {
           ORDER BY (cc.id = pr.cliente_id) DESC, (cc.cuit = pr.cliente_cuit) DESC NULLS LAST, cc.id ASC
           LIMIT 1
         ) c ON true
+        -- Factura emitida del pedido (por número) + su Nota de Crédito si existe (operacion_id = factura.id)
+        LEFT JOIN LATERAL (
+          SELECT f.token AS fac_token, nc.numero AS nc_numero, nc.token AS nc_token
+          FROM fg_comprobantes f
+          LEFT JOIN LATERAL (
+            SELECT n.numero, n.token FROM fg_comprobantes n
+            WHERE n.operacion_id = f.id AND n.tipo = 'nota_credito' ORDER BY n.id DESC LIMIT 1
+          ) nc ON true
+          WHERE f.tipo = 'factura' AND coalesce(fp.factura_numero,'') <> '' AND f.numero = fp.factura_numero
+          ORDER BY f.id DESC LIMIT 1
+        ) fac ON true
         ORDER BY fp.numero DESC LIMIT 300` as any[];
     } catch { fv = []; }
 
@@ -76,6 +88,9 @@ export async function GET(_req: NextRequest) {
           prov_confirmado: !!p.proveedor_confirmado,
           pagado: ["pagado", "enviado"].includes(p.estado) || (p.pagos_recibidos || pl.pagos_recibidos || []).length > 0,
           factura_numero: p.factura_numero || null,
+          factura_token: p.fac_token || null,
+          nc_numero: p.nc_numero || null,
+          nc_token: p.nc_token || null,
           remito_numero: pl.remito_numero || null,
         };
       }),

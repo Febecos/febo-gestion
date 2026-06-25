@@ -419,10 +419,21 @@ function PasosPedido({ p }: { p: any }) {
     { ic: "✔", on: true, color: "#ea580c", t: "Pedido confirmado por el cliente" },
     { ic: "🏭", on: !!p.prov_confirmado, t: p.prov_confirmado ? "Stock confirmado con el proveedor" : "Falta confirmar stock con el proveedor" },
     { ic: "💰", on: !!p.pagado, t: p.pagado ? "Pagado" : "Falta el pago del cliente" },
-    { ic: "🧾", on: !!p.factura_numero, t: p.factura_numero ? "Factura " + p.factura_numero : "Sin facturar" },
+    { txt: "FA", on: !!p.factura_numero, color: "#059669", t: p.factura_numero ? "Factura " + p.factura_numero : "Sin facturar", token: p.factura_token },
+    // La NC solo aparece si existe (no es un paso de todo pedido)
+    ...(p.nc_numero ? [{ txt: "NC", on: true, color: "#e11d48", t: "Nota de Crédito " + p.nc_numero, token: p.nc_token }] : []),
     { ic: "📦", on: !!p.remito_numero || p.estado === "enviado", t: p.remito_numero ? "Remito " + p.remito_numero : "Sin remito / despacho" },
-  ] as { ic: string; on: boolean; color?: string; t: string }[];
-  return <span className="inline-flex gap-1 text-[15px]">{pasos.map((s, i) => <span key={i} title={s.t} style={{ opacity: s.on ? 1 : 0.22, filter: s.on ? "none" : "grayscale(1)", color: s.color, fontWeight: s.color ? 800 : undefined }}>{s.ic}</span>)}</span>;
+  ] as { ic?: string; txt?: string; on: boolean; color?: string; t: string; token?: string }[];
+  return <span className="inline-flex items-center gap-1 text-[15px]">{pasos.map((s, i) => {
+    const style = { opacity: s.on ? 1 : 0.25, filter: s.on ? "none" : "grayscale(1)", color: s.color, fontWeight: (s.color || s.txt) ? 800 : undefined } as React.CSSProperties;
+    const inner = s.txt
+      ? <span className="inline-flex items-center justify-center rounded px-1 text-[10px] leading-[14px] border" style={{ borderColor: (s.color || "#888") + "66", background: s.on ? (s.color || "#888") + "14" : "transparent" }}>{s.txt}</span>
+      : s.ic;
+    const node = <span key={i} title={s.t} style={style}>{inner}</span>;
+    return s.on && s.token
+      ? <a key={i} href={`/p/${s.token}?admin=1`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={s.t + " — ver"} style={style} className="hover:underline">{inner}</a>
+      : node;
+  })}</span>;
 }
 
 // ---------- PEDIDOS (bombas + fv unificados) ----------
