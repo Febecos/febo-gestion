@@ -37,6 +37,26 @@ function totalParaCliente(tot: any): { total: number | null; moneda: string } {
   return { total: tot?.total != null ? baseTotal : null, moneda };
 }
 
+// Kit de bomba: NETO de paneles (10,5%) calculado igual que el portal de bombas, leyendo del
+// PRESUPUESTO (descuento) + catálogo (precio del panel × cant). factor = 1 − descuento%/100.
+// Devuelve el neto de paneles, o null si no es un kit con panel en catálogo.
+async function netoPanelKit(sql: any, presupNum: string | null, totalConIva: number): Promise<number | null> {
+  if (!presupNum || !(totalConIva > 0)) return null;
+  try {
+    const pr = (await sql`SELECT descuento_pct, bomba_codigo, tipo FROM presupuestos WHERE numero=${presupNum} LIMIT 1` as any[])[0];
+    if (!pr || pr.tipo !== "bomba") return null;
+    const pump = (await sql`SELECT id, cant_paneles FROM pumps WHERE regexp_replace(lower(codigo),'[[:space:]]','','g')=regexp_replace(lower(${pr.bomba_codigo || ""}),'[[:space:]]','','g') LIMIT 1` as any[])[0];
+    if (!pump) return null;
+    const panRow = (await sql`SELECT cc.precio_ars, pc.cantidad FROM pump_components pc JOIN components cc ON cc.id=pc.component_id WHERE pc.pump_id=${pump.id} AND lower(cc.familia)='panel' LIMIT 1` as any[])[0];
+    const cantPan = Number(pump.cant_paneles) || Number(panRow?.cantidad) || 0;
+    const panelPublico = (Number(panRow?.precio_ars) || 0) * cantPan;
+    const factor = 1 - (Number(pr.descuento_pct) || 0) / 100;
+    const panelEnPrecio = panelPublico * factor;
+    if (!(panelEnPrecio > 0 && panelEnPrecio < totalConIva)) return null;
+    return +(panelEnPrecio / 1.105).toFixed(2);
+  } catch { return null; }
+}
+
 // Comisión del revendedor (USD). RI → base TOTAL (c/IVA); otra condición → base NETO.
 async function calcComision(sql: any, revendedor_id: number | null, receptorFinalId: number, totalUsd: number, netoUsd: number): Promise<{ pct: number; monto: number }> {
   if (!revendedor_id) return { pct: 0, monto: 0 };
@@ -868,14 +888,18 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       // está en pesos (arsNativo) la factura ARS NO le re-aplica el TC (conv identidad).
       // ARS nativo: el total ya está en pesos (tc null, moneda ARS) → la factura ARS NO re-aplica el TC.
       const arsNatP = (tot?.tc == null) && (tot?.moneda === "ARS" || tot?.moneda === "$") && Number(tot?.total) > 0;
-      const normP = normalizarTotales(tot);
-      let totP = normP.tot;
-      let convP: (n: any) => number = ((arsNatP || normP.arsNativo) && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
-      // Split manual de kit de bomba: neto de paneles (10,5%) → el resto va a 21%, preservando el total.
-      if (Number(b.split_panel_neto) > 0 && Number(tot?.total) > 0) {
-        const sp = splitPanelResto(Number(tot.total), Number(b.split_panel_neto));
+      // Kit de bomba: neto de paneles (10,5%). Manual (b.split_panel_neto) o leído del presupuesto+catálogo.
+      let panelNetoP = Number(b.split_panel_neto) || 0;
+      if (!panelNetoP && Number(tot?.total) > 0) panelNetoP = (await netoPanelKit(sql, pl.presupuesto_numero || null, Number(tot.total))) || 0;
+      let totP: any, convP: (n: any) => number;
+      if (panelNetoP > 0 && Number(tot?.total) > 0) {
+        const sp = splitPanelResto(Number(tot.total), panelNetoP);
         totP = { ...tot, neto: sp.neto, iva_detalle: sp.iva_detalle };
-        convP = (n: any) => Math.round(Number(n) || 0); // el split ya está en pesos (total del pedido)
+        convP = (n: any) => Math.round(Number(n) || 0); // split ya en pesos (total del pedido)
+      } else {
+        const normP = normalizarTotales(tot);
+        totP = normP.tot;
+        convP = ((arsNatP || normP.arsNativo) && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
       }
       const des = desglosarFactura({ items, tot: totP, conv: convP, esFacturaC });
       const doc = docTipoReceptor(clienteCuit);
@@ -970,14 +994,18 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const esFacturaC = tipoTal?.letra === "C";
       // Presupuestos con SOLO total (bombas): derivar neto/IVA del total acordado (lo preserva).
       const arsNatF = (tot?.tc == null) && (tot?.moneda === "ARS" || tot?.moneda === "$") && Number(tot?.total) > 0;
-      const normF = normalizarTotales(tot);
-      let totF = normF.tot;
-      let convF: (n: any) => number = ((arsNatF || normF.arsNativo) && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
-      // Split manual paneles 10,5% / resto 21% (igual que el preview).
-      if (Number(b.split_panel_neto) > 0 && Number(tot?.total) > 0) {
-        const sp = splitPanelResto(Number(tot.total), Number(b.split_panel_neto));
+      // Kit de bomba: neto paneles (10,5%) manual o leído del presupuesto+catálogo (igual que el preview).
+      let panelNetoF = Number(b.split_panel_neto) || 0;
+      if (!panelNetoF && Number(tot?.total) > 0) panelNetoF = (await netoPanelKit(sql, pl.presupuesto_numero || null, Number(tot.total))) || 0;
+      let totF: any, convF: (n: any) => number;
+      if (panelNetoF > 0 && Number(tot?.total) > 0) {
+        const sp = splitPanelResto(Number(tot.total), panelNetoF);
         totF = { ...tot, neto: sp.neto, iva_detalle: sp.iva_detalle };
         convF = (n: any) => Math.round(Number(n) || 0);
+      } else {
+        const normF = normalizarTotales(tot);
+        totF = normF.tot;
+        convF = ((arsNatF || normF.arsNativo) && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
       }
       const netoUsd = Number(totF.neto ?? totF.total ?? 0);
       const sumIvaUsd = Array.isArray(totF.iva_detalle) ? totF.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
