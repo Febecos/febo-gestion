@@ -496,7 +496,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
   const [unlockedProv, setUnlockedProv] = useState<Record<string, boolean>>({});
-  const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "", medio: "Transferencia", ret_pct: "", ret_cert: "" });
+  const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "", medio: "Transferencia", ret_pct: "", ret_cert: "", archivo_nombre: "" });
   const [emailCli, setEmailCli] = useState("");
   const [tals, setTals] = useState<any[]>([]); const [talSel, setTalSel] = useState<string>("");
   const [facMoneda, setFacMoneda] = useState("USD"); const [facTc, setFacTc] = useState("");
@@ -869,8 +869,9 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               if (/transferenc/.test(s)) return "Transferencia";
               return null;
             };
-            const leerComprobante = async () => {
-              const a = archivos[archivos.length - 1];
+            const quitarArchivo = (i: number) => { if (confirm("¿Quitar este comprobante adjunto?")) accion({ accion: "comprobante", archivos: archivos.filter((_: any, j: number) => j !== i) }); };
+            const leerComprobante = async (a: any) => {
+              if (!a) a = archivos[archivos.length - 1];
               if (!a) { alert("Subí primero el comprobante (PDF o imagen)."); return; }
               try {
                 let monto = 0; let texto = a.nombre || "";
@@ -887,7 +888,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   monto = vals.length ? Math.max(...vals) : 0; // el importe suele ser el mayor
                 }
                 const medio = detectarMedio(texto);
-                const upd: any = { ...vf };
+                const upd: any = { ...vf, archivo_nombre: a.nombre || "" };
                 if (monto > 0) { upd.monto = String(monto); upd.moneda = enPesos ? "ars" : "usd"; }
                 if (medio) upd.medio = medio;
                 setVf(upd);
@@ -899,11 +900,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               if (!montoN) { alert("Ingresá el monto recibido"); return; }
               if (esRet && !archivos.length) { if (!confirm("Es una retención pero no subiste el certificado (img/pdf). ¿Guardar igual?")) return; }
               const montoUsd = enPesos ? +(esteEnFactura / (tcPed || 1)).toFixed(2) : esteEnFactura;
-              const ultArch = archivos.length ? archivos[archivos.length - 1].nombre : null;
+              const ultArch = vf.archivo_nombre || (archivos.length ? archivos[archivos.length - 1].nombre : null);
               accion({ accion: "verificar", pago: { monto: montoN, moneda: vf.moneda, tc: tcPed, monto_usd: montoUsd, monto_factura: esteEnFactura, moneda_factura: enPesos ? "ars" : "usd", ok: okPago, fecha: new Date().toISOString(),
                 medio: vf.medio, archivo_nombre: ultArch,
                 retencion: esRet ? { pct: vf.ret_pct ? Number(vf.ret_pct) : null, certificado: vf.ret_cert || null } : null } });
-              setVf({ ...vf, monto: "", ret_pct: "", ret_cert: "" });
+              setVf({ ...vf, monto: "", ret_pct: "", ret_cert: "", archivo_nombre: "" });
             };
             const generarRecibo = async () => {
               if (!pagosRec.length) { alert("Cargá al menos un pago antes de generar el recibo."); return; }
@@ -914,10 +915,15 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             return (
               <div className="border border-gray-200 rounded-lg p-3">
                 <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📄 Comprobante de pago {ped.comprobante_recibido && <span className="text-emerald-600">· recibido</span>}</div>
-                {archivos.length > 0 && <div className="flex flex-wrap gap-2 mb-2">{archivos.map((a: any, i: number) => <a key={i} href={`data:${a.tipo};base64,${a.b64}`} download={a.nombre} className="text-xs text-febo-azul underline">⬇ {a.nombre}</a>)}</div>}
+                {archivos.length > 0 && <div className="flex flex-col gap-1 mb-2">{archivos.map((a: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-xs">
+                    <a href={`data:${a.tipo};base64,${a.b64}`} download={a.nombre} className="text-febo-azul underline truncate max-w-[280px]" title={a.nombre}>⬇ {a.nombre}</a>
+                    <button disabled={busy} onClick={() => leerComprobante(a)} className="px-2 py-0.5 rounded border border-blue-300 text-blue-700 font-semibold hover:bg-blue-50" title="Lee monto + medio de ESTE comprobante y los pone en el formulario para guardarlo como pago">🔍 Leer</button>
+                    <button onClick={() => quitarArchivo(i)} className="text-red-400 hover:text-red-600" title="Quitar este adjunto">✕</button>
+                  </div>
+                ))}</div>}
                 <div className="flex items-center gap-2 mb-3">
                   <input type="file" accept="application/pdf,image/*" multiple onChange={(e) => subir(e.target.files)} className="text-xs" />
-                  {archivos.length > 0 && <button disabled={busy} onClick={leerComprobante} className="px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 text-xs font-semibold hover:bg-blue-50" title="Lee el monto del comprobante (PDF por texto, imagen por OCR gratis)">🔍 Leer monto</button>}
                 </div>
                 <div className="text-[11px] font-bold text-gray-500 uppercase mb-1">💵 Verificar monto recibido</div>
                 <div className="text-xs mb-1">Total a cobrar: <b>{fmtP(totalCobrar)}</b>{enPesos ? ` (USD ${(fac?.total != null && tcPed ? Number(fac.total) / tcPed : totalUsdReal).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · TC ${tcPed})` : ""} · Pagado: <b>{fmtP(totalPagado)}</b> · Saldo: <b className={Math.abs(saldoCobrar) <= (enPesos ? 1 : 0.02) ? "text-emerald-600" : "text-red-600"}>{fmtP(saldoCobrar)}</b></div>
