@@ -862,7 +862,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             // Infiere el medio de pago del texto/nombre del comprobante (cheque, depósito, MP, etc.).
             const detectarMedio = (txt: string): string | null => {
               const s = (txt || "").toLowerCase();
-              if (/\bcheque\b|\be-?cheq|echeq/.test(s)) return "Cheque";
+              if (/cheque|e-?cheq|echeq/.test(s)) return "Cheque";
               if (/mercado\s*pago|\bmp\b/.test(s)) return "Mercado Pago";
               if (/dep[oó]sito/.test(s)) return "Depósito";
               if (/efectivo/.test(s)) return "Efectivo";
@@ -891,6 +891,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 const upd: any = { ...vf, archivo_nombre: a.nombre || "" };
                 if (monto > 0) { upd.monto = String(monto); upd.moneda = enPesos ? "ars" : "usd"; }
                 if (medio) upd.medio = medio;
+                // N° de cheque desde el nombre/texto ("Cheque00022639" → 22639); sin ceros a la izquierda.
+                if (medio === "Cheque" && !vf.ref_numero) { const mch = texto.match(/cheque[^0-9]*0*(\d{3,})/i); if (mch) upd.ref_numero = mch[1]; }
                 setVf(upd);
                 if (!(monto > 0)) alert("No pude leer el monto." + (medio ? ` (Detecté medio: ${medio}.)` : "") + " Cargalo a mano.");
               } catch (e: any) { alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano."); }
