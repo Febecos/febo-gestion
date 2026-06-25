@@ -1605,6 +1605,21 @@ function RevisionFacturaModal({ data, onClose }: { data: any; onClose: () => voi
 
           {data.arca?.consultado && <div className={`text-[11px] rounded-lg px-3 py-2 ${data.arca.persistida ? "bg-emerald-50 border border-emerald-200 text-emerald-700" : "bg-gray-50 border border-gray-200 text-gray-500"}`}>{data.arca.persistida ? `✓ Condición fiscal cargada automáticamente desde ARCA: ${data.arca.condicion_fiscal}` : `ARCA: ${data.arca.nota || "sin condición IVA"}`}</div>}
 
+          {Array.isArray(data.items_factura) && data.items_factura.length > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-500 text-[11px] uppercase"><tr><th className="text-center px-3 py-1.5 w-12">Cant.</th><th className="text-left px-3 py-1.5">Descripción</th><th className="text-right px-3 py-1.5">Neto</th></tr></thead>
+                <tbody>
+                  {data.items_factura.map((it: any, i: number) => <tr key={i} className="border-t border-gray-100 align-top">
+                    <td className="px-3 py-1.5 text-center">{it.cantidad}</td>
+                    <td className="px-3 py-1.5">{it.descripcion}{it.alic && <span className="ml-1 text-[10px] text-amber-600">({it.alic})</span>}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">{fmt(it.total)}</td>
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+          )}
+
           <div className="border border-gray-200 rounded-lg overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-gray-50 text-gray-500 text-[11px] uppercase"><tr><th className="text-left px-3 py-1.5">Alícuota</th><th className="text-right px-3 py-1.5">Base imponible</th><th className="text-right px-3 py-1.5">IVA</th></tr></thead>

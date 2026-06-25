@@ -905,6 +905,23 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const doc = docTipoReceptor(clienteCuit);
       if (letra === "A" && doc.tipo !== 80) bloqueos.push("Factura A requiere CUIT válido del receptor.");
 
+      // Renglones que saldrán en la factura (para mostrar en la revisión).
+      const esPanelIt = (it: any) => /pan(el)?|fotovolt|m[oó]dulo\s*solar/i.test(String(it.codigo || "") + " " + String(it.descripcion || ""));
+      const detIt = (arr: any[]) => arr.map((it) => `${(it.descripcion || it.codigo || "").trim()} x${it.cantidad || 1}`).join("; ");
+      let items_factura: any[];
+      if (panelNetoP > 0) {
+        const baseP = +(Number(des.ivaArr.find((x) => x.id === 4)?.base) || 0).toFixed(2);
+        const baseR = +(Number(des.ivaArr.find((x) => x.id === 5)?.base) || 0).toFixed(2);
+        const panels = items.filter(esPanelIt); const resto = items.filter((it: any) => !esPanelIt(it));
+        const cantPan = panels.reduce((a: number, it: any) => a + (Number(it.cantidad) || 1), 0) || 1;
+        items_factura = [
+          { cantidad: cantPan, descripcion: "Paneles solares" + (panels.length ? " — " + detIt(panels) : ""), total: baseP, alic: "10,5%" },
+          { cantidad: 1, descripcion: "Bomba, controlador y accesorios — " + detIt(resto), total: baseR, alic: "21%" },
+        ];
+      } else {
+        items_factura = items.map((it: any) => ({ cantidad: it.cantidad || 1, descripcion: it.descripcion || it.codigo || "", total: convP(it.subtotal) }));
+      }
+
       return NextResponse.json({
         ok: true, preview: true, ref,
         receptor: { id: cliente_id, nombre: receptorNombre, cuit: clienteCuit || null, condicion_fiscal: condicion, doc_tipo: doc.tipo, doc_nro: doc.nro, es_cliente_final: !!receptorFinalId },
@@ -913,6 +930,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         talonario: tal ? { id: tal.id, tipo_codigo: tal.tipo_codigo, letra: tipoTal?.letra || letra, electronica: !!tipoTal?.electronica, punto_venta: ptoVta } : null,
         moneda: facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null,
         montos: { neto: des.neto, iva: des.ivaArr.map((x) => ({ id: x.id, base: x.base, importe: x.importe })), imp_iva: des.impIVA, total: des.total, es_factura_c: esFacturaC },
+        items_factura,
         leyendas: leyendasFactura(condicion),
         bloqueos, avisos, puede_facturar: bloqueos.length === 0,
       });
@@ -1046,7 +1064,24 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_estado text`.catch(() => {});
       await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS factura_borrador_id int`.catch(() => {});
 
+      // KIT DE BOMBA con split de paneles: 2 renglones (Paneles 10,5% / Resto 21%) con el detalle de
+      // los componentes y cantidades en la descripción, valuados con el neto de cada alícuota.
+      const esPanelItem = (it: any) => /pan(el)?|fotovolt|m[oó]dulo\s*solar/i.test(String(it.codigo || "") + " " + String(it.descripcion || ""));
+      const detalleItems = (arr: any[]) => arr.map((it) => `${(it.descripcion || it.codigo || "").trim()} x${it.cantidad || 1}`).join("; ");
       const insertItems = async (compId: number) => {
+        if (panelNetoF > 0) {
+          const baseP = +(Number(desglose.ivaArr.find((x) => x.id === 4)?.base) || 0).toFixed(2); // 10,5%
+          const baseR = +(Number(desglose.ivaArr.find((x) => x.id === 5)?.base) || 0).toFixed(2); // 21%
+          const panels = items.filter(esPanelItem); const resto = items.filter((it: any) => !esPanelItem(it));
+          const cantPan = panels.reduce((a: number, it: any) => a + (Number(it.cantidad) || 1), 0) || 1;
+          const descP = "Paneles solares" + (panels.length ? " — " + detalleItems(panels) : "");
+          const descR = "Bomba, controlador y accesorios — " + detalleItems(resto);
+          await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
+            VALUES (${compId}, ${descP.slice(0, 600)}, ${cantPan}, ${+(baseP / cantPan).toFixed(2)}, ${baseP}, 0)`;
+          await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
+            VALUES (${compId}, ${descR.slice(0, 800)}, 1, ${baseR}, ${baseR}, 1)`;
+          return;
+        }
         let orden = 0;
         for (const it of items) {
           await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
