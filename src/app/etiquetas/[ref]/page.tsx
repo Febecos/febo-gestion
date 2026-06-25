@@ -78,6 +78,10 @@ export default function EtiquetasPage({ params }: { params: { ref: string } }) {
 
   const upd = (k: keyof Etiqueta, v: string) => setData((d) => (d ? { ...d, [k]: v } : d));
 
+  // Nombre del archivo al imprimir/guardar PDF = "Etiqueta - NOMBRE DEL CLIENTE".
+  const nombreArchivo = `Etiqueta - ${(data?.dest_nombre || ref).trim()}`;
+  useEffect(() => { document.title = nombreArchivo; }, [nombreArchivo]);
+
   if (loading || !data) return <div style={{ padding: 40, fontFamily: "system-ui" }}>Cargando etiquetas…</div>;
 
   // Campo compartido. Solo la PRIMERA etiqueta (master) es editable; las demás son espejo (se copian).
@@ -131,7 +135,7 @@ export default function EtiquetasPage({ params }: { params: { ref: string } }) {
       `}</style>
 
       <div className="et-toolbar">
-        <button className="et-print" onClick={() => window.print()}>🖨️ Imprimir / Guardar PDF</button>
+        <button className="et-print" onClick={() => { document.title = nombreArchivo; window.print(); }}>🖨️ Imprimir / Guardar PDF</button>
         <span style={{ fontSize: 13 }}>Etiquetas:</span>
         <button className="et-cnt" onClick={() => setCount((c) => Math.max(1, c - 1))}>－</button>
         <span style={{ fontWeight: 700, minWidth: 18, textAlign: "center" }}>{count}</span>
