@@ -962,6 +962,14 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               if (d?.ok && d.recibo_token) window.open(`/p/${d.recibo_token}?admin=1`, "_blank");
             };
             const eliminarPago = (i: number) => { if (confirm("¿Eliminar este pago? Se revierte su movimiento en cuenta corriente.")) accion({ accion: "eliminar_pago", index: i }); };
+            // Redondeo automático: si queda un saldo chico (≤ $1000 en pesos), se carga un ajuste que lo lleva a 0.
+            const saldoEnPesos = enPesos ? saldoCobrar : saldoCobrar * tcPed;
+            const puedeRedondear = saldoCobrar > (enPesos ? 1 : 0.02) && saldoEnPesos > 0 && saldoEnPesos <= 1000;
+            const redondearSaldo = () => {
+              const m = +saldoCobrar.toFixed(2);
+              accion({ accion: "verificar", pago: { monto: m, moneda: enPesos ? "ars" : "usd", tc: tcPed, monto_usd: enPesos ? +(m / (tcPed || 1)).toFixed(2) : m, monto_factura: m, moneda_factura: enPesos ? "ars" : "usd", ok: true, fecha: new Date().toISOString(), medio: "Redondeo", archivo_nombre: null, banco: null, ref_numero: null, retencion: null } },
+                `¿Aplicar un redondeo de ${fmtP(m)} para llevar el saldo a $0?`);
+            };
             return (
               <div className="border border-gray-200 rounded-lg p-3">
                 <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📄 Comprobante de pago {ped.comprobante_recibido && <span className="text-emerald-600">· recibido</span>}</div>
@@ -1002,20 +1010,28 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 )}
                 {pagosRec.length > 0 && <div className="mt-2 space-y-1">{pagosRec.map((p: any, i: number) => <div key={i} className="text-xs text-gray-600 flex flex-wrap items-center gap-1.5 border-b border-gray-50 pb-1">
                   <input type="date" defaultValue={String(p.fecha || "").slice(0, 10)} disabled={busy} onBlur={(e) => { const v = e.target.value; if (v && v !== String(p.fecha || "").slice(0, 10)) accion({ accion: "editar_pago", index: i, fecha: new Date(v + "T12:00:00").toISOString() }); }} title="Fecha del pago (editable)" className="border border-gray-200 rounded px-1 py-0.5 text-xs" />
-                  <select value={p.medio || "Transferencia"} disabled={busy} onChange={(e) => accion({ accion: "editar_pago", index: i, medio: e.target.value })} title="Medio de pago (editable)" className="border border-gray-200 rounded px-1 py-0.5 text-xs bg-white"><option>Transferencia</option><option>Cheque</option><option>Efectivo</option><option>Depósito</option><option>Mercado Pago</option><option>Retención</option></select>
+                  <select value={p.medio || "Transferencia"} disabled={busy} onChange={(e) => accion({ accion: "editar_pago", index: i, medio: e.target.value })} title="Medio de pago (editable)" className="border border-gray-200 rounded px-1 py-0.5 text-xs bg-white"><option>Transferencia</option><option>Cheque</option><option>Efectivo</option><option>Depósito</option><option>Mercado Pago</option><option>Retención</option><option>Redondeo</option></select>
                   {p.medio !== "Efectivo" && p.medio !== "Retención" && <input defaultValue={p.banco || ""} disabled={busy} placeholder="Banco" onBlur={(e) => { if ((e.target.value || "") !== (p.banco || "")) accion({ accion: "editar_pago", index: i, banco: e.target.value }); }} className="border border-gray-200 rounded px-1 py-0.5 text-xs w-24" />}
                   {p.medio !== "Efectivo" && p.medio !== "Retención" && <input defaultValue={p.ref_numero || ""} disabled={busy} placeholder={p.medio === "Cheque" ? "N° cheque" : "N° op."} onBlur={(e) => { if ((e.target.value || "") !== (p.ref_numero || "")) accion({ accion: "editar_pago", index: i, ref_numero: e.target.value }); }} className="border border-gray-200 rounded px-1 py-0.5 text-xs w-28" />}
                   {p.retencion && <span className="text-amber-600">ret{p.retencion.pct ? " " + p.retencion.pct + "%" : ""}</span>}
                   <span className="font-semibold ml-auto">{p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} {p.ok ? "✔" : ""}</span>
                   <button onClick={() => eliminarPago(i)} title="Eliminar este pago" className="text-red-400 hover:text-red-600">🗑</button></div>)}</div>}
+                {puedeRedondear && <div className="mt-2 flex flex-wrap items-center gap-2 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                  <span className="text-xs text-amber-700">Queda un saldo chico de <b>{fmtP(saldoCobrar)}</b> (≤ $1000).</span>
+                  <button disabled={busy} onClick={redondearSaldo} className="px-2.5 py-1 rounded-lg bg-amber-500 text-white text-xs font-semibold hover:bg-amber-600">↪ Redondear a $0</button>
+                </div>}
                 {pagoCubierto && <div className="mt-2 text-xs text-emerald-700 font-semibold">✓ Pago completo (saldo 0) — ya podés facturar.</div>}
-                {pagosRec.length > 0 && (
+                {pagosRec.length > 0 && (() => {
+                  // Recibo por el TOTAL ya emitido (saldo 0) → no se genera otro, solo se ve el existente.
+                  const reciboPorTotal = !!ped.recibo_token && pagoCubierto && Number(ped.recibo_saldo) === 0;
+                  return (
                   <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
-                    <button disabled={busy} onClick={generarRecibo} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-40">🧾 Generar Recibo X</button>
-                    {ped.recibo_token && <a href={`/p/${ped.recibo_token}?admin=1`} target="_blank" rel="noreferrer" className="text-xs text-indigo-700 font-semibold hover:underline">Ver último recibo ({ped.recibo_numero})</a>}
-                    <span className="text-[11px] text-gray-400">Detalla cada pago y el saldo; se puede enviar al cliente para pedir el cobro.</span>
+                    {!reciboPorTotal && <button disabled={busy} onClick={generarRecibo} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-40">🧾 Generar Recibo X</button>}
+                    {ped.recibo_token && <a href={`/p/${ped.recibo_token}?admin=1`} target="_blank" rel="noreferrer" className="text-xs text-indigo-700 font-semibold hover:underline">{reciboPorTotal ? "✅ " : ""}Ver{reciboPorTotal ? "" : " último"} recibo ({ped.recibo_numero})</a>}
+                    <span className="text-[11px] text-gray-400">{reciboPorTotal ? "Recibo por el total ya emitido (saldo 0)." : "Detalla cada pago y el saldo; se puede enviar al cliente para pedir el cobro."}</span>
                   </div>
-                )}
+                  );
+                })()}
               </div>
             );
           })()}

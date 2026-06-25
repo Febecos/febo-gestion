@@ -167,7 +167,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
         factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, factura, pago_proveedor: p.pago_proveedor || null,
         stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
-        recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null,
+        recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null, recibo_saldo: payloadEnriq.recibo_saldo ?? null,
         notas_credito, anulado_por_nc,
         es_ultimo,
       }});
@@ -475,7 +475,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
           VALUES (${comp.id}, ${desc.slice(0, 300)}, 1, ${d.monto}, ${d.monto}, ${orden++})`;
       }
-      await sql`UPDATE fv_pedidos SET payload = jsonb_set(jsonb_set(coalesce(payload,'{}'::jsonb),'{recibo_numero}',to_jsonb(${numero}::text)),'{recibo_token}',to_jsonb(${comp.token}::text)) WHERE numero=${ref}`;
+      const mergeRec = JSON.stringify({ recibo_numero: numero, recibo_token: comp.token, recibo_saldo: saldo });
+      await sql`UPDATE fv_pedidos SET payload = coalesce(payload,'{}'::jsonb) || ${mergeRec}::jsonb WHERE numero=${ref} RETURNING numero`;
       return NextResponse.json({ ok: true, recibo_numero: numero, recibo_token: comp.token, saldo });
     }
     if (b.accion === "pago_proveedor") {
