@@ -168,8 +168,9 @@ export default function ComprobantePublico({ params }: { params: { token: string
         table.items td { padding:5px 9px; border-bottom:1px solid #eef2f7; vertical-align:top; }
         table.items tr:last-child td { border-bottom:0; }
         table.items td.r, table.items th.r { text-align:right; white-space:nowrap; }
-        /* Descripción recortada a 2 líneas máximo → entra más en una hoja A4 */
+        /* Descripción recortada → entra más en una hoja A4. Factura: 1 línea; resto: 2 líneas. */
         table.items td.desc span { display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.28; }
+        table.items td.desc1 span { -webkit-line-clamp:1; line-clamp:1; white-space:normal; }
         .letras { margin-top:12px; font-size:11.5px; font-style:italic; color:#374151; }
         .totbox { border:1px solid #cbd5e1; border-radius:10px; overflow:hidden; margin-top:10px; }
         table.totband { width:100%; border-collapse:collapse; }
@@ -259,7 +260,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
             {items.map((it: any, i: number) => (
               <tr key={i}>
                 <td className="r">{it.cantidad}</td>
-                <td className="desc"><span title={it.descripcion}>{it.descripcion}</span></td>
+                <td className={esFactura ? "desc desc1" : "desc"}><span title={it.descripcion}>{it.descripcion}</span></td>
                 <td className="r">{fmt(it.precio_unitario)}</td>
                 <td className="r">{fmt(it.total)}</td>
               </tr>
