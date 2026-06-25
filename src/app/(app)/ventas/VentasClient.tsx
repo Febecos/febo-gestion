@@ -781,6 +781,16 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               <tfoot className="text-sm">
                 {costoTot > 0 && <tr className="text-[11px] text-gray-400"><td colSpan={4} className="text-right px-2 py-1">Costo total FEBECOS</td><td className="text-right px-2 py-1">{money(costoTot)}</td></tr>}
                 {(() => {
+                  // Desglose calculado por el servidor (kit de bomba: paneles 10,5% + resto 21%). Ya en pesos.
+                  const dgi = ped.desglose_iva;
+                  if (dgi && Number(dgi.neto) > 0) {
+                    const fa = (n: number) => "$ " + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                    return (<>
+                      <tr><td colSpan={4} className="text-right px-2 py-1 text-gray-500">Subtotal s/IVA</td><td className="text-right px-2 py-1">{fa(dgi.neto)}</td></tr>
+                      {(dgi.iva_detalle || []).map((d: any, i: number) => <tr key={i}><td colSpan={4} className="text-right px-2 py-1 text-gray-500">IVA {d.pct}%</td><td className="text-right px-2 py-1">{fa(d.monto)}</td></tr>)}
+                      <tr className="border-t border-gray-200"><td colSpan={4} className="text-right px-2 py-2 font-bold text-febo-azul">TOTAL</td><td className="text-right px-2 py-2 font-bold text-febo-azul">{fa(dgi.total)}</td></tr>
+                    </>);
+                  }
                   const desc = Number(tot.descuento_monto) || 0;
                   const subLista = (Number(tot.neto) || 0) + desc;   // subtotal de lista (antes del descuento)
                   const ivaDet = Array.isArray(tot.iva_detalle) ? tot.iva_detalle.filter((d: any) => Number(d.monto) > 0) : [];

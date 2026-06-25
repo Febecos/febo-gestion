@@ -172,6 +172,20 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
           anulado_por_nc = ncs.length > 0 && totFac > 0 && sumNc >= totFac - 0.5; // NC cubre toda la factura
         }
       }
+      // Desglose de IVA para mostrar en el detalle del pedido (cuando el presupuesto guardó solo el
+      // total, ej. bombas): paneles 10,5% + resto 21%, o todo 21% si no hay split.
+      let desglose_iva: any = null;
+      const totG = payloadEnriq.totales || {};
+      if (Number(totG.total) > 0 && !(Number(totG.neto) > 0)) {
+        const pn = await netoPanelKit(sql, payloadEnriq.presupuesto_numero || null, Number(totG.total));
+        if (pn && pn > 0) {
+          const sp = splitPanelResto(Number(totG.total), pn);
+          desglose_iva = { neto: sp.neto, iva: +sp.iva_detalle.reduce((a, d) => a + d.monto, 0).toFixed(2), iva_detalle: sp.iva_detalle, total: Number(totG.total) };
+        } else {
+          const norm = normalizarTotales(totG);
+          if (Number(norm.tot.neto) > 0) desglose_iva = { neto: norm.tot.neto, iva: +(norm.tot.iva_detalle || []).reduce((a: number, d: any) => a + (Number(d.monto) || 0), 0).toFixed(2), iva_detalle: norm.tot.iva_detalle, total: Number(totG.total) };
+        }
+      }
       // ¿Es el ÚLTIMO número emitido? (para habilitar "Revertir" solo en ese caso).
       let es_ultimo = false;
       try { const n = parseInt(String(ref).match(/(\d+)\s*$/)?.[1] || "0", 10); const cnt = await sql`SELECT ultimo_numero FROM pedidos_counter WHERE clave='PED' LIMIT 1` as any[]; es_ultimo = !!cnt[0] && n > 0 && Number(cnt[0].ultimo_numero) === n; } catch {}
@@ -189,6 +203,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
         recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null, recibo_saldo: payloadEnriq.recibo_saldo ?? null,
         despacho_confirmado: !!payloadEnriq.despacho_confirmado, remito_preparado: !!payloadEnriq.remito_numero,
+        desglose_iva,
         notas_credito, anulado_por_nc,
         es_ultimo,
       }});
