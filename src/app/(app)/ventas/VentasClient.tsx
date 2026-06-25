@@ -612,17 +612,20 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   // (no la cotización) → el $ a cobrar coincide exacto con lo facturado.
   const fac = ped.factura || null;
   const pedMoneda = String(fac?.moneda || tot.moneda || "USD").toUpperCase();
-  const tcPed = Number(fac?.tc) || Number(tot.tc) || dolar || 0;
+  // Kit de bomba: el desglose (paneles 10,5% / resto 21%) lo calcula el server EN PESOS.
+  // arsNat = el total ya está en pesos (no se aplica TC).
+  const dgi = ped.desglose_iva;
+  const arsNat = String(tot.moneda || "").toUpperCase() === "ARS" && (tot.tc == null) && Number(tot.total) > 0;
+  const tcPed = arsNat ? 1 : (Number(fac?.tc) || Number(tot.tc) || dolar || 0);
   const enPesos = pedMoneda === "ARS";
-  // Total USD REAL = neto + IVA (nunca el tot.total redondeado del cotizador) → coincide con el
-  // presupuesto y con lo que va a facturar. Fallback a tot.total si el pedido no trae desglose.
-  const ivaUsdTot = Array.isArray(tot.iva_detalle) ? tot.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
-  const netoUsdTot = Number(tot.neto);
-  const totalUsdReal = (Array.isArray(tot.iva_detalle) && tot.iva_detalle.length && !isNaN(netoUsdTot))
-    ? +(netoUsdTot + ivaUsdTot).toFixed(2) : (Number(tot.total) || 0);
+  // Total REAL = neto + IVA. Para bombas (dgi) ya viene en pesos.
+  const ivaUsdTot = dgi ? Number(dgi.iva) : (Array.isArray(tot.iva_detalle) ? tot.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0);
+  const netoUsdTot = dgi ? Number(dgi.neto) : Number(tot.neto);
+  const totalUsdReal = dgi ? Number(dgi.total)
+    : (Array.isArray(tot.iva_detalle) && tot.iva_detalle.length && !isNaN(netoUsdTot)) ? +(netoUsdTot + ivaUsdTot).toFixed(2) : (Number(tot.total) || 0);
   const totalCobrar = fac?.total != null
     ? (enPesos ? Math.round(Number(fac.total)) : +Number(fac.total).toFixed(2))
-    : (enPesos ? Math.round(totalUsdReal * tcPed) : +totalUsdReal.toFixed(2));
+    : (dgi ? Math.round(Number(dgi.total)) : (enPesos ? Math.round(totalUsdReal * tcPed) : +totalUsdReal.toFixed(2)));
   const pagosRec: any[] = ped.pagos_recibidos || [];
   const pagoEnMonedaFactura = (p: any) => { const m = Number(p.monto) || 0; if (enPesos) return p.moneda === "usd" ? Math.round(m * tcPed) : m; return p.moneda === "ars" ? (tcPed ? +(m / tcPed).toFixed(2) : 0) : m; };
   const totalPagado = +pagosRec.reduce((a, p) => a + pagoEnMonedaFactura(p), 0).toFixed(2);
@@ -660,7 +663,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     setBusy(true);
     try {
       const tcUsar = Number(facTc) || dolar || 0;
-      const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "facturar_preview", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: facMoneda, tc: facMoneda === "ARS" ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined, split_panel_neto: Number(splitPanel) || undefined }) });
+      const monedaRev = arsNat ? "ARS" : facMoneda;
+      const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "facturar_preview", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: monedaRev, tc: (monedaRev === "ARS" && !arsNat) ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined, split_panel_neto: Number(splitPanel) || undefined }) });
       const d = await safeJson(r); if (!d.ok) throw new Error(d.error);
       setPreview(d);
       if (d.arca?.persistida) { await load(); onChanged(); } // ARCA cargó la condición fiscal → refrescar ficha
@@ -1288,7 +1292,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     {finalSel
                       ? <>Receptor: <b>{nombreReceptor}</b> · {condCli || "sin cond. fiscal"}{cuitCli ? " · " + cuitCli : ""}</>
                       : <>Receptor: <b>{nombreCli}</b> (el revendedor)</>}
-                    {comPct > 0 && <span className="ml-1 text-violet-700 font-semibold">· Comisión {comPct}% = USD {comMonto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>}
+                    {comPct > 0 && <span className="ml-1 text-violet-700 font-semibold">· Comisión {comPct}% = {arsNat ? "$" : "USD"} {comMonto.toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>}
                   </div>
                   {finalSel && !condCli && <div className="text-[11px] text-amber-600 mt-1">⚠ Cargá la condición fiscal del cliente final (en su ficha, dentro del revendedor) para poder facturar.</div>}
                 </div>
@@ -1350,26 +1354,27 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 {puedeFacturar && talsLetra.length > 0 && <select value={talEfectivo} onChange={(e) => setTalSel(e.target.value)} title="Talonario" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white">
                   {talsLetra.map((t) => <option key={t.id} value={t.id}>{t.tipo_nombre} · {String(t.sucursal || "1").replace(/\D/g, "").padStart(5, "0")}-{String(t.proximo_numero).padStart(8, "0")}{t.defecto ? " ★" : ""}</option>)}
                 </select>}
-                {puedeFacturar && <select value={facMoneda} onChange={(e) => setFacMoneda(e.target.value)} title="Moneda de la factura" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white"><option value="USD">USD</option><option value="ARS">$ Pesos</option></select>}
-                {puedeFacturar && facMoneda === "ARS" && <input type="number" value={facTc} onChange={(e) => setFacTc(e.target.value)} placeholder={"TC " + (dolar || "")} title="Tipo de cambio (editable)" className="border border-gray-300 rounded-lg px-2 py-2 text-sm w-24" />}
+                {puedeFacturar && arsNat && <span className="px-2 py-2 text-sm text-gray-600 font-semibold">$ Pesos</span>}
+                {puedeFacturar && !arsNat && <select value={facMoneda} onChange={(e) => setFacMoneda(e.target.value)} title="Moneda de la factura" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white"><option value="USD">USD</option><option value="ARS">$ Pesos</option></select>}
+                {puedeFacturar && !arsNat && facMoneda === "ARS" && <input type="number" value={facTc} onChange={(e) => setFacTc(e.target.value)} placeholder={"TC " + (dolar || "")} title="Tipo de cambio (editable)" className="border border-gray-300 rounded-lg px-2 py-2 text-sm w-24" />}
                 {puedeFacturar && (pl.tipo_presupuesto === "bomba" || items.some((it: any) => /pan(el)?|fotovolt|m[oó]dulo\s*solar/i.test(String(it.codigo || "") + " " + String(it.descripcion || "")))) && <input type="number" value={splitPanel} onChange={(e) => setSplitPanel(e.target.value)} placeholder="Neto paneles 10,5%" title="Kit de bomba: ingresá el NETO de paneles (alícuota 10,5%) según el presupuesto. El resto va a 21%. Vacío = todo a 21%." className="border border-amber-300 rounded-lg px-2 py-2 text-sm w-36" />}
                 <button disabled={busy} onClick={revisar} title="Revisión previa: muestra letra, condición IVA del receptor, neto, IVA por alícuota y total SIN emitir CAE. Para validar los cálculos antes de facturar." className="px-3 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-semibold hover:bg-blue-50">🔍 Revisar</button>
                 <button disabled={busy || !puedeFacturar}
                   title={cancelado ? "Pedido cancelado" : !ped.proveedor_confirmado ? "Confirmá el stock con el proveedor antes de facturar" : !letraReq ? "El cliente no tiene condición fiscal: cargala en Detalle/ficha del cliente" : talsLetra.length === 0 ? `No hay talonario de Factura ${letraReq} cargado (Configuración → Talonarios)` : !pagoCubierto ? "Falta que el pago recibido cubra el total exacto (saldo 0) para poder facturar" : `Facturar ${letraReq} en gestión (paso 1: borrador; después se autoriza a ARCA)`}
                   onClick={() => {
-                    const tcUsar = Number(facTc) || dolar || 0;
-                    if (facMoneda === "ARS" && !tcUsar) { alert("Ingresá el tipo de cambio para facturar en pesos."); return; }
+                    const ars = arsNat || facMoneda === "ARS";
+                    const tcUsar = arsNat ? 1 : (Number(facTc) || dolar || 0);     // bomba en pesos: total ya en $, sin TC
+                    if (!arsNat && ars && !tcUsar) { alert("Ingresá el tipo de cambio para facturar en pesos."); return; }
                     // Desglose que se va a facturar (neto + IVA = total), en la moneda elegida → debe coincidir con el presupuesto.
-                    const ars = facMoneda === "ARS";
                     const f$ = (usd: number) => ars ? "$ " + Math.round(usd * tcUsar).toLocaleString("es-AR") : "USD " + usd.toLocaleString("es-AR", { minimumFractionDigits: 2 });
                     const netoP = ars ? Math.round(netoUsdTot * tcUsar) : netoUsdTot;
                     const ivaP = ars ? Math.round(ivaUsdTot * tcUsar) : ivaUsdTot;
                     const totalP = ars ? "$ " + (netoP + ivaP).toLocaleString("es-AR") : "USD " + totalUsdReal.toLocaleString("es-AR", { minimumFractionDigits: 2 });
                     // Recomendación de carga: avisar si el presupuesto NO trae TC pactado (se usa el dólar del día → puede diferir).
-                    const sinTcPactado = ars && !Number(tot.tc);
+                    const sinTcPactado = !arsNat && ars && !Number(tot.tc);
                     const aviso = sinTcPactado ? `\\n\\n⚠️ Este presupuesto no tiene TC pactado: se factura al dólar del día (${tcUsar}). Recomendado: fijar el TC en el presupuesto para que NO cambie entre cotizar y facturar.` : "";
-                    accion({ accion: "facturar", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: facMoneda, tc: ars ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined, split_panel_neto: Number(splitPanel) || undefined },
-                      `¿Facturar la ${letraReq} en GESTIÓN a ${nombreReceptor} en ${ars ? "PESOS (TC " + tcUsar + ")" : "USD"}?\\n\\nNeto: ${f$(netoUsdTot)}\\nIVA: ${f$(ivaUsdTot)}\\nTOTAL: ${totalP}\\n(coincide con el presupuesto)${aviso}\\n\\nQueda como BORRADOR. Después la autorizás y enviás a ARCA (paso 2) para el CAE.`); }}
+                    accion({ accion: "facturar", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: ars ? "ARS" : "USD", tc: (ars && !arsNat) ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined, split_panel_neto: Number(splitPanel) || undefined },
+                      `¿Facturar la ${letraReq} en GESTIÓN a ${nombreReceptor} en ${ars ? (arsNat ? "PESOS" : "PESOS (TC " + tcUsar + ")") : "USD"}?\\n\\nNeto: ${f$(netoUsdTot)}\\nIVA: ${f$(ivaUsdTot)}\\nTOTAL: ${totalP}\\n(coincide con el presupuesto)${aviso}\\n\\nQueda como BORRADOR. Después la autorizás y enviás a ARCA (paso 2) para el CAE.`); }}
                   className={`px-3 py-2 rounded-lg text-sm font-semibold ${puedeFacturar ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar en gestión{letraReq ? " " + letraReq : ""}</button>
               </div>}
           {ped.estado === "pendiente_confirmacion" && <>
