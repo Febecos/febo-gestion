@@ -728,6 +728,28 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
       return NextResponse.json({ ok: true, remito_numero: numero, despacho_confirmado: confirmado });
     }
+    // Quitar la confirmación de despacho de un remito → vuelve a "remito preparado".
+    if (b.accion === "eliminar_confirmacion") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const numero = String(b.numero || "").trim();
+      if (!numero) return NextResponse.json({ ok: false, error: "Falta el N° de remito." }, { status: 400 });
+      const rem = (await sql`SELECT id FROM fg_comprobantes WHERE numero=${numero} AND tipo='remito' LIMIT 1` as any[])[0];
+      if (!rem) return NextResponse.json({ ok: false, error: "Remito no encontrado." }, { status: 404 });
+      await sql`UPDATE fg_comprobantes SET confirmacion_archivo=NULL WHERE id=${rem.id}`;
+      const row = (await sql`SELECT payload, estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const plr = row?.payload || {};
+      const remitos = (plr.remitos || []).map((r: any) => r.numero === numero ? (() => { const { confirmacion, ...rest } = r; return rest; })() : r);
+      const esFlete = (it: any) => /flete/i.test(String(it?.codigo || "") + " " + String(it?.descripcion || ""));
+      const yaDesp: Record<number, number> = {};
+      for (const rr of remitos) for (const it of (rr.items || [])) yaDesp[it.idx] = (yaDesp[it.idx] || 0) + (Number(it.cantidad) || 0);
+      const itemsCompletos = (plr.items || []).every((it: any, idx: number) => esFlete(it) || (yaDesp[idx] || 0) >= (Number(it.cantidad) || 0));
+      const confirmado = itemsCompletos && remitos.length > 0 && remitos.every((r: any) => r.confirmacion);
+      const merge = JSON.stringify({ remitos, despacho_completo: itemsCompletos, despacho_confirmado: confirmado, remito_preparado: remitos.length > 0 });
+      // Si dejó de estar confirmado y el pedido estaba 'enviado', vuelve a 'pagado'.
+      const nuevoEstado = !confirmado && row?.estado === "enviado" ? "pagado" : row?.estado;
+      await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true, remito_numero: numero, despacho_confirmado: confirmado });
+    }
     // Enviar la confirmación de despacho por email al cliente (con el remito sellado adjunto).
     if (b.accion === "enviar_confirmacion") {
       if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });

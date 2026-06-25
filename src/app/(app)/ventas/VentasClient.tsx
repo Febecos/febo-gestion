@@ -1217,6 +1217,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         onEliminar={(numero: string) => accion({ accion: "eliminar_remito", numero }, `¿Eliminar el remito ${numero}? Solo se puede si es el último emitido.`)}
                         transporteNombre={String(env.empresa || "")}
                         onConfirmar={(numero: string, archivo: any, validacion: any) => accion({ accion: "confirmacion_despacho", numero, archivo, validacion })}
+                        onEliminarConfirmacion={(numero: string) => accion({ accion: "eliminar_confirmacion", numero }, `¿Quitar la confirmación de despacho del remito ${numero}? El pedido vuelve a "remito preparado".`)}
                         onEnviarConfirmacion={(numero: string) => { const to = window.prompt("Enviar la confirmación de despacho a:", emailCli || ""); if (to === null) return; const t = to.trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) { alert("Email inválido."); return; } accion({ accion: "enviar_confirmacion", numero, email: t }, `¿Enviar la confirmación de despacho del remito ${numero} a ${t}?`); }}
                       />
                     );
@@ -1576,7 +1577,7 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, transporteNombre, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, transporteNombre, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion }: any) {
   const leerArchivo = (file: File, cb: (a: any) => void) => { const fr = new FileReader(); fr.onload = () => cb({ nombre: file.name, tipo: file.type, b64: String(fr.result) }); fr.readAsDataURL(file); };
   // Cargar confirmación: lee el documento con IA, valida (es nuestro remito + tiene firma/sello, o si es del transporte) y lo carga.
   const cargarConfirmacion = (numero: string) => (file: File) => leerArchivo(file, async (archivo) => {
@@ -1649,6 +1650,7 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
                   <input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) cargarConfirmacion(r.numero)(f); e.target.value = ""; }} />
                 </label>
                 {r.confirmacion && onEnviarConfirmacion && <button disabled={busy} onClick={() => onEnviarConfirmacion(r.numero)} className="px-2 py-0.5 rounded border border-blue-300 text-blue-700 text-xs font-semibold hover:bg-blue-50">✉️ Enviar al cliente</button>}
+                {r.confirmacion && onEliminarConfirmacion && <button disabled={busy} onClick={() => onEliminarConfirmacion(r.numero)} title="Quitar la confirmación (vuelve a remito preparado)" className="px-2 py-0.5 rounded border border-red-300 text-red-600 text-xs font-semibold hover:bg-red-50">🗑 Quitar confirmación</button>}
               </div>
             </div>
           ))}
