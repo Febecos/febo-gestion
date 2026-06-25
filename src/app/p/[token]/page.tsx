@@ -170,7 +170,9 @@ export default function ComprobantePublico({ params }: { params: { token: string
         table.items td.r, table.items th.r { text-align:right; white-space:nowrap; }
         /* Descripción recortada → entra más en una hoja A4. Factura: 1 línea; resto: 2 líneas. */
         table.items td.desc span { display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.28; }
-        table.items td.desc1 span { -webkit-line-clamp:1; line-clamp:1; white-space:normal; }
+        /* Factura: 1 sola línea garantizada (line-clamp falla al imprimir; nowrap+ellipsis sí funciona). */
+        table.items td.desc1 { max-width:0; }
+        table.items td.desc1 span { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .letras { margin-top:12px; font-size:11.5px; font-style:italic; color:#374151; }
         .totbox { border:1px solid #cbd5e1; border-radius:10px; overflow:hidden; margin-top:10px; }
         table.totband { width:100%; border-collapse:collapse; }
