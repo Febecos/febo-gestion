@@ -697,6 +697,10 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const sumIvaUsd = Array.isArray(tot.iva_detalle) ? tot.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
       const totalUsd = esFacturaC ? +netoUsd.toFixed(2) : +(netoUsd + sumIvaUsd).toFixed(2);
       const desglose = desglosarFactura({ items, tot, conv, esFacturaC });
+      // IVA a GUARDAR = el del desglose (consistente con neto/total de la factura), NO el del
+      // presupuesto. Si no, el PDF mostraría un IVA que no cierra con el total (subtotal+IVA≠total).
+      const ID2PCT: Record<number, number> = { 3: 0, 4: 10.5, 5: 21, 6: 27, 8: 5, 9: 2.5 };
+      const ivaDetalleStore = desglose.ivaArr.map((x) => ({ pct: ID2PCT[x.id] ?? 0, base: x.base, monto: x.importe }));
       const leyendas = leyendasFactura(condicion);
       const condRecept = condicionIvaReceptor(condicion);
       const dvp = pl.datos_venta || {}; const cond = pl.condiciones || {};
@@ -753,7 +757,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         const afipMeta = { ref, pref, letraFac, ptoVta, cliente_id, revendedor_id, receptorFinalId, totalUsd, netoUsd, facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null };
         const comp = (await sql`
           INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, revendedor_id, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte, afip_payload, afip_meta)
-          VALUES ('factura','borrador',NULL,${letraFac},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, now(), ${desglose.neto}, ${desglose.total}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null}, ${JSON.stringify(afipPayload)}::jsonb, ${JSON.stringify(afipMeta)}::jsonb)
+          VALUES ('factura','borrador',NULL,${letraFac},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, now(), ${desglose.neto}, ${desglose.total}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalleStore.length ? JSON.stringify(ivaDetalleStore) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null}, ${JSON.stringify(afipPayload)}::jsonb, ${JSON.stringify(afipMeta)}::jsonb)
           RETURNING id, token` as any[])[0];
         await insertItems(comp.id);
         await sql`UPDATE fv_pedidos SET factura_estado='borrador', factura_borrador_id=${comp.id}, factura_token=${comp.token} WHERE numero=${ref}`;
