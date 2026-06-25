@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     const buf = Buffer.from(String(b64).split(",").pop() || "", "base64");
     const pdf = await getDocumentProxy(new Uint8Array(buf));
     const { text } = await extractText(pdf, { mergePages: true });
-    return NextResponse.json({ ok: true, numero: buscarNumero(text), monto: buscarMonto(text) });
+    return NextResponse.json({ ok: true, numero: buscarNumero(text), monto: buscarMonto(text), texto: String(text || "").slice(0, 4000) });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }

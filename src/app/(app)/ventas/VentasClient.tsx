@@ -874,16 +874,26 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               if (!a) a = archivos[archivos.length - 1];
               if (!a) { alert("Subí primero el comprobante (PDF o imagen)."); return; }
               try {
-                let monto = 0; let texto = a.nombre || "";
+                // Se lee el CONTENIDO del comprobante (texto del PDF u OCR de la imagen), NO el nombre del archivo.
+                let monto = 0; let texto = "";
                 if (/pdf/i.test(a.tipo || "")) {
                   const d = await safeJson(await fetch("/api/parse-proforma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: a.b64, tipo: a.tipo }) }));
                   monto = Number(d?.monto?.monto) || 0;
-                  texto += " " + String(d?.texto || d?.text || "");
+                  texto = String(d?.texto || d?.text || "");
+                  // PDF escaneado (sin capa de texto): caer a OCR del render de la 1ª página.
+                  if (!texto.trim()) {
+                    try {
+                      const T: any = await import("tesseract.js");
+                      const { data } = await T.recognize(`data:${a.tipo};base64,${a.b64}`, "spa");
+                      texto = String(data?.text || "");
+                      if (!(monto > 0)) { const nums = texto.match(/\d{1,3}(?:[.\s]\d{3})+(?:,\d{2})?|\d+,\d{2}/g) || []; const vals = nums.map((s) => Number(s.replace(/[.\s]/g, "").replace(",", "."))).filter((n) => n > 0); monto = vals.length ? Math.max(...vals) : 0; }
+                    } catch { /* algunos PDF no se renderizan en el navegador */ }
+                  }
                 } else if (/image/i.test(a.tipo || "")) {
                   const T: any = await import("tesseract.js");
                   const { data } = await T.recognize(`data:${a.tipo};base64,${a.b64}`, "spa");
-                  texto += " " + String(data?.text || "");
-                  const nums = String(data?.text || "").match(/\d{1,3}(?:[.\s]\d{3})+(?:,\d{2})?|\d+,\d{2}/g) || [];
+                  texto = String(data?.text || "");
+                  const nums = texto.match(/\d{1,3}(?:[.\s]\d{3})+(?:,\d{2})?|\d+,\d{2}/g) || [];
                   const vals = nums.map((s) => Number(s.replace(/[.\s]/g, "").replace(",", "."))).filter((n) => n > 0);
                   monto = vals.length ? Math.max(...vals) : 0; // el importe suele ser el mayor
                 }
@@ -891,10 +901,12 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 const upd: any = { ...vf, archivo_nombre: a.nombre || "" };
                 if (monto > 0) { upd.monto = String(monto); upd.moneda = enPesos ? "ars" : "usd"; }
                 if (medio) upd.medio = medio;
-                // N° de cheque desde el nombre/texto ("Cheque00022639" → 22639); sin ceros a la izquierda.
-                if (medio === "Cheque" && !vf.ref_numero) { const mch = texto.match(/cheque[^0-9]*0*(\d{3,})/i); if (mch) upd.ref_numero = mch[1]; }
+                // Datos desde el CONTENIDO: N° de cheque / operación y banco.
+                if (medio === "Cheque" && !vf.ref_numero) { const mch = texto.match(/cheque[^0-9]*0*(\d{3,})|n[°º.]?\s*0*(\d{4,})/i); if (mch) upd.ref_numero = mch[1] || mch[2]; }
+                if (!vf.ref_numero && /transferenc/i.test(texto)) { const mop = texto.match(/(?:operaci[oó]n|comprobante|n[°º.])\s*[:#]?\s*0*(\d{4,})/i); if (mop) upd.ref_numero = mop[1]; }
+                if (!vf.banco) { const mb = texto.match(/banco\s+([a-záéíóúñ.\s]{3,30})/i); if (mb) upd.banco = mb[1].trim().replace(/\s+/g, " "); }
                 setVf(upd);
-                if (!(monto > 0)) alert("No pude leer el monto." + (medio ? ` (Detecté medio: ${medio}.)` : "") + " Cargalo a mano.");
+                if (!(monto > 0)) alert("No pude leer el monto del contenido." + (medio ? ` (Medio detectado: ${medio}.)` : "") + " Cargalo a mano.");
               } catch (e: any) { alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano."); }
             };
             const esRet = vf.medio === "Retención";
