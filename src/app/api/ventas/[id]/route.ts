@@ -34,7 +34,7 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
         let presupuesto: any = null;
         if (pl.presupuesto_numero) { const pr = (await sql`SELECT numero, public_token FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[])[0]; if (pr) presupuesto = { numero: pr.numero, token: pr.public_token }; }
         const pr2 = (Array.isArray(ped.pagos_recibidos) && ped.pagos_recibidos.length ? ped.pagos_recibidos : (pl.pagos_recibidos || [])) as any[];
-        const medios = [...new Set(pr2.map((p) => p.medio).filter(Boolean))];
+        const medios = Array.from(new Set(pr2.map((p) => p.medio).filter(Boolean)));
         const despachado = !!pl.despacho_confirmado || ped.estado === "enviado";
         detalle = {
           pedido_numero: ped.numero, pedido_estado: ped.estado,
