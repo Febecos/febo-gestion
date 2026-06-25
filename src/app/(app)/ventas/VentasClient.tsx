@@ -34,6 +34,17 @@ const fmt = (v: number, m = "$") => `${m} ` + Math.round(Number(v) || 0).toLocal
 const fmtF = (v: string) => (v ? new Date(v).toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—");
 const chip = (txt: string, col: string) => <span style={{ background: col + "22", color: col }} className="rounded px-2 py-0.5 text-[11px] font-semibold">{txt}</span>;
 const EST_COL: Record<string, string> = { emitido: "#64748b", enviada: "#2563eb", pedido: "#7c3aed", pagado: "#059669", aprobado: "#059669", nuevo: "#2563eb", anulado: "#e53935", borrador: "#94a3b8", proforma: "#d97706", confirmado: "#7c3aed" };
+// Estado EFECTIVO del pedido según el avance real (la columna `estado` de la DB no se mueve sola al facturar/pagar).
+function estadoPedido(p: any): { txt: string; col: string } {
+  const e = String(p.estado || "").toLowerCase();
+  if (["cancelado", "anulado", "rechazado"].includes(e)) return { txt: e, col: "#e53935" };
+  if (p.remito_numero) return p.despacho_completo === false ? { txt: "despacho parcial", col: "#d97706" } : { txt: "enviado", col: "#059669" };
+  if (p.factura_numero) return { txt: p.pagado ? "facturado y pagado" : "facturado", col: "#0b3d6b" };
+  if (p.pagado) return { txt: "pagado", col: "#059669" };
+  if (e === "aprobado") return { txt: "aprobado", col: "#059669" };
+  if (e === "pendiente_confirmacion") return { txt: "pendiente", col: "#888" };
+  return { txt: e || "—", col: EST_COL[e] || "#888" };
+}
 
 const SECCIONES = [
   { k: "presupuestos", icon: "📝", label: "Presupuestos" },
@@ -458,7 +469,7 @@ function Pedidos() {
           <td className="px-4 py-2 font-semibold">{p.numero || (p.presup ? "↳ " + p.presup : "—")}</td>
           <td className="px-4 py-2">{titleCase(p.cliente) || "—"}</td>
           <td className="px-4 py-2 text-gray-600">{p.detalle}</td>
-          <td className="px-4 py-2">{chip(p.estado, EST_COL[p.estado] || "#888")}</td>
+          <td className="px-4 py-2">{p.origen === "fv" ? (() => { const es = estadoPedido(p); return chip(es.txt, es.col); })() : chip(p.estado, EST_COL[p.estado] || "#888")}</td>
           <td className="px-4 py-2 whitespace-nowrap">{p.origen === "fv" ? <PasosPedido p={p} /> : <span className="text-gray-300">—</span>}</td>
           <td className="px-4 py-2 text-gray-600">{fmtF(p.fecha)}</td>
           <td className="px-4 py-2 text-right font-semibold">{(p.moneda === "ARS" || p.moneda === "$") && Number(p.tc) > 0 ? `$ ${Math.round(Number(p.total) * Number(p.tc)).toLocaleString("es-AR")}` : fmt(p.total, p.moneda)}</td>
@@ -1298,7 +1309,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   className={`px-3 py-2 rounded-lg text-sm font-semibold ${puedeFacturar ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar en gestión{letraReq ? " " + letraReq : ""}</button>
               </div>}
           {ped.estado === "pendiente_confirmacion" && <>
-            <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
+            {!facturado && !pagadoOk && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>}
             {(() => {
               const yaAvanzado = facturado || pagadoOk;            // ya facturado/pagado → no tiene sentido "aprobar"
               const aprobOk = ped.proveedor_confirmado && !yaAvanzado;
