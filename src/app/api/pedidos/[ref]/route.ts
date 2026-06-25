@@ -155,6 +155,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
         factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, factura, pago_proveedor: p.pago_proveedor || null,
         stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
+        recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null,
         es_ultimo,
       }});
     }
@@ -385,6 +386,45 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         }
       }
       return NextResponse.json({ ok: true });
+    }
+    // Recibo X (no fiscal): detalle de cada pago recibido + saldo. Snapshot inmutable en datos_recibo.
+    if (b.accion === "recibo") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const row = (await sql`SELECT payload, factura_numero, pagos_recibidos FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      const plr = row.payload || {};
+      const pagos: any[] = Array.isArray(row.pagos_recibidos) && row.pagos_recibidos.length ? row.pagos_recibidos : (Array.isArray(plr.pagos_recibidos) ? plr.pagos_recibidos : []);
+      if (!pagos.length) return NextResponse.json({ ok: false, error: "No hay pagos registrados para emitir el recibo." }, { status: 409 });
+      const cidEnvio = await clienteIdDe(sql, plr);
+      const fac = row.factura_numero ? (await sql`SELECT id, cliente_id, cliente_nombre, total, moneda FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0] : null;
+      const cid = fac?.cliente_id ?? cidEnvio;
+      const cnombre = fac?.cliente_nombre || plr.revendedor?.nombre || plr.cliente?.nombre || null;
+      const monedaFac = String(fac?.moneda || pagos[0]?.moneda_factura || "ARS").toUpperCase();
+      const totalCobrar = fac?.total != null ? Number(fac.total) : 0;
+      const det = pagos.map((p: any) => ({
+        fecha: String(p.fecha || "").slice(0, 10),
+        medio: p.medio || "Transferencia",
+        retencion: p.retencion || null,
+        archivo: p.archivo_nombre || null,
+        monto: Number(p.monto_factura ?? p.monto) || 0,
+        moneda: String(p.moneda_factura || p.moneda || monedaFac).toUpperCase(),
+      }));
+      const totalPagado = +det.reduce((a, x) => a + x.monto, 0).toFixed(2);
+      const saldo = +(totalCobrar - totalPagado).toFixed(2);
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS datos_recibo JSONB`.catch(() => {});
+      await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS letra TEXT`.catch(() => {});
+      const datosRecibo = { factura_nro: row.factura_numero || null, total_cobrar: totalCobrar, total_pagado: totalPagado, saldo, moneda: monedaFac, pagos: det, emitido_at: new Date().toISOString() };
+      const n = ((await sql`SELECT count(*)::int c FROM fg_comprobantes WHERE tipo='recibo'` as any[])[0]?.c || 0) + 1;
+      const numero = `REC X ${String(n).padStart(8, "0")}`;
+      const comp = (await sql`
+        INSERT INTO fg_comprobantes (tipo, letra, estado, numero, cliente_id, cliente_nombre, operacion_id, fecha, subtotal, total, moneda, notas, token, datos_recibo)
+        VALUES ('recibo','X','emitido',${numero},${cid},${cnombre},${fac?.id ?? null}, now(), ${totalPagado}, ${totalPagado}, ${monedaFac}, ${"Recibo del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${JSON.stringify(datosRecibo)}::jsonb)
+        RETURNING id, token` as any[])[0];
+      let orden = 0;
+      for (const d of det) await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
+        VALUES (${comp.id}, ${(d.medio + " · " + d.fecha + (d.retencion ? ` · retención ${d.retencion.pct ? d.retencion.pct + "% " : ""}${d.retencion.certificado || ""}` : "")).slice(0, 300)}, 1, ${d.monto}, ${d.monto}, ${orden++})`;
+      await sql`UPDATE fv_pedidos SET payload = jsonb_set(jsonb_set(coalesce(payload,'{}'::jsonb),'{recibo_numero}',to_jsonb(${numero}::text)),'{recibo_token}',to_jsonb(${comp.token}::text)) WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true, recibo_numero: numero, recibo_token: comp.token, saldo });
     }
     if (b.accion === "pago_proveedor") {
       // b.pago = { proveedor, medio('usd'|'pesos'|'cheque_propio'|'cheque_endosado'), tc_usd, monto, monto_usd,

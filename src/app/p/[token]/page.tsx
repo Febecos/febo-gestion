@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 
 // Normaliza alias de tipo (nc/nd → nombre completo)
 const TIPO_ALIAS: Record<string, string> = { nc: "nota_credito", nd: "nota_debito", nota_de_credito: "nota_credito", nota_de_debito: "nota_debito" };
-const TITULO: Record<string, string> = { presupuesto: "PRESUPUESTO", pedido: "PEDIDO", factura: "FACTURA", remito: "REMITO", nota_credito: "NOTA DE CRÉDITO", nota_debito: "NOTA DE DÉBITO" };
+const TITULO: Record<string, string> = { presupuesto: "PRESUPUESTO", pedido: "PEDIDO", factura: "FACTURA", remito: "REMITO", nota_credito: "NOTA DE CRÉDITO", nota_debito: "NOTA DE DÉBITO", recibo: "RECIBO X" };
 const COND: Record<string, string> = {
   responsable_inscripto: "Responsable Inscripto", monotributista: "Monotributista",
   consumidor_final: "Consumidor Final", exento: "Exento",
@@ -95,6 +95,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
 
   // Remito: se imprime sobre el formulario preimpreso de ARCA (imagen de fondo + datos encima).
   if (tipoDoc === "remito") return <RemitoForm c={c} cli={cli} items={items} onPrint={() => window.print()} />;
+  if (tipoDoc === "recibo") return <ReciboX c={c} cli={cli} emp={emp} admin={admin} onEmail={enviarEmail} sending={sending} />;
 
   const letra = (c.letra || "").toUpperCase();
   // Solo las Facturas A y M discriminan IVA. B (consumidor final/exento) y C (monotributo) NO: el precio ya lo incluye.
@@ -423,6 +424,112 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {leyendas.map((l, i) => (
           <div key={"l" + i} style={{ position: "absolute", top: (POS.itemsTop + (items.length + 1 + i) * POS.itemRowH) + "%", left: POS.detLeft + "%", width: POS.detW + "%", fontSize: POS.itemSize + "pt", fontStyle: "italic", color: "#333", lineHeight: 1, whiteSpace: "nowrap", overflow: "hidden", fontFamily: FONT }}>{l}</div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ── RECIBO X (no fiscal): detalle de cada pago recibido + saldo pendiente ──
+function ReciboX({ c, cli, emp, admin, onEmail, sending }: { c: any; cli: any; emp: any; admin: boolean; onEmail: () => void; sending: boolean }) {
+  const dr = (c && typeof c.datos_recibo === "string" ? (() => { try { return JSON.parse(c.datos_recibo); } catch { return {}; } })() : (c.datos_recibo || {})) as any;
+  const mon = String(dr.moneda || c.moneda || "ARS").toUpperCase();
+  const sym = mon === "USD" ? "USD" : "$";
+  const fmt = (v: any) => `${sym} ${Number(v || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const pagos: any[] = Array.isArray(dr.pagos) ? dr.pagos : [];
+  const totalCobrar = Number(dr.total_cobrar) || 0;
+  const totalPagado = Number(dr.total_pagado) || pagos.reduce((a, p) => a + (Number(p.monto) || 0), 0);
+  const saldo = dr.saldo != null ? Number(dr.saldo) : +(totalCobrar - totalPagado).toFixed(2);
+  const cliNombre = (cli?.razon_social || cli?.nombre || c.cliente_nombre || "").trim();
+  const cliCuit = cuitFmt(cli?.cuit || c.cliente_cuit || "");
+  const cliDom = [cli?.domicilio, cli?.localidad, cli?.provincia, cli?.cod_postal && `(${cli.cod_postal})`].filter(Boolean).join(" ");
+  return (
+    <div className="doc-wrap">
+      <style>{`
+        .doc-wrap { max-width:820px; margin:0 auto; padding:16px; font-family:Arial,Helvetica,sans-serif; color:#1f2937; }
+        .toolbar { display:flex; gap:8px; justify-content:flex-end; margin-bottom:12px; }
+        .btn { background:#1e3a8a; color:#fff; border:0; border-radius:8px; padding:8px 14px; font-size:13px; font-weight:600; cursor:pointer; }
+        .btn.sec { background:#fff; color:#1e3a8a; border:1px solid #c7d2fe; }
+        .btn:disabled { opacity:.5; }
+        .sheet { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:28px; }
+        .head { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #1e3a8a; padding-bottom:12px; }
+        .emisor { font-size:11px; color:#374151; line-height:1.45; }
+        .rs { font-weight:700; font-size:13px; color:#111827; }
+        .doctype { text-align:right; }
+        .doctype .t { font-size:20px; font-weight:800; color:#1e3a8a; letter-spacing:1px; }
+        .doctype .x { display:inline-block; border:1px solid #9ca3af; border-radius:6px; width:34px; height:34px; line-height:34px; text-align:center; font-weight:800; font-size:18px; margin-bottom:4px; }
+        .doctype .n, .doctype .meta { font-size:12px; color:#374151; }
+        .noval { display:inline-block; font-size:10px; font-weight:700; color:#374151; border:1px solid #9ca3af; border-radius:6px; padding:3px 8px; margin-bottom:6px; }
+        .cli { border:1px solid #e5e7eb; border-radius:8px; padding:10px 12px; margin:16px 0; font-size:12px; }
+        .cli .lbl { font-size:10px; text-transform:uppercase; color:#9ca3af; }
+        table { width:100%; border-collapse:collapse; font-size:12px; }
+        thead th { background:#1e3a8a; color:#fff; text-align:left; padding:8px 10px; font-size:11px; }
+        thead th.r, tbody td.r { text-align:right; }
+        tbody td { padding:8px 10px; border-bottom:1px solid #f1f5f9; }
+        .tot { margin-top:14px; margin-left:auto; width:320px; font-size:13px; }
+        .tot .row { display:flex; justify-content:space-between; padding:5px 0; }
+        .tot .saldo { font-weight:800; border-top:2px solid #1e3a8a; margin-top:4px; padding-top:8px; }
+        .foot { margin-top:20px; font-size:11px; color:#6b7280; font-style:italic; }
+        @media print { .toolbar { display:none !important; } .sheet { border:0; border-radius:0; } @page { size:A4; margin:14mm; } * { -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important; } }
+      `}</style>
+      <div className="toolbar">
+        {admin && <button className="btn sec" disabled={sending} onClick={onEmail}>{sending ? "Enviando…" : "✉️ Enviar recibo (pedir cobro)"}</button>}
+        <button className="btn" onClick={() => window.print()}>🖨 Imprimir / Guardar PDF</button>
+      </div>
+      <div className="sheet">
+        <div className="head">
+          <div>
+            <div style={{ marginBottom: 6 }}><img src="/images/febecos-logo-factura.png" alt="FEBECOS" style={{ height: 38 }} onError={(e) => { (e.target as HTMLImageElement).src = "/images/febecos-logo.png"; }} /></div>
+            <div className="emisor">
+              <div className="rs">{emp.razon_social || "Sandler Guillermo Javier"}</div>
+              <div>{emp.domicilio || "Rojas 441"}</div>
+              <div>{[`(${emp.cod_postal || "1405"})`, emp.localidad || "Buenos Aires", emp.provincia || "C.A.B.A."].filter(Boolean).join(" - ")}</div>
+              <div>CUIT: {cuitFmt(emp.cuit) || "20-21730156-5"}</div>
+              <div>E-mail: {emp.email || "ventas@febecos.com"}</div>
+            </div>
+          </div>
+          <div className="doctype">
+            <div className="noval">Documento No Válido como Factura</div>
+            <div className="x">X</div>
+            <div className="t">RECIBO</div>
+            <div className="n">Nº: {c.numero || ""}</div>
+            <div className="meta">Fecha: {fmtF(c.fecha)}</div>
+            {dr.factura_nro && <div className="meta">Ref. Factura: {dr.factura_nro}</div>}
+          </div>
+        </div>
+
+        <div className="cli">
+          <div className="lbl">Recibimos de</div>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{titleCase(cliNombre) || "—"}</div>
+          {cliDom && <div>{cliDom}</div>}
+          {cliCuit && <div>CUIT: {cliCuit}</div>}
+        </div>
+
+        <table>
+          <thead><tr><th>Fecha</th><th>Medio de pago</th><th>Detalle</th><th className="r">Monto</th></tr></thead>
+          <tbody>
+            {pagos.length === 0 && <tr><td colSpan={4} style={{ textAlign: "center", color: "#9ca3af", padding: 16 }}>Sin pagos registrados</td></tr>}
+            {pagos.map((p, i) => (
+              <tr key={i}>
+                <td>{p.fecha ? fmtF(p.fecha) : "—"}</td>
+                <td>{titleCase(p.medio || "Transferencia")}</td>
+                <td>{p.retencion ? `Retención${p.retencion.pct ? " " + p.retencion.pct + "%" : ""}${p.retencion.certificado ? " · Cert. " + p.retencion.certificado : ""}` : ""}{p.archivo ? (p.retencion ? " · " : "") + "📎 " + p.archivo : ""}</td>
+                <td className="r">{fmt(p.monto)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        <div className="tot">
+          {totalCobrar > 0 && <div className="row"><span>Total a cobrar</span><span>{fmt(totalCobrar)}</span></div>}
+          <div className="row"><span>Total recibido</span><span style={{ fontWeight: 700, color: "#059669" }}>{fmt(totalPagado)}</span></div>
+          <div className="row saldo"><span>Saldo pendiente</span><span style={{ color: saldo > 0.009 ? "#dc2626" : "#059669" }}>{fmt(saldo)}</span></div>
+        </div>
+
+        <div className="foot">
+          {importeEnLetras(totalPagado, mon === "USD" ? "USD" : "ARS")} en concepto de pago{dr.factura_nro ? ` de la factura ${dr.factura_nro}` : ""}.
+          {saldo > 0.009 && <> Queda un saldo pendiente de {fmt(saldo)} a cancelar.</>}
+          <br />Comprobante de pago — sin validez fiscal.
+        </div>
       </div>
     </div>
   );

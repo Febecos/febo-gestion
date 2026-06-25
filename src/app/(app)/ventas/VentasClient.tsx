@@ -40,6 +40,7 @@ const SECCIONES = [
   { k: "pedidos", icon: "📦", label: "Pedidos" },
   { k: "facturas", icon: "🧾", label: "Facturas" },
   { k: "notas", icon: "↩️", label: "Notas C/D" },
+  { k: "recibos", icon: "🧾", label: "Recibos" },
   { k: "remitos", icon: "🚚", label: "Remitos" },
   { k: "pagos", icon: "💵", label: "Pagos" },
   { k: "ctacte", icon: "💳", label: "Cuentas corrientes" },
@@ -69,6 +70,7 @@ export default function VentasClient() {
         {sec === "pedidos" && <Pedidos />}
         {sec === "facturas" && <Comprobantes tipo="factura" titulo="Facturas" />}
         {sec === "notas" && <Comprobantes tipo="nota_credito,nota_debito" titulo="Notas de Crédito / Débito" />}
+        {sec === "recibos" && <Comprobantes tipo="recibo" titulo="Recibos" />}
         {sec === "remitos" && <Comprobantes tipo="remito" titulo="Remitos" />}
         {sec === "pagos" && <Pagos />}
         {sec === "ctacte" && <CuentasCorrientes />}
@@ -494,7 +496,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
   const [unlockedProv, setUnlockedProv] = useState<Record<string, boolean>>({});
-  const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "" });
+  const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "", medio: "Transferencia", ret_pct: "", ret_cert: "" });
   const [emailCli, setEmailCli] = useState("");
   const [tals, setTals] = useState<any[]>([]); const [talSel, setTalSel] = useState<string>("");
   const [facMoneda, setFacMoneda] = useState("USD"); const [facTc, setFacTc] = useState("");
@@ -875,11 +877,21 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 else alert("No pude leer el monto. Cargalo a mano.");
               } catch (e: any) { alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano."); }
             };
+            const esRet = vf.medio === "Retención";
             const guardarPago = () => {
               if (!montoN) { alert("Ingresá el monto recibido"); return; }
+              if (esRet && !archivos.length) { if (!confirm("Es una retención pero no subiste el certificado (img/pdf). ¿Guardar igual?")) return; }
               const montoUsd = enPesos ? +(esteEnFactura / (tcPed || 1)).toFixed(2) : esteEnFactura;
-              accion({ accion: "verificar", pago: { monto: montoN, moneda: vf.moneda, tc: tcPed, monto_usd: montoUsd, monto_factura: esteEnFactura, moneda_factura: enPesos ? "ars" : "usd", ok: okPago, fecha: new Date().toISOString() } });
-              setVf({ ...vf, monto: "" });
+              const ultArch = archivos.length ? archivos[archivos.length - 1].nombre : null;
+              accion({ accion: "verificar", pago: { monto: montoN, moneda: vf.moneda, tc: tcPed, monto_usd: montoUsd, monto_factura: esteEnFactura, moneda_factura: enPesos ? "ars" : "usd", ok: okPago, fecha: new Date().toISOString(),
+                medio: vf.medio, archivo_nombre: ultArch,
+                retencion: esRet ? { pct: vf.ret_pct ? Number(vf.ret_pct) : null, certificado: vf.ret_cert || null } : null } });
+              setVf({ ...vf, monto: "", ret_pct: "", ret_cert: "" });
+            };
+            const generarRecibo = async () => {
+              if (!pagosRec.length) { alert("Cargá al menos un pago antes de generar el recibo."); return; }
+              const d = await accion({ accion: "recibo" }, "¿Generar Recibo X con el detalle de los pagos recibidos?");
+              if (d?.ok && d.recibo_token) window.open(`/p/${d.recibo_token}?admin=1`, "_blank");
             };
             const eliminarPago = (i: number) => { if (confirm("¿Eliminar este pago? Se revierte su movimiento en cuenta corriente.")) accion({ accion: "eliminar_pago", index: i }); };
             return (
@@ -893,13 +905,29 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 <div className="text-[11px] font-bold text-gray-500 uppercase mb-1">💵 Verificar monto recibido</div>
                 <div className="text-xs mb-1">Total a cobrar: <b>{fmtP(totalCobrar)}</b>{enPesos ? ` (USD ${(fac?.total != null && tcPed ? Number(fac.total) / tcPed : totalUsdReal).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · TC ${tcPed})` : ""} · Pagado: <b>{fmtP(totalPagado)}</b> · Saldo: <b className={Math.abs(saldoCobrar) <= (enPesos ? 1 : 0.02) ? "text-emerald-600" : "text-red-600"}>{fmtP(saldoCobrar)}</b></div>
                 <div className="flex flex-wrap gap-2 items-center">
+                  <select value={vf.medio} onChange={(e) => setVf({ ...vf, medio: e.target.value })} className="border border-gray-300 rounded px-2 py-1 text-sm" title="Medio de pago"><option>Transferencia</option><option>Cheque</option><option>Efectivo</option><option>Depósito</option><option>Mercado Pago</option><option>Retención</option></select>
                   <select value={vf.moneda} onChange={(e) => setVf({ ...vf, moneda: e.target.value })} className="border border-gray-300 rounded px-2 py-1 text-sm"><option value="usd">USD</option><option value="ars">$ ARS</option></select>
                   <input type="number" value={vf.monto} onChange={(e) => setVf({ ...vf, monto: e.target.value })} placeholder="monto recibido" className="border border-gray-300 rounded px-2 py-1 text-sm w-36" />
                   {montoN > 0 && <span className={`text-xs font-semibold ${okPago ? "text-emerald-600" : "text-amber-600"}`}>{okPago ? "✔ saldo 0 — habilita facturar" : `quedaría saldo ${fmtP(saldoTrasEste)}`}</span>}
                   <button disabled={busy} onClick={guardarPago} className="px-3 py-1.5 rounded-lg bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-700">💾 Guardar pago</button>
                 </div>
-                {pagosRec.length > 0 && <div className="mt-2 space-y-0.5">{pagosRec.map((p: any, i: number) => <div key={i} className="text-xs text-gray-600 flex items-center gap-2"><span>• {new Date(p.fecha).toLocaleDateString("es-AR")}: {p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} {p.ok ? "✔" : ""}</span><button onClick={() => eliminarPago(i)} title="Eliminar este pago" className="text-red-400 hover:text-red-600">🗑</button></div>)}</div>}
+                {esRet && (
+                  <div className="flex flex-wrap gap-2 items-center mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                    <span className="text-[11px] font-bold text-amber-700 uppercase">↩️ Retención</span>
+                    <input type="number" value={vf.ret_pct} onChange={(e) => setVf({ ...vf, ret_pct: e.target.value })} placeholder="% (opc.)" className="border border-amber-300 rounded px-2 py-1 text-sm w-24" />
+                    <input value={vf.ret_cert} onChange={(e) => setVf({ ...vf, ret_cert: e.target.value })} placeholder="N° certificado (opc.)" className="border border-amber-300 rounded px-2 py-1 text-sm w-44" />
+                    <span className="text-[11px] text-amber-700">Subí el certificado arriba (📄) — se computa como pago y baja el saldo.</span>
+                  </div>
+                )}
+                {pagosRec.length > 0 && <div className="mt-2 space-y-0.5">{pagosRec.map((p: any, i: number) => <div key={i} className="text-xs text-gray-600 flex items-center gap-2"><span>• {new Date(p.fecha).toLocaleDateString("es-AR")} · {p.medio || "Pago"}{p.retencion ? ` (ret${p.retencion.pct ? " " + p.retencion.pct + "%" : ""})` : ""}: {p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} {p.ok ? "✔" : ""}</span><button onClick={() => eliminarPago(i)} title="Eliminar este pago" className="text-red-400 hover:text-red-600">🗑</button></div>)}</div>}
                 {pagoCubierto && <div className="mt-2 text-xs text-emerald-700 font-semibold">✓ Pago completo (saldo 0) — ya podés facturar.</div>}
+                {pagosRec.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
+                    <button disabled={busy} onClick={generarRecibo} className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 disabled:opacity-40">🧾 Generar Recibo X</button>
+                    {ped.recibo_token && <a href={`/p/${ped.recibo_token}?admin=1`} target="_blank" rel="noreferrer" className="text-xs text-indigo-700 font-semibold hover:underline">Ver último recibo ({ped.recibo_numero})</a>}
+                    <span className="text-[11px] text-gray-400">Detalla cada pago y el saldo; se puede enviar al cliente para pedir el cobro.</span>
+                  </div>
+                )}
               </div>
             );
           })()}
