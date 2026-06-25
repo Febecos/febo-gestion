@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
              fc.ref_id, fc.fecha, fc.total, fc.moneda, fc.token, fc.afip_cae, fc.letra, fc.created_at
       FROM fg_comprobantes fc
       LEFT JOIN clientes c ON c.id = fc.cliente_id AND (c.crm_eliminado IS NULL OR c.crm_eliminado = false)
-      WHERE (${tipo} = '' OR fc.tipo = ${tipo})
+      WHERE (${tipo} = '' OR fc.tipo = ANY(string_to_array(${tipo}, ',')))
         AND (${estado} = '' OR fc.estado = ${estado})
         AND (${q} = '' OR lower(coalesce(c.nombre,'')||' '||coalesce(c.razon_social,'')||' '||coalesce(fc.cliente_nombre,'')||' '||coalesce(fc.numero,'')||' '||coalesce(fc.cliente_cuit,'')) LIKE ${like})
       ORDER BY fc.created_at DESC LIMIT 200`;

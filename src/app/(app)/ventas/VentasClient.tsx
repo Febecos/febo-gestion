@@ -39,6 +39,7 @@ const SECCIONES = [
   { k: "presupuestos", icon: "📝", label: "Presupuestos" },
   { k: "pedidos", icon: "📦", label: "Pedidos" },
   { k: "facturas", icon: "🧾", label: "Facturas" },
+  { k: "notas", icon: "↩️", label: "Notas C/D" },
   { k: "remitos", icon: "🚚", label: "Remitos" },
   { k: "pagos", icon: "💵", label: "Pagos" },
   { k: "ctacte", icon: "💳", label: "Cuentas corrientes" },
@@ -67,6 +68,7 @@ export default function VentasClient() {
         {sec === "presupuestos" && <Presupuestos />}
         {sec === "pedidos" && <Pedidos />}
         {sec === "facturas" && <Comprobantes tipo="factura" titulo="Facturas" />}
+        {sec === "notas" && <Comprobantes tipo="nota_credito,nota_debito" titulo="Notas de Crédito / Débito" />}
         {sec === "remitos" && <Comprobantes tipo="remito" titulo="Remitos" />}
         {sec === "pagos" && <Pagos />}
         {sec === "ctacte" && <CuentasCorrientes />}
