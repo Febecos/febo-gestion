@@ -81,6 +81,21 @@ export function desglosarDesdeTotales(opts: {
   return { neto, ivaArr: arr.map(({ id, base, importe }) => ({ id, base, importe })), impIVA, total };
 }
 
+// Algunos presupuestos (ej. BOMBAS) guardan SOLO el total acordado (neto=0, iva_detalle con monto 0).
+// Para poder facturar, derivamos neto+IVA desde ese total, preservándolo exacto. Si el total ya está
+// en pesos (tc null / moneda ARS), se marca arsNativo para que la factura NO le vuelva a aplicar el TC.
+export function normalizarTotales(tot: any): { tot: any; arsNativo: boolean } {
+  const total = Number(tot?.total) || 0;
+  const tieneNeto = Number(tot?.neto) > 0;
+  const detMonto = Array.isArray(tot?.iva_detalle) ? tot.iva_detalle.reduce((a: number, d: any) => a + (Number(d?.monto) || 0), 0) : 0;
+  if (tieneNeto || detMonto > 0 || total <= 0) return { tot, arsNativo: false };
+  const pct = (Array.isArray(tot?.iva_detalle) && Number(tot.iva_detalle[0]?.pct)) ? Number(tot.iva_detalle[0].pct) : 21;
+  const neto = +(total / (1 + pct / 100)).toFixed(2);
+  const iva = +(total - neto).toFixed(2);
+  const arsNativo = (tot?.tc == null) && (tot?.moneda === "ARS" || tot?.moneda === "$");
+  return { tot: { ...tot, neto, iva_detalle: [{ pct, monto: iva }] }, arsNativo };
+}
+
 // Elige el método: si el pedido tiene `iva_detalle` pactado → ancla a él (presupuesto==factura);
 // si no (pedidos viejos sin desglose) → recalcula desde los ítems.
 export function desglosarFactura(opts: { items: any[]; tot: any; conv: (n: any) => number; esFacturaC: boolean }) {

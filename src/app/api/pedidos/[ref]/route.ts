@@ -5,7 +5,7 @@ import { resolveProveedor } from "@/lib/proveedores";
 import { numeroDesdeTalonario, letraFacturaPara, leyendasFactura, condicionIvaReceptor } from "@/lib/talonarios";
 import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 import { tipoCbteAfip, docTipoReceptor, condicionIvaReceptorId } from "@/lib/afip-codigos";
-import { desglosarFactura } from "@/lib/factura-calc";
+import { desglosarFactura, normalizarTotales } from "@/lib/factura-calc";
 import { validarStock, descontarStock, restituirStock } from "@/lib/stock";
 import { getUser } from "@/lib/owner";
 
@@ -864,7 +864,11 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (facturaMoneda === "ARS") { tc = Number(b.tc) || 0; if (!tc) { try { const cfg = await sql`SELECT data FROM fv_config WHERE id=1` as any[]; tc = Number(cfg[0]?.data?.dolar) || 0; } catch {} } if (!tc) bloqueos.push("Para facturar en pesos falta el tipo de cambio (TC)."); }
       const conv = (n: any) => facturaMoneda === "ARS" ? Math.round((Number(n) || 0) * (tc || 0)) : +(Number(n) || 0).toFixed(2);
       const esFacturaC = tipoTal?.letra === "C";
-      const des = desglosarFactura({ items, tot, conv, esFacturaC });
+      // Presupuestos que guardan SOLO el total (bombas) → derivar neto/IVA del total. Si el total ya
+      // está en pesos (arsNativo) la factura ARS NO le re-aplica el TC (conv identidad).
+      const normP = normalizarTotales(tot);
+      const convP = (normP.arsNativo && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
+      const des = desglosarFactura({ items, tot: normP.tot, conv: convP, esFacturaC });
       const doc = docTipoReceptor(clienteCuit);
       if (letra === "A" && doc.tipo !== 80) bloqueos.push("Factura A requiere CUIT válido del receptor.");
 
@@ -955,10 +959,14 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       // ── TOTAL CANÓNICO: neto + IVA (NUNCA el tot.total redondeado del cotizador). Mismo desglose
       //    que el dry-run "revisar" → presupuesto == revisar == factura == cta cte, al peso. ──
       const esFacturaC = tipoTal?.letra === "C";
-      const netoUsd = Number(tot.neto ?? tot.total ?? 0);
-      const sumIvaUsd = Array.isArray(tot.iva_detalle) ? tot.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
+      // Presupuestos con SOLO total (bombas): derivar neto/IVA del total acordado (lo preserva).
+      const normF = normalizarTotales(tot);
+      const totF = normF.tot;
+      const convF = (normF.arsNativo && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
+      const netoUsd = Number(totF.neto ?? totF.total ?? 0);
+      const sumIvaUsd = Array.isArray(totF.iva_detalle) ? totF.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
       const totalUsd = esFacturaC ? +netoUsd.toFixed(2) : +(netoUsd + sumIvaUsd).toFixed(2);
-      const desglose = desglosarFactura({ items, tot, conv, esFacturaC });
+      const desglose = desglosarFactura({ items, tot: totF, conv: convF, esFacturaC });
       // IVA a GUARDAR = el del desglose (consistente con neto/total de la factura), NO el del
       // presupuesto. Si no, el PDF mostraría un IVA que no cierra con el total (subtotal+IVA≠total).
       const ID2PCT: Record<number, number> = { 3: 0, 4: 10.5, 5: 21, 6: 27, 8: 5, 9: 2.5 };
