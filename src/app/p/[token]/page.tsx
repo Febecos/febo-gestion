@@ -346,7 +346,7 @@ const POS = {
     monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
   itemsTop: 46.0, itemRowH: 2.74, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 11, detMaxChars: 70,
-  valorDeclarado: { top: 88.0, left: 8.5, w: 50, size: 11, bold: true },
+  valorDeclarado: { top: 88.0, left: 1.5, w: 23, size: 10, bold: true, right: true },
 };
 
 // Recorta una frase al máximo de caracteres SIN cortar palabras (corta la frase, no la palabra).
@@ -385,7 +385,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
 
   const numeroTxt = String(c.numero || "").replace(/^R[\s-]+/i, "");
   const T = (p: any, txt: any) => (
-    <div style={{ position: "absolute", top: p.top + "%", left: p.left + "%", width: (p.w || 20) + "%", fontSize: (p.size || 10) + "pt", fontWeight: p.bold ? 700 : 400, textAlign: p.center ? "center" : "left", lineHeight: 1, color: "#111", whiteSpace: "nowrap", overflow: "hidden", fontFamily: p.serif ? "'Times New Roman', Times, serif" : FONT }}>{txt}</div>
+    <div style={{ position: "absolute", top: p.top + "%", left: p.left + "%", width: (p.w || 20) + "%", fontSize: (p.size || 10) + "pt", fontWeight: p.bold ? 700 : 400, textAlign: p.right ? "right" : (p.center ? "center" : "left"), lineHeight: 1, color: "#111", whiteSpace: "nowrap", overflow: p.right ? "visible" : "hidden", fontFamily: p.serif ? "'Times New Roman', Times, serif" : FONT }}>{txt}</div>
   );
 
   return (
