@@ -690,7 +690,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     const ars = arsNat || facMoneda === "ARS";
     const tcUsar = arsNat ? undefined : (ars ? (Number(facTc) || dolar || undefined) : undefined);
     const d = await accion({ accion: "facturar", talonario_id: elecTal.id, moneda: ars ? "ARS" : "USD", tc: (ars && !arsNat) ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined, split_panel_neto: Number(splitPanel) || undefined });
-    if (d?.ok) setArcaOpen(true);
+    // Queda como BORRADOR electrónico: el usuario revisa y toca "Autorizar y enviar a ARCA" (paso 2).
+    if (d?.ok) alert("✅ Factura electrónica creada como BORRADOR. Revisá el borrador y, cuando esté OK, tocá «📡 Autorizar y enviar a ARCA» para obtener el CAE.");
   };
   // Revertir el pedido (lo confirmó por error): borra el pedido y devuelve el presupuesto a "emitido".
   const revertir = async () => {
