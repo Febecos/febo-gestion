@@ -172,6 +172,11 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
           anulado_por_nc = ncs.length > 0 && totFac > 0 && sumNc >= totFac - 0.5; // NC cubre toda la factura
         }
       }
+      // ¿Es el ÚLTIMO número emitido? (para habilitar "Revertir" solo en ese caso).
+      let es_ultimo = false;
+      try { const n = parseInt(String(ref).match(/(\d+)\s*$/)?.[1] || "0", 10); const cnt = await sql`SELECT ultimo_numero FROM pedidos_counter WHERE clave='PED' LIMIT 1` as any[]; es_ultimo = !!cnt[0] && n > 0 && Number(cnt[0].ultimo_numero) === n; } catch {}
+      const payloadEnriq = p.payload || {};
+      payloadEnriq.items = await enrichEmisor(sql, payloadEnriq.items || []);
       // Desglose de IVA para mostrar en el detalle del pedido (cuando el presupuesto guardó solo el
       // total, ej. bombas): paneles 10,5% + resto 21%, o todo 21% si no hay split.
       let desglose_iva: any = null;
@@ -186,11 +191,6 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
           if (Number(norm.tot.neto) > 0) desglose_iva = { neto: norm.tot.neto, iva: +(norm.tot.iva_detalle || []).reduce((a: number, d: any) => a + (Number(d.monto) || 0), 0).toFixed(2), iva_detalle: norm.tot.iva_detalle, total: Number(totG.total) };
         }
       }
-      // ¿Es el ÚLTIMO número emitido? (para habilitar "Revertir" solo en ese caso).
-      let es_ultimo = false;
-      try { const n = parseInt(String(ref).match(/(\d+)\s*$/)?.[1] || "0", 10); const cnt = await sql`SELECT ultimo_numero FROM pedidos_counter WHERE clave='PED' LIMIT 1` as any[]; es_ultimo = !!cnt[0] && n > 0 && Number(cnt[0].ultimo_numero) === n; } catch {}
-      const payloadEnriq = p.payload || {};
-      payloadEnriq.items = await enrichEmisor(sql, payloadEnriq.items || []);
       return NextResponse.json({ ok: true, pedido: {
         origen: "fv", numero: p.numero, estado: p.estado || "pendiente_confirmacion",
         public_token: p.public_token, payload: payloadEnriq, dolar, fecha: p.recibido, cliente_id, cliente,
