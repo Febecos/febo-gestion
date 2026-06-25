@@ -160,9 +160,9 @@ export default function ComprobantePublico({ params }: { params: { token: string
         .parties { margin:12px 0; border:1px solid #e5e7eb; border-radius:10px; padding:9px 11px; }
         .parties .lbl { font-size:9px; text-transform:uppercase; color:#9ca3af; font-weight:700; margin-bottom:3px; }
         .parties .v { line-height:1.5; }
-        .venta { display:grid; grid-template-columns:1fr 1fr; gap:2px 24px; font-size:11px; color:#374151; margin:10px 0; border:1px solid #e5e7eb; border-radius:10px; padding:8px 11px; }
+        .venta { display:grid; grid-template-columns:1fr 1fr; gap:2px 24px; font-size:11px; color:#374151; margin-top:7px; padding-top:7px; border-top:1px solid #eef2f7; }
         .venta .k { color:#6b7280; }
-        .tablebox { border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; margin-top:8px; }
+        .tablebox { border:1px solid #e5e7eb; border-radius:10px; overflow:hidden; margin-top:12px; }
         table.items { width:100%; border-collapse:collapse; }
         table.items th { background:var(--azul); color:#fff; text-align:left; padding:6px 9px; font-size:10px; text-transform:uppercase; }
         table.items td { padding:5px 9px; border-bottom:1px solid #eef2f7; vertical-align:top; }
@@ -237,16 +237,15 @@ export default function ComprobantePublico({ params }: { params: { token: string
             {(cli?.cuit || c.cliente_cuit) ? <>CUIT: {cuitFmt(cli?.cuit || c.cliente_cuit)}</> : null}
             {condReceptor ? <>{(cli?.cuit || c.cliente_cuit) ? " · " : ""}Condición de IVA: {condReceptor}</> : null}
           </div>
+          {(c.condiciones_venta || c.forma_pago || c.lugar_entrega || c.tipo_transporte) && (
+            <div className="venta">
+              {c.condiciones_venta && <div><span className="k">Condiciones de Venta: </span>{c.condiciones_venta}</div>}
+              {c.forma_pago && <div><span className="k">Forma de Pago: </span>{c.forma_pago}</div>}
+              {c.lugar_entrega && <div style={{ gridColumn: "1 / -1" }}><span className="k">Lugar de Entrega: </span>{c.lugar_entrega}</div>}
+              {c.tipo_transporte && <div style={{ gridColumn: "1 / -1" }}><span className="k">Tipo de Transporte: </span>{c.tipo_transporte}</div>}
+            </div>
+          )}
         </div>
-
-        {(c.condiciones_venta || c.forma_pago || c.lugar_entrega || c.tipo_transporte) && (
-          <div className="venta">
-            {c.condiciones_venta && <div><span className="k">Condiciones de Venta: </span>{c.condiciones_venta}</div>}
-            {c.forma_pago && <div><span className="k">Forma de Pago: </span>{c.forma_pago}</div>}
-            {c.lugar_entrega && <div style={{ gridColumn: "1 / -1" }}><span className="k">Lugar de Entrega: </span>{c.lugar_entrega}</div>}
-            {c.tipo_transporte && <div style={{ gridColumn: "1 / -1" }}><span className="k">Tipo de Transporte: </span>{c.tipo_transporte}</div>}
-          </div>
-        )}
 
         <div className="tablebox">
         <table className="items">
