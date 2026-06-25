@@ -17,11 +17,12 @@ type Etiqueta = {
   dest_nombre: string;
   dest_direccion: string;
   dest_localidad: string;
-  dest_provincia: string;
   dest_cp: string;
+  dest_provincia: string;
   dest_tel: string;
   dest_doc: string;
   transporte: string;
+  tipo_envio: string;
   obs: string;
 };
 
@@ -66,7 +67,8 @@ export default function EtiquetasPage({ params }: { params: { ref: string } }) {
           dest_cp: env.cp || cli.cod_postal || "",
           dest_tel: env.telefono || cli.whatsapp || "",
           dest_doc: env.dni || cli.cuit || "",
-          transporte: [env.empresa, env.tipo_envio].filter(Boolean).join(" · "),
+          transporte: [env.empresa, env.domicilio_transporte, env.telefono_transporte].filter(Boolean).join(" / "),
+          tipo_envio: env.tipo_envio || "",
           obs: "Pedido " + ref,
         });
         setLoading(false);
@@ -78,15 +80,17 @@ export default function EtiquetasPage({ params }: { params: { ref: string } }) {
 
   if (loading || !data) return <div style={{ padding: 40, fontFamily: "system-ui" }}>Cargando etiquetas…</div>;
 
-  // Campo editable compartido: por defecto muestra el valor; el ✎ lo pasa a input (y al editarlo cambia en todas).
-  const Campo = ({ k, ph, fmt }: { k: keyof Etiqueta; ph: string; fmt?: (v: string) => string }) => {
+  // Campo compartido. Solo la PRIMERA etiqueta (master) es editable; las demás son espejo (se copian).
+  const Campo = ({ k, ph, fmt, master }: { k: keyof Etiqueta; ph: string; fmt?: (v: string) => string; master?: boolean }) => {
     const editing = editKey === k;
     const val = data[k];
+    const shown = val ? (fmt ? fmt(val) : val) : null;
+    if (!master) return <div className="et-field"><span className="et-val">{shown || <span className="et-ph">{ph}</span>}</span></div>;
     return (
       <div className="et-field">
         {editing
           ? <input autoFocus value={val} placeholder={ph} onChange={(e) => upd(k, e.target.value)} onBlur={() => setEditKey(null)} onKeyDown={(e) => { if (e.key === "Enter") setEditKey(null); }} className="et-input" />
-          : <span className="et-val" onClick={() => setEditKey(k)}>{val ? (fmt ? fmt(val) : val) : <span className="et-ph">{ph}</span>}</span>}
+          : <span className="et-val" onClick={() => setEditKey(k)}>{shown || <span className="et-ph">{ph}</span>}</span>}
         <button className="et-edit" title="Editar este campo (se aplica a todas las etiquetas)" onClick={() => setEditKey(editing ? null : k)}>✎</button>
       </div>
     );
@@ -137,33 +141,35 @@ export default function EtiquetasPage({ params }: { params: { ref: string } }) {
 
       <div className="et-sheet">
         <div className="et-grid">
-          {Array.from({ length: count }).map((_, i) => (
+          {Array.from({ length: count }).map((_, i) => {
+            const master = i === 0; // solo la primera etiqueta es editable; el resto copia sus datos
+            return (
             <div key={i} className="et-label">
               <div className="et-rem">
                 <b>REMITE:</b> {REMITENTE.nombre} · {REMITENTE.direccion}, {REMITENTE.localidad} ({REMITENTE.cp}) · Tel {REMITENTE.tel}
               </div>
-              <div className="et-dest-lbl">Destinatario</div>
-              {/* Nombre: mayúsculas, todo el ancho, autoajuste. Edita con ✎ (se replica a todas). */}
+              <div className="et-dest-lbl">Destinatario {master && <span style={{ color: "#0b3d6b" }}>· editá acá (se copia a todas)</span>}</div>
+              {/* Nombre: mayúsculas, todo el ancho, autoajuste. */}
               <div className="et-field">
-                {editKey === "dest_nombre"
+                {master && editKey === "dest_nombre"
                   ? <input autoFocus value={data.dest_nombre} placeholder="Nombre / Razón social" onChange={(e) => upd("dest_nombre", e.target.value)} onBlur={() => setEditKey(null)} onKeyDown={(e) => { if (e.key === "Enter") setEditKey(null); }} className="et-input et-name" />
-                  : <div className="et-val" style={{ cursor: "text" }} onClick={() => setEditKey("dest_nombre")}>{data.dest_nombre ? <FitText text={data.dest_nombre.toUpperCase()} className="et-name" max={16} /> : <span className="et-ph">NOMBRE / RAZÓN SOCIAL</span>}</div>}
-                <button className="et-edit" title="Editar este campo (se aplica a todas las etiquetas)" onClick={() => setEditKey(editKey === "dest_nombre" ? null : "dest_nombre")}>✎</button>
+                  : <div className="et-val" style={{ cursor: master ? "text" : "default" }} onClick={master ? () => setEditKey("dest_nombre") : undefined}>{data.dest_nombre ? <FitText text={data.dest_nombre.toUpperCase()} className="et-name" max={16} /> : <span className="et-ph">NOMBRE / RAZÓN SOCIAL</span>}</div>}
+                {master && <button className="et-edit" title="Editar (se aplica a todas las etiquetas)" onClick={() => setEditKey(editKey === "dest_nombre" ? null : "dest_nombre")}>✎</button>}
               </div>
-              <Campo k="dest_direccion" ph="Dirección" />
+              <Campo k="dest_direccion" ph="Dirección" master={master} />
               <div className="et-row">
-                <Campo k="dest_localidad" ph="Localidad" />
-                <Campo k="dest_provincia" ph="Provincia" />
-                <Campo k="dest_cp" ph="CP" />
+                <Campo k="dest_localidad" ph="Localidad" master={master} />
+                <Campo k="dest_cp" ph="CP" master={master} />
               </div>
-              <div className="et-row">
-                <Campo k="dest_tel" ph="Teléfono" />
-                <Campo k="dest_doc" ph="CUIT / DNI" fmt={fmtDoc} />
-              </div>
-              <Campo k="transporte" ph="Transporte / tipo de envío" />
-              <Campo k="obs" ph="Observaciones" />
+              <Campo k="dest_provincia" ph="Provincia" master={master} />
+              <Campo k="dest_tel" ph="Teléfono de contacto" master={master} />
+              <Campo k="dest_doc" ph="CUIT / DNI" fmt={fmtDoc} master={master} />
+              <Campo k="transporte" ph="Transporte" master={master} />
+              <Campo k="tipo_envio" ph="Tipo de envío" master={master} />
+              <Campo k="obs" ph="N° de pedido" master={master} />
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
