@@ -14,6 +14,16 @@ async function ensure(sql: any) {
     created_at TIMESTAMPTZ DEFAULT now()
   )`;
   await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS alias TEXT`.catch(() => {});
+  // Contactos por rol (comercial / administración / logística): nombre, email, celular.
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_comercial_nombre TEXT`.catch(() => {});
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_comercial_email TEXT`.catch(() => {});
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_comercial_cel TEXT`.catch(() => {});
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_admin_nombre TEXT`.catch(() => {});
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_admin_email TEXT`.catch(() => {});
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_admin_cel TEXT`.catch(() => {});
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_logistica_nombre TEXT`.catch(() => {});
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_logistica_email TEXT`.catch(() => {});
+  await sql`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cont_logistica_cel TEXT`.catch(() => {});
 }
 
 export async function GET(req: NextRequest) {
@@ -29,15 +39,20 @@ export async function GET(req: NextRequest) {
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
 
-const CAMPOS = ["cuit", "razon_social", "nombre_fantasia", "email", "telefono", "contacto", "domicilio", "localidad", "provincia", "cod_postal", "condicion_iva", "rubro", "notas", "alias", "activo"];
+const CAMPOS = ["cuit", "razon_social", "nombre_fantasia", "email", "telefono", "contacto", "domicilio", "localidad", "provincia", "cod_postal", "condicion_iva", "rubro", "notas", "alias", "activo", "cuentas_bancarias",
+  "cont_comercial_nombre", "cont_comercial_email", "cont_comercial_cel",
+  "cont_admin_nombre", "cont_admin_email", "cont_admin_cel",
+  "cont_logistica_nombre", "cont_logistica_email", "cont_logistica_cel"];
 
 // POST → crear { ...campos }
 export async function POST(req: NextRequest) {
   try {
     const sql = getDb(); await ensure(sql);
     const b = await req.json();
-    const r = await sql`INSERT INTO fg_proveedores (cuit, razon_social, nombre_fantasia, email, telefono, contacto, domicilio, localidad, provincia, cod_postal, condicion_iva, rubro, notas, activo)
-      VALUES (${b.cuit || null}, ${b.razon_social || null}, ${b.nombre_fantasia || null}, ${b.email || null}, ${b.telefono || null}, ${b.contacto || null}, ${b.domicilio || null}, ${b.localidad || null}, ${b.provincia || null}, ${b.cod_postal || null}, ${b.condicion_iva || null}, ${b.rubro || null}, ${b.notas || null}, true)
+    const r = await sql`INSERT INTO fg_proveedores (cuit, razon_social, nombre_fantasia, email, telefono, contacto, domicilio, localidad, provincia, cod_postal, condicion_iva, rubro, notas, activo,
+      cont_comercial_nombre, cont_comercial_email, cont_comercial_cel, cont_admin_nombre, cont_admin_email, cont_admin_cel, cont_logistica_nombre, cont_logistica_email, cont_logistica_cel)
+      VALUES (${b.cuit || null}, ${b.razon_social || null}, ${b.nombre_fantasia || null}, ${b.email || null}, ${b.telefono || null}, ${b.contacto || null}, ${b.domicilio || null}, ${b.localidad || null}, ${b.provincia || null}, ${b.cod_postal || null}, ${b.condicion_iva || null}, ${b.rubro || null}, ${b.notas || null}, true,
+      ${b.cont_comercial_nombre || null}, ${b.cont_comercial_email || null}, ${b.cont_comercial_cel || null}, ${b.cont_admin_nombre || null}, ${b.cont_admin_email || null}, ${b.cont_admin_cel || null}, ${b.cont_logistica_nombre || null}, ${b.cont_logistica_email || null}, ${b.cont_logistica_cel || null})
       RETURNING *`;
     return NextResponse.json({ ok: true, proveedor: r[0] });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
@@ -49,10 +64,16 @@ export async function PATCH(req: NextRequest) {
     const sql = getDb(); await ensure(sql);
     const { id, campo, valor } = await req.json();
     if (!id || !CAMPOS.includes(campo)) return NextResponse.json({ ok: false, error: "campo inválido" }, { status: 400 });
-    const v = campo === "activo" ? !!valor : (String(valor ?? "").trim() || null);
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-    try { await pool.query(`UPDATE fg_proveedores SET ${campo}=$1 WHERE id=$2`, [v, id]); }
-    finally { await pool.end(); }
+    try {
+      if (campo === "cuentas_bancarias") {
+        await pool.query(`ALTER TABLE fg_proveedores ADD COLUMN IF NOT EXISTS cuentas_bancarias JSONB DEFAULT '[]'::jsonb`).catch(() => {});
+        await pool.query(`UPDATE fg_proveedores SET cuentas_bancarias=$1::jsonb WHERE id=$2`, [JSON.stringify(Array.isArray(valor) ? valor : []), id]);
+      } else {
+        const v = campo === "activo" ? !!valor : (String(valor ?? "").trim() || null);
+        await pool.query(`UPDATE fg_proveedores SET ${campo}=$1 WHERE id=$2`, [v, id]);
+      }
+    } finally { await pool.end(); }
     return NextResponse.json({ ok: true });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
