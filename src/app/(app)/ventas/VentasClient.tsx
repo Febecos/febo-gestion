@@ -873,8 +873,23 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             const leerComprobante = async (a: any) => {
               if (!a) a = archivos[archivos.length - 1];
               if (!a) { alert("Subí primero el comprobante (PDF o imagen)."); return; }
+              // 1) Lectura AUTOMÁTICA con visión de Claude (lee el contenido real del comprobante).
               try {
-                // Se lee el CONTENIDO del comprobante (texto del PDF u OCR de la imagen), NO el nombre del archivo.
+                const ai = await safeJson(await fetch("/api/leer-pago", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: a.b64, tipo: a.tipo }) }));
+                if (ai?.ok && ai.data) {
+                  const dd = ai.data;
+                  const upd: any = { ...vf, archivo_nombre: a.nombre || "" };
+                  if (dd.monto != null) { upd.monto = String(dd.monto); upd.moneda = dd.moneda === "USD" ? "usd" : "ars"; }
+                  if (dd.medio) upd.medio = dd.medio;
+                  if (dd.banco) upd.banco = dd.banco;
+                  if (dd.numero) upd.ref_numero = dd.numero;
+                  if (dd.fecha) upd.fecha = dd.fecha;
+                  setVf(upd);
+                  return; // leído por IA, listo
+                }
+              } catch { /* sin key o error → cae al OCR local */ }
+              // 2) Fallback: OCR/texto local. Se lee el CONTENIDO (no el nombre del archivo).
+              try {
                 let monto = 0; let texto = "";
                 if (/pdf/i.test(a.tipo || "")) {
                   const d = await safeJson(await fetch("/api/parse-proforma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: a.b64, tipo: a.tipo }) }));
@@ -974,10 +989,13 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     <span className="text-[11px] text-amber-700">Subí el certificado arriba (📄) — se computa como pago y baja el saldo.</span>
                   </div>
                 )}
-                {pagosRec.length > 0 && <div className="mt-2 space-y-0.5">{pagosRec.map((p: any, i: number) => <div key={i} className="text-xs text-gray-600 flex items-center gap-2"><span>• {new Date(p.fecha).toLocaleDateString("es-AR")}:</span>
+                {pagosRec.length > 0 && <div className="mt-2 space-y-1">{pagosRec.map((p: any, i: number) => <div key={i} className="text-xs text-gray-600 flex flex-wrap items-center gap-1.5 border-b border-gray-50 pb-1">
+                  <input type="date" defaultValue={String(p.fecha || "").slice(0, 10)} disabled={busy} onBlur={(e) => { const v = e.target.value; if (v && v !== String(p.fecha || "").slice(0, 10)) accion({ accion: "editar_pago", index: i, fecha: new Date(v + "T12:00:00").toISOString() }); }} title="Fecha del pago (editable)" className="border border-gray-200 rounded px-1 py-0.5 text-xs" />
                   <select value={p.medio || "Transferencia"} disabled={busy} onChange={(e) => accion({ accion: "editar_pago", index: i, medio: e.target.value })} title="Medio de pago (editable)" className="border border-gray-200 rounded px-1 py-0.5 text-xs bg-white"><option>Transferencia</option><option>Cheque</option><option>Efectivo</option><option>Depósito</option><option>Mercado Pago</option><option>Retención</option></select>
+                  {p.medio !== "Efectivo" && p.medio !== "Retención" && <input defaultValue={p.banco || ""} disabled={busy} placeholder="Banco" onBlur={(e) => { if ((e.target.value || "") !== (p.banco || "")) accion({ accion: "editar_pago", index: i, banco: e.target.value }); }} className="border border-gray-200 rounded px-1 py-0.5 text-xs w-24" />}
+                  {p.medio !== "Efectivo" && p.medio !== "Retención" && <input defaultValue={p.ref_numero || ""} disabled={busy} placeholder={p.medio === "Cheque" ? "N° cheque" : "N° op."} onBlur={(e) => { if ((e.target.value || "") !== (p.ref_numero || "")) accion({ accion: "editar_pago", index: i, ref_numero: e.target.value }); }} className="border border-gray-200 rounded px-1 py-0.5 text-xs w-28" />}
                   {p.retencion && <span className="text-amber-600">ret{p.retencion.pct ? " " + p.retencion.pct + "%" : ""}</span>}
-                  <span>{p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} {p.ok ? "✔" : ""}</span>
+                  <span className="font-semibold ml-auto">{p.moneda === "ars" ? "$" : "USD"} {Number(p.monto).toLocaleString("es-AR")} {p.ok ? "✔" : ""}</span>
                   <button onClick={() => eliminarPago(i)} title="Eliminar este pago" className="text-red-400 hover:text-red-600">🗑</button></div>)}</div>}
                 {pagoCubierto && <div className="mt-2 text-xs text-emerald-700 font-semibold">✓ Pago completo (saldo 0) — ya podés facturar.</div>}
                 {pagosRec.length > 0 && (
