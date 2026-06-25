@@ -92,6 +92,7 @@ export async function GET(_req: NextRequest) {
           nc_numero: p.nc_numero || null,
           nc_token: p.nc_token || null,
           remito_numero: pl.remito_numero || null,
+          despacho_completo: pl.despacho_completo ?? (pl.remito_numero ? true : null), // pedidos viejos: remito único = completo
         };
       }),
     ];

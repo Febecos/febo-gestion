@@ -539,7 +539,23 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const env = cidEnvio ? (clEnvio || {}) : (plr.envio || {});
       const envCompleto = !!(env.nombre && env.direccion && env.localidad && env.provincia);
       if (!envCompleto) return NextResponse.json({ ok: false, error: "Faltan los datos de envío del cliente. Cargalos en la ficha del cliente (CRM › Datos Envíos) o pedile que los complete desde el link." }, { status: 409 });
-      if (plr.remito_numero) return NextResponse.json({ ok: true, ya: true, remito_numero: plr.remito_numero, remito_token: plr.remito_token });
+      // REMITOS PARCIALES: se puede despachar de a tandas. Lo ya despachado vive en payload.remitos.
+      const itemsPed = (plr.items || []);
+      const yaDesp: Record<number, number> = {};
+      for (const rr of (plr.remitos || [])) for (const it of (rr.items || [])) yaDesp[it.idx] = (yaDesp[it.idx] || 0) + (Number(it.cantidad) || 0);
+      const pend = itemsPed.map((it: any, idx: number) => ({ idx, codigo: it.codigo || "", descripcion: it.descripcion || it.codigo || "", pendiente: Math.max(0, (Number(it.cantidad) || 0) - (yaDesp[idx] || 0)) }));
+      // Selección a despachar: lo que marque el front, o TODO lo pendiente (compatibilidad).
+      let aDespachar: { idx: number; codigo: string; descripcion: string; cantidad: number }[];
+      if (Array.isArray(b.items) && b.items.length) {
+        aDespachar = b.items.map((s: any) => { const p = pend.find((x: any) => x.idx === Number(s.idx)); const c = Math.min(Number(s.cantidad) || 0, p?.pendiente || 0); return p && c > 0 ? { idx: p.idx, codigo: p.codigo, descripcion: p.descripcion, cantidad: c } : null; }).filter(Boolean) as any[];
+      } else {
+        aDespachar = pend.filter((p: any) => p.pendiente > 0).map((p: any) => ({ idx: p.idx, codigo: p.codigo, descripcion: p.descripcion, cantidad: p.pendiente }));
+      }
+      if (!aDespachar.length) return NextResponse.json({ ok: false, error: "No hay ítems pendientes de despacho (¿ya se despachó todo?)." }, { status: 409 });
+      // ¿Queda todo despachado con esta tanda? (para marcar el pedido como 'enviado')
+      const despAcc: Record<number, number> = { ...yaDesp };
+      for (const it of aDespachar) despAcc[it.idx] = (despAcc[it.idx] || 0) + it.cantidad;
+      const completo = itemsPed.every((it: any, idx: number) => (despAcc[idx] || 0) >= (Number(it.cantidad) || 0));
       // El remito va al MISMO receptor que la factura (puede ser un cliente final del revendedor).
       const fac = (await sql`SELECT cliente_id, cliente_nombre FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0];
       const cid = fac?.cliente_id ?? cidEnvio;
@@ -580,18 +596,24 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         factura_nro: row.factura_numero || null,
         imagen_fondo: (remTal && remTal.imagen_fondo) ? remTal.imagen_fondo : "remito-fondo.png",
         emitido_at: new Date().toISOString(),
+        parcial: !completo,
+        items: aDespachar.map((x) => ({ codigo: x.codigo, descripcion: x.descripcion, cantidad: x.cantidad })),
       };
       const comp = (await sql`
         INSERT INTO fg_comprobantes (tipo, estado, numero, talonario_id, cliente_id, cliente_nombre, fecha, subtotal, total, moneda, notas, token, lugar_entrega, tipo_transporte, datos_remito)
         VALUES ('remito','emitido',${numero},${remTalId},${cid},${cnombre}, now(), 0, 0, 'ARS', ${"Despacho del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${lugar}, ${transp}, ${JSON.stringify(datosRemito)}::jsonb)
         RETURNING id, token` as any[])[0];
       let orden = 0;
-      for (const it of (plr.items || [])) {
+      for (const it of aDespachar) {
         await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
           VALUES (${comp.id}, ${(it.descripcion || it.codigo || "").slice(0, 300)}, ${it.cantidad || 1}, 0, 0, ${orden++})`;
       }
-      await sql`UPDATE fv_pedidos SET estado='enviado', payload = jsonb_set(jsonb_set(coalesce(payload,'{}'::jsonb), '{remito_numero}', to_jsonb(${numero}::text)), '{remito_token}', to_jsonb(${comp.token}::text)) WHERE numero=${ref}`;
-      return NextResponse.json({ ok: true, remito_numero: numero, remito_token: comp.token });
+      // Acumular este remito en payload.remitos. Solo se marca 'enviado' cuando se despachó TODO.
+      const nuevoRemito = { numero, token: comp.token, fecha: new Date().toISOString(), parcial: !completo, items: aDespachar.map((x) => ({ idx: x.idx, codigo: x.codigo, descripcion: x.descripcion, cantidad: x.cantidad })) };
+      const remitosAll = [...(plr.remitos || []), nuevoRemito];
+      const merge = JSON.stringify({ remitos: remitosAll, remito_numero: numero, remito_token: comp.token, despacho_completo: completo });
+      await sql`UPDATE fv_pedidos SET estado=${completo ? "enviado" : row.estado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true, remito_numero: numero, remito_token: comp.token, completo, despachados: aDespachar });
     }
     // Datos de venta (Condiciones de Venta / Forma de Pago / Lugar de Entrega / Tipo de Transporte) → factura.
     if (b.accion === "datos_venta") {

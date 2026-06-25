@@ -424,7 +424,7 @@ function PasosPedido({ p }: { p: any }) {
     { txt: "FA", on: !!p.factura_numero, color: "#059669", t: p.factura_numero ? "Factura " + p.factura_numero : "Sin facturar", token: p.factura_token },
     // La NC solo aparece si existe (no es un paso de todo pedido)
     ...(p.nc_numero ? [{ txt: "NC", on: true, color: "#e11d48", t: "Nota de Crédito " + p.nc_numero, token: p.nc_token }] : []),
-    { ic: "📦", on: !!p.remito_numero || p.estado === "enviado", t: p.remito_numero ? "Remito " + p.remito_numero : "Sin remito / despacho" },
+    { ic: "📦", on: !!p.remito_numero || p.estado === "enviado", color: p.remito_numero && p.despacho_completo === false ? "#d97706" : undefined, t: p.remito_numero ? (p.despacho_completo === false ? "Despacho PARCIAL · último remito " + p.remito_numero : "Remito " + p.remito_numero) : "Sin remito / despacho" },
   ] as { ic?: string; txt?: string; on: boolean; color?: string; t: string; token?: string }[];
   return <span className="inline-flex items-center gap-1 text-[15px]">{pasos.map((s, i) => {
     const style = { opacity: s.on ? 1 : 0.25, filter: s.on ? "none" : "grayscale(1)", color: s.color, fontWeight: (s.color || s.txt) ? 800 : undefined } as React.CSSProperties;
@@ -1160,22 +1160,24 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 {/* Remito / Despacho — se habilita SOLO con los datos de envío validados (+ facturado + pagado) */}
                 <div className="mt-4 pt-3 border-t border-gray-100">
                   <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">📦 Remito / Despacho</div>
-                  {pl.remito_numero ? (
-                    <div className="text-sm text-gray-700 flex flex-wrap items-center gap-2">
-                      <span>✅ Despachado · Remito <b>{pl.remito_numero}</b></span>
-                      {pl.remito_token && <a href={`/p/${pl.remito_token}?admin=1`} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-violet-300 text-violet-700 text-sm font-semibold hover:bg-violet-50">📦 Ver remito</a>}
-                    </div>
-                  ) : (() => {
-                    const faltan = [!completo && "cargar los datos de envío del cliente", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean);
-                    const habil = completo && facturado && pagadoOk;
+                  {(() => {
+                    const remitos = pl.remitos || [];
+                    const legacyFull = !!pl.remito_numero && !remitos.length;       // pedidos viejos (remito único, todo despachado)
+                    const despachoCompleto = !!pl.despacho_completo || legacyFull;
                     return (
-                      <div className="space-y-2">
-                        {faltan.length > 0 && <div className="text-xs text-amber-600">Para generar el remito primero: {faltan.join(" · ")}.</div>}
-                        <button disabled={busy || !habil}
-                          title={habil ? "Generar remito y marcar despachado" : "Faltan pasos: " + faltan.join(", ")}
-                          onClick={() => accion({ accion: "remitir" }, "¿Generar el REMITO y marcar el pedido como despachado?")}
-                          className={`px-4 py-2 rounded-lg text-sm font-semibold ${habil ? "bg-violet-500 text-white hover:bg-violet-600" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>📦 Generar remito y despachar</button>
-                      </div>
+                      <RemitoPanel
+                        key={remitos.length}
+                        items={items}
+                        remitos={remitos}
+                        despachoCompleto={despachoCompleto}
+                        legacyNumero={legacyFull ? pl.remito_numero : null}
+                        legacyToken={legacyFull ? pl.remito_token : null}
+                        envioCompleto={completo}
+                        facturado={facturado}
+                        pagadoOk={pagadoOk}
+                        busy={busy}
+                        onGenerar={(sel: any[]) => accion({ accion: "remitir", items: sel }, "¿Generar el REMITO con los ítems marcados?")}
+                      />
                     );
                   })()}
                 </div>
@@ -1509,6 +1511,91 @@ function RevisionFacturaModal({ data, onClose }: { data: any; onClose: () => voi
 }
 function Cell({ l, v }: { l: string; v: React.ReactNode }) {
   return <div><div className="text-[10px] uppercase text-gray-400">{l}</div><div className="text-gray-800">{v}</div></div>;
+}
+
+// ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
+function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyToken, envioCompleto, facturado, pagadoOk, busy, onGenerar }: any) {
+  // Cuánto se despachó por índice de ítem, sumando todos los remitos previos.
+  const desp: Record<number, number> = {};
+  (remitos || []).forEach((r: any) => (r.items || []).forEach((it: any) => { desp[it.idx] = (desp[it.idx] || 0) + (Number(it.cantidad) || 0); }));
+  const lineas = (items || []).map((it: any, idx: number) => {
+    const cant = Number(it.cantidad) || 0; const ya = desp[idx] || 0;
+    return { idx, codigo: it.codigo || "", descripcion: it.descripcion || "", cant, ya, pendiente: Math.max(0, cant - ya) };
+  });
+  const hayPendientes = lineas.some((l: any) => l.pendiente > 0);
+  // Selección: idx -> cantidad a despachar ahora (default = todo lo pendiente).
+  const [sel, setSel] = useState<Record<number, number>>(() => Object.fromEntries(lineas.filter((l: any) => l.pendiente > 0).map((l: any) => [l.idx, l.pendiente])));
+  const setCant = (idx: number, max: number, v: string) => { const n = Math.max(0, Math.min(max, Math.floor(Number(v) || 0))); setSel((s) => ({ ...s, [idx]: n })); };
+  const toggle = (idx: number, pend: number) => setSel((s) => ({ ...s, [idx]: (s[idx] || 0) > 0 ? 0 : pend }));
+  const seleccion = lineas.filter((l: any) => l.pendiente > 0 && (sel[l.idx] || 0) > 0).map((l: any) => ({ idx: l.idx, cantidad: sel[l.idx] }));
+
+  const faltan = [!envioCompleto && "cargar los datos de envío del cliente", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean) as string[];
+  const habil = envioCompleto && facturado && pagadoOk;
+  const links = (remitos || []);
+
+  return (
+    <div className="space-y-3">
+      {/* Remitos ya generados */}
+      {legacyNumero ? (
+        <div className="text-sm text-gray-700 flex flex-wrap items-center gap-2">
+          <span>✅ Despachado · Remito <b>{legacyNumero}</b></span>
+          {legacyToken && <a href={`/p/${legacyToken}?admin=1`} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-violet-300 text-violet-700 text-sm font-semibold hover:bg-violet-50">📦 Ver remito</a>}
+        </div>
+      ) : links.length > 0 && (
+        <div className="space-y-1">
+          <div className="text-[11px] font-bold text-gray-400 uppercase">Remitos generados</div>
+          {links.map((r: any, i: number) => (
+            <div key={i} className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+              <span>{r.parcial ? "🚚" : "✅"} Remito <b>{r.numero}</b> {r.parcial && <span className="text-amber-600 text-xs">(parcial)</span>}</span>
+              <span className="text-xs text-gray-400">{(r.items || []).reduce((a: number, x: any) => a + (Number(x.cantidad) || 0), 0)} u.</span>
+              {r.token && <a href={`/p/${r.token}?admin=1`} target="_blank" rel="noreferrer" className="px-2 py-0.5 rounded border border-violet-300 text-violet-700 text-xs font-semibold hover:bg-violet-50">📦 Ver</a>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {despachoCompleto ? (
+        !legacyNumero && <div className="text-sm text-emerald-700 font-semibold">✅ Pedido despachado por completo.</div>
+      ) : (
+        <>
+          {faltan.length > 0 && <div className="text-xs text-amber-600">Para generar un remito primero: {faltan.join(" · ")}.</div>}
+          {hayPendientes && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead><tr className="bg-gray-50 text-[11px] uppercase text-gray-400">
+                  <th className="px-2 py-1.5 text-left">Despachar</th><th className="px-2 py-1.5 text-left">Ítem</th>
+                  <th className="px-2 py-1.5 text-center">Pedido</th><th className="px-2 py-1.5 text-center">Despachado</th><th className="px-2 py-1.5 text-center">Pendiente</th><th className="px-2 py-1.5 text-center">Cant.</th>
+                </tr></thead>
+                <tbody>
+                  {lineas.map((l: any) => {
+                    const done = l.pendiente === 0;
+                    const checked = (sel[l.idx] || 0) > 0;
+                    return (
+                      <tr key={l.idx} className={`border-t border-gray-100 ${done ? "opacity-50" : ""}`}>
+                        <td className="px-2 py-1.5">{done ? <span className="text-emerald-600 text-xs">✅</span> : <input type="checkbox" checked={checked} onChange={() => toggle(l.idx, l.pendiente)} />}</td>
+                        <td className="px-2 py-1.5"><span className="font-semibold text-febo-azul">{l.codigo}</span> <span className="text-gray-500 text-xs">{(l.descripcion || "").slice(0, 40)}</span></td>
+                        <td className="px-2 py-1.5 text-center">{l.cant}</td>
+                        <td className="px-2 py-1.5 text-center text-gray-500">{l.ya}</td>
+                        <td className="px-2 py-1.5 text-center font-bold">{l.pendiente}</td>
+                        <td className="px-2 py-1.5 text-center">{done ? "—" : <input type="number" min={0} max={l.pendiente} value={checked ? (sel[l.idx] || 0) : 0} onChange={(e) => setCant(l.idx, l.pendiente, e.target.value)} className="w-16 border border-gray-300 rounded px-1 py-0.5 text-center" />}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <button disabled={busy || !habil || !seleccion.length}
+            title={!habil ? "Faltan pasos: " + faltan.join(", ") : (!seleccion.length ? "Marcá al menos un ítem a despachar" : "Generar remito de los ítems marcados")}
+            onClick={() => onGenerar(seleccion)}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold ${habil && seleccion.length ? "bg-violet-500 text-white hover:bg-violet-600" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>
+            📦 Generar remito {seleccion.length > 0 && `(${seleccion.reduce((a: number, x: any) => a + x.cantidad, 0)} u.)`}
+          </button>
+          {!despachoCompleto && links.length > 0 && <div className="text-[11px] text-gray-400">Quedan ítems pendientes: podés generar otro remito cuando despaches el resto.</div>}
+        </>
+      )}
+    </div>
+  );
 }
 
 // ---------- FACTURAS / REMITOS (fg_comprobantes) ----------
