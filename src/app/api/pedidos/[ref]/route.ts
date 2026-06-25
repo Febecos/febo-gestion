@@ -553,6 +553,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const env = cidEnvio ? (clEnvio || {}) : (plr.envio || {});
       const envCompleto = !!(env.nombre && env.direccion && env.localidad && env.provincia);
       if (!envCompleto) return NextResponse.json({ ok: false, error: "Faltan los datos de envío del cliente. Cargalos en la ficha del cliente (CRM › Datos Envíos) o pedile que los complete desde el link." }, { status: 409 });
+      if (!String(env.empresa || "").trim()) return NextResponse.json({ ok: false, error: "Falta el TRANSPORTE en los datos de envío del cliente. Cargalo antes de generar el remito." }, { status: 409 });
       // REMITOS PARCIALES: se puede despachar de a tandas. Lo ya despachado vive en payload.remitos.
       const itemsPed = (plr.items || []);
       const yaDesp: Record<number, number> = {};
@@ -628,6 +629,69 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const merge = JSON.stringify({ remitos: remitosAll, remito_numero: numero, remito_token: comp.token, despacho_completo: completo });
       await sql`UPDATE fv_pedidos SET estado=${completo ? "enviado" : row.estado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
       return NextResponse.json({ ok: true, remito_numero: numero, remito_token: comp.token, completo, despachados: aDespachar });
+    }
+    // Eliminar un remito — SOLO si es el último emitido (no hay otro remito con número/id posterior).
+    if (b.accion === "eliminar_remito") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const numero = String(b.numero || "").trim();
+      if (!numero) return NextResponse.json({ ok: false, error: "Falta el N° de remito." }, { status: 400 });
+      const row = (await sql`SELECT payload, estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      const plr = row.payload || {};
+      const rem = (await sql`SELECT id, talonario_id, numero FROM fg_comprobantes WHERE numero=${numero} AND tipo='remito' LIMIT 1` as any[])[0];
+      if (!rem) return NextResponse.json({ ok: false, error: "Remito no encontrado." }, { status: 404 });
+      // No se puede borrar si existe un remito posterior (mayor id = emitido después).
+      const ultId = (await sql`SELECT max(id)::int m FROM fg_comprobantes WHERE tipo='remito'` as any[])[0]?.m || 0;
+      if (Number(rem.id) !== Number(ultId)) return NextResponse.json({ ok: false, error: "No se puede eliminar: existe un remito posterior. Eliminá primero el último emitido." }, { status: 409 });
+      // Roll back del número en el talonario (si el remito usó talonario y era el último número emitido).
+      if (rem.talonario_id) {
+        const emit = parseInt(String(numero).replace(/\D/g, "").slice(-8) || "0", 10);
+        if (emit > 0) await sql`UPDATE fg_talonarios SET proximo_numero = proximo_numero - 1 WHERE id=${rem.talonario_id} AND proximo_numero = ${emit + 1}`;
+      }
+      await sql`DELETE FROM fg_items WHERE comprobante_id=${rem.id}`;
+      await sql`DELETE FROM fg_comprobantes WHERE id=${rem.id}`;
+      const remitosAll = (plr.remitos || []).filter((r: any) => r.numero !== numero);
+      const last = remitosAll[remitosAll.length - 1] || null;
+      const merge = JSON.stringify({ remitos: remitosAll, remito_numero: last?.numero || null, remito_token: last?.token || null, despacho_completo: false });
+      // Si ya no queda ningún remito, el pedido vuelve de 'enviado' a 'pagado'.
+      const nuevoEstado = remitosAll.length === 0 && row.estado === "enviado" ? "pagado" : row.estado;
+      await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true, eliminado: numero });
+    }
+    // Regenerar un remito EXISTENTE con el mismo número/token pero datos actualizados (envío/transporte en vivo).
+    if (b.accion === "regenerar_remito") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const numero = String(b.numero || "").trim();
+      if (!numero) return NextResponse.json({ ok: false, error: "Falta el N° de remito." }, { status: 400 });
+      const row = (await sql`SELECT payload, factura_numero FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      const plr = row.payload || {};
+      const rem = (await sql`SELECT id, talonario_id, cliente_id, datos_remito FROM fg_comprobantes WHERE numero=${numero} AND tipo='remito' LIMIT 1` as any[])[0];
+      if (!rem) return NextResponse.json({ ok: false, error: "Remito no encontrado." }, { status: 404 });
+      const cidEnvio = await clienteIdDe(sql, plr);
+      const clEnvio = cidEnvio ? ((await sql`SELECT envio FROM clientes WHERE id=${cidEnvio} LIMIT 1` as any[])[0]?.envio || null) : null;
+      const env = cidEnvio ? (clEnvio || {}) : (plr.envio || {});
+      if (!(env.nombre && env.direccion && env.localidad && env.provincia)) return NextResponse.json({ ok: false, error: "Faltan los datos de envío del cliente." }, { status: 409 });
+      if (!String(env.empresa || "").trim()) return NextResponse.json({ ok: false, error: "Falta el TRANSPORTE en los datos de envío del cliente. Cargalo antes de regenerar el remito." }, { status: 409 });
+      const cid = rem.cliente_id;
+      const recep = cid ? (await sql`SELECT nombre, razon_social, cuit, condicion_fiscal, domicilio, localidad, provincia, cod_postal FROM clientes WHERE id=${cid} LIMIT 1` as any[])[0] : null;
+      const lugar = [env.direccion, env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") || plr.datos_venta?.lugar_entrega || null;
+      const transp = env.empresa || plr.datos_venta?.tipo_transporte || null;
+      const prev = rem.datos_remito || {};
+      const datosRemito = {
+        ...prev,
+        cliente: {
+          nombre: recep?.nombre || recep?.razon_social || prev?.cliente?.nombre || env.nombre || "",
+          domicilio: [recep?.domicilio, recep?.localidad, recep?.provincia, recep?.cod_postal && `(${recep.cod_postal})`].filter(Boolean).join(" "),
+          cuit: recep?.cuit || env.dni || "",
+          condicion_fiscal: recep?.condicion_fiscal || "",
+        },
+        transporte: { empresa: env.empresa || "", domicilio: env.domicilio_transporte || "", telefono: env.telefono_transporte || "" },
+        entrega: lugar,
+        regenerado_at: new Date().toISOString(),
+      };
+      await sql`UPDATE fg_comprobantes SET lugar_entrega=${lugar}, tipo_transporte=${transp}, datos_remito=${JSON.stringify(datosRemito)}::jsonb WHERE id=${rem.id}`;
+      return NextResponse.json({ ok: true, remito_numero: numero });
     }
     // Datos de venta (Condiciones de Venta / Forma de Pago / Lugar de Entrega / Tipo de Transporte) → factura.
     if (b.accion === "datos_venta") {

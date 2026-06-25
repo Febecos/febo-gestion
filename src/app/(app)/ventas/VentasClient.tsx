@@ -1206,10 +1206,13 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         legacyNumero={legacyFull ? pl.remito_numero : null}
                         legacyToken={legacyFull ? pl.remito_token : null}
                         envioCompleto={completo}
+                        transporteOk={!!String(env.empresa || "").trim()}
                         facturado={facturado}
                         pagadoOk={pagadoOk}
                         busy={busy}
                         onGenerar={(sel: any[]) => accion({ accion: "remitir", items: sel }, "¿Generar el REMITO con los ítems marcados?")}
+                        onRegenerar={(numero: string) => accion({ accion: "regenerar_remito", numero }, `¿Regenerar el remito ${numero} con los datos de envío/transporte actuales? Mantiene el mismo número.`)}
+                        onEliminar={(numero: string) => accion({ accion: "eliminar_remito", numero }, `¿Eliminar el remito ${numero}? Solo se puede si es el último emitido.`)}
                       />
                     );
                   })()}
@@ -1568,7 +1571,7 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyToken, envioCompleto, facturado, pagadoOk, busy, onGenerar }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyToken, envioCompleto, transporteOk, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar }: any) {
   // Cuánto se despachó por índice de ítem, sumando todos los remitos previos.
   const desp: Record<number, number> = {};
   (remitos || []).forEach((r: any) => (r.items || []).forEach((it: any) => { desp[it.idx] = (desp[it.idx] || 0) + (Number(it.cantidad) || 0); }));
@@ -1583,8 +1586,8 @@ function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyTok
   const toggle = (idx: number, pend: number) => setSel((s) => ({ ...s, [idx]: (s[idx] || 0) > 0 ? 0 : pend }));
   const seleccion = lineas.filter((l: any) => l.pendiente > 0 && (sel[l.idx] || 0) > 0).map((l: any) => ({ idx: l.idx, cantidad: sel[l.idx] }));
 
-  const faltan = [!envioCompleto && "cargar los datos de envío del cliente", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean) as string[];
-  const habil = envioCompleto && facturado && pagadoOk;
+  const faltan = [!envioCompleto && "cargar los datos de envío del cliente", !transporteOk && "cargar el transporte", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean) as string[];
+  const habil = envioCompleto && transporteOk && facturado && pagadoOk;
   const links = (remitos || []);
 
   return (
@@ -1603,6 +1606,8 @@ function RemitoPanel({ items, remitos, despachoCompleto, legacyNumero, legacyTok
               <span>{r.parcial ? "🚚" : "✅"} Remito <b>{r.numero}</b> {r.parcial && <span className="text-amber-600 text-xs">(parcial)</span>}</span>
               <span className="text-xs text-gray-400">{(r.items || []).reduce((a: number, x: any) => a + (Number(x.cantidad) || 0), 0)} u.</span>
               {r.token && <a href={`/p/${r.token}?admin=1`} target="_blank" rel="noreferrer" className="px-2 py-0.5 rounded border border-violet-300 text-violet-700 text-xs font-semibold hover:bg-violet-50">📦 Ver</a>}
+              {onRegenerar && <button disabled={busy} onClick={() => onRegenerar(r.numero)} title="Regenerar este remito con los datos de envío/transporte actuales (mantiene el mismo número)" className="px-2 py-0.5 rounded border border-amber-300 text-amber-700 text-xs font-semibold hover:bg-amber-50">🔄 Regenerar</button>}
+              {onEliminar && i === links.length - 1 && <button disabled={busy} onClick={() => onEliminar(r.numero)} title="Eliminar este remito (solo el último emitido)" className="px-2 py-0.5 rounded border border-red-300 text-red-600 text-xs font-semibold hover:bg-red-50">🗑 Eliminar</button>}
             </div>
           ))}
         </div>
