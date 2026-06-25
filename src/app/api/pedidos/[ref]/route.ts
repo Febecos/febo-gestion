@@ -155,10 +155,10 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
       const provSent = await sql`SELECT proveedor, items, total_costo_usd, email_destinatario, gsa_numero, estado, created_at FROM pedidos_proveedores WHERE fv_numero=${ref} ORDER BY created_at`.catch(() => []) as any[];
       // TC/moneda/total REALES de la factura (borrador o emitida): los $ del pedido se muestran
       // al TC PACTADO de la factura, no al dólar del día (evita diferir de lo facturado).
-      let factura: any = null;
+      let factura: any = null; let factura_proforma = false;
       if (p.factura_borrador_id || p.factura_numero) {
-        const fc = await sql`SELECT numero, moneda, tc, total FROM fg_comprobantes WHERE id=${p.factura_borrador_id || -1} OR numero=${p.factura_numero || ''} LIMIT 1`.catch(() => []) as any[];
-        if (fc[0]) factura = { numero: fc[0].numero, moneda: fc[0].moneda, tc: fc[0].tc != null ? Number(fc[0].tc) : null, total: fc[0].total != null ? Number(fc[0].total) : null };
+        const fc = await sql`SELECT numero, moneda, tc, total, afip_cae, estado FROM fg_comprobantes WHERE id=${p.factura_borrador_id || -1} OR numero=${p.factura_numero || ''} LIMIT 1`.catch(() => []) as any[];
+        if (fc[0]) { factura = { numero: fc[0].numero, moneda: fc[0].moneda, tc: fc[0].tc != null ? Number(fc[0].tc) : null, total: fc[0].total != null ? Number(fc[0].total) : null, afip_cae: fc[0].afip_cae || null }; factura_proforma = !!p.factura_numero && !fc[0].afip_cae && fc[0].estado === "proforma"; }
       }
       // Notas de Crédito de la factura (si las hay) + si cancelan TODO el comprobante (pedido anulado).
       let notas_credito: any[] = []; let anulado_por_nc = false;
@@ -199,7 +199,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         comprobante_recibido: p.comprobante_recibido, comprobante_archivo: p.comprobante_archivo,
         verificacion_pago: p.verificacion_pago, pagos_recibidos: p.pagos_recibidos || [], envio_data: p.envio_data, metodo_pago: p.metodo_pago,
         proveedor_confirmado: !!p.proveedor_confirmado, proveedor_confirmado_at: p.proveedor_confirmado_at, proforma_archivo: p.proforma_archivo,
-        factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, factura, pago_proveedor: p.pago_proveedor || null,
+        factura_numero: p.factura_numero, factura_token: p.factura_token, factura_estado: p.factura_estado || null, factura_borrador_id: p.factura_borrador_id || null, factura, factura_proforma, pago_proveedor: p.pago_proveedor || null,
         stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
         recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null, recibo_saldo: payloadEnriq.recibo_saldo ?? null,
         despacho_confirmado: !!payloadEnriq.despacho_confirmado, remito_preparado: !!payloadEnriq.remito_numero,
@@ -819,6 +819,20 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const dv = b.datos_venta || {};
       const clean = { validez: String(dv.validez || "").trim(), condiciones_venta: String(dv.condiciones_venta || "").trim(), forma_pago: String(dv.forma_pago || "").trim(), plazo_entrega: String(dv.plazo_entrega || "").trim(), lugar_entrega: String(dv.lugar_entrega || "").trim(), tipo_transporte: String(dv.tipo_transporte || "").trim() };
       if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{datos_venta}', ${JSON.stringify(clean)}::jsonb) WHERE numero=${ref}`;
+      return NextResponse.json({ ok: true });
+    }
+    // Revertir una factura PROFORMA (manual, SIN CAE) → deja el pedido listo para re-facturar electrónica.
+    if (b.accion === "revertir_factura") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const row = (await sql`SELECT factura_numero, factura_borrador_id FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      if (!row?.factura_numero) return NextResponse.json({ ok: false, error: "El pedido no tiene factura para revertir." }, { status: 409 });
+      const fc = (await sql`SELECT id, afip_cae, estado FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0];
+      if (!fc) return NextResponse.json({ ok: false, error: "Factura no encontrada." }, { status: 404 });
+      if (fc.afip_cae) return NextResponse.json({ ok: false, error: "La factura ya tiene CAE (es fiscal). No se puede revertir: emití una Nota de Crédito." }, { status: 409 });
+      // Sin CAE ni cta cte (la proforma no mueve cuenta corriente). Borrar comprobante + ítems y limpiar el pedido.
+      await sql`DELETE FROM fg_items WHERE comprobante_id=${fc.id}`;
+      await sql`DELETE FROM fg_comprobantes WHERE id=${fc.id}`;
+      await sql`UPDATE fv_pedidos SET factura_numero=NULL, factura_token=NULL, factura_estado=NULL, factura_borrador_id=NULL WHERE numero=${ref} RETURNING numero`;
       return NextResponse.json({ ok: true });
     }
     // Mail al proveedor: reusa el endpoint del admin (genera Excel "Pedido GSA" + email). 1 llamada por proveedor.

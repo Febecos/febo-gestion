@@ -679,6 +679,19 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     if (av && av.ok) alert("✅ Pedido aprobado. Aviso de pago enviado al cliente.");
     else if (av && !av.ok) alert("✅ Pedido aprobado, pero NO se pudo avisar al cliente:\n" + (av.error || "error") + "\n\nRevisá el email del cliente en la solapa Detalle.");
   };
+  // Pasar una factura PROFORMA (manual, sin CAE) a Factura Electrónica: descarta la proforma,
+  // re-emite con el talonario electrónico (FEA) y abre la autorización a ARCA.
+  const convertirElectronica = async () => {
+    const elecTal = talsLetra.find((t: any) => tipoPorCodigo(t.tipo_codigo)?.electronica);
+    if (!elecTal) { alert("No hay talonario ELECTRÓNICO de Factura " + (letraReq || "") + " (ej. FEA) cargado en Configuración → Talonarios."); return; }
+    if (!confirm(`¿Pasar la proforma ${ped.factura_numero} a Factura Electrónica?\n\nSe descarta la proforma (sin CAE, no es fiscal) y se emite la electrónica con ${elecTal.tipo_nombre} → después la autorizás a ARCA para el CAE.`)) return;
+    const r1 = await accion({ accion: "revertir_factura" });
+    if (!r1?.ok) return;
+    const ars = arsNat || facMoneda === "ARS";
+    const tcUsar = arsNat ? undefined : (ars ? (Number(facTc) || dolar || undefined) : undefined);
+    const d = await accion({ accion: "facturar", talonario_id: elecTal.id, moneda: ars ? "ARS" : "USD", tc: (ars && !arsNat) ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined, split_panel_neto: Number(splitPanel) || undefined });
+    if (d?.ok) setArcaOpen(true);
+  };
   // Revertir el pedido (lo confirmó por error): borra el pedido y devuelve el presupuesto a "emitido".
   const revertir = async () => {
     if (!confirm("¿Revertir este pedido?\n\nSe borra el pedido (es el último número, se libera para reusar) y el presupuesto vuelve a 'emitido' (reaparece en Presupuestos para rehacerlo).")) return;
@@ -1299,8 +1312,12 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               )}
               {ped.factura_numero ? (
                 <div className="text-sm text-gray-700 space-y-2">
-                  <div>✅ Factura emitida: <b>{ped.factura_numero}</b></div>
-                  {ped.factura_token && <a href={`/p/${ped.factura_token}?admin=1`} target="_blank" rel="noreferrer" className="inline-block px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 Ver / Imprimir factura</a>}
+                  <div>{ped.factura_proforma ? "📄 Factura PROFORMA (sin CAE): " : "✅ Factura emitida: "}<b>{ped.factura_numero}</b></div>
+                  {ped.factura_proforma && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">Esta factura es una <b>proforma manual</b> (no fiscal, sin CAE). Para que sea válida ante ARCA, pasala a Factura Electrónica.</div>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {ped.factura_token && <a href={`/p/${ped.factura_token}?admin=1`} target="_blank" rel="noreferrer" className="inline-block px-3 py-2 rounded-lg border border-emerald-300 text-emerald-700 text-sm font-semibold hover:bg-emerald-50">🧾 Ver / Imprimir factura</a>}
+                    {ped.factura_proforma && <button disabled={busy} onClick={convertirElectronica} className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">📡 Pasar a Factura Electrónica</button>}
+                  </div>
                   {Array.isArray(ped.notas_credito) && ped.notas_credito.length > 0 && (
                     <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
                       <div className="text-[11px] font-bold text-rose-400 uppercase">Notas de Crédito</div>
