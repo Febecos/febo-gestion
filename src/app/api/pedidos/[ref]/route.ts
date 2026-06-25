@@ -709,12 +709,13 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const rem = (await sql`SELECT id FROM fg_comprobantes WHERE numero=${numero} AND tipo='remito' LIMIT 1` as any[])[0];
       if (!rem) return NextResponse.json({ ok: false, error: "Remito no encontrado." }, { status: 404 });
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS confirmacion_archivo JSONB`.catch(() => {});
-      const conf = { nombre: String(arch.nombre || "confirmacion").slice(0, 120), tipo: String(arch.tipo || "application/octet-stream").slice(0, 60), b64: String(arch.b64), at: new Date().toISOString() };
+      const validacion = b.validacion && typeof b.validacion === "object" ? b.validacion : null;
+      const conf = { nombre: String(arch.nombre || "confirmacion").slice(0, 120), tipo: String(arch.tipo || "application/octet-stream").slice(0, 60), b64: String(arch.b64), at: new Date().toISOString(), validacion };
       await sql`UPDATE fg_comprobantes SET confirmacion_archivo=${JSON.stringify(conf)}::jsonb WHERE id=${rem.id}`;
       // Espejo (sin b64) en payload.remitos para que el front sepa que hay confirmación.
       const row = (await sql`SELECT payload, estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
       const plr = row?.payload || {};
-      const remitos = (plr.remitos || []).map((r: any) => r.numero === numero ? { ...r, confirmacion: { ...(r.confirmacion || {}), nombre: conf.nombre, at: conf.at } } : r);
+      const remitos = (plr.remitos || []).map((r: any) => r.numero === numero ? { ...r, confirmacion: { ...(r.confirmacion || {}), nombre: conf.nombre, at: conf.at, validacion } } : r);
       // Despacho COMPLETO = todos los ítems (sin flete) tienen remito Y todos los remitos están confirmados (sellados).
       const esFlete = (it: any) => /flete/i.test(String(it?.codigo || "") + " " + String(it?.descripcion || ""));
       const yaDesp: Record<number, number> = {};

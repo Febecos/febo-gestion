@@ -1215,7 +1215,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         onGenerar={(sel: any[]) => accion({ accion: "remitir", items: sel }, "¿Generar el REMITO con los ítems marcados?")}
                         onRegenerar={(numero: string) => accion({ accion: "regenerar_remito", numero }, `¿Regenerar el remito ${numero} con los datos de envío/transporte actuales? Mantiene el mismo número.`)}
                         onEliminar={(numero: string) => accion({ accion: "eliminar_remito", numero }, `¿Eliminar el remito ${numero}? Solo se puede si es el último emitido.`)}
-                        onConfirmar={(numero: string, archivo: any) => accion({ accion: "confirmacion_despacho", numero, archivo })}
+                        transporteNombre={String(env.empresa || "")}
+                        onConfirmar={(numero: string, archivo: any, validacion: any) => accion({ accion: "confirmacion_despacho", numero, archivo, validacion })}
                         onEnviarConfirmacion={(numero: string) => { const to = window.prompt("Enviar la confirmación de despacho a:", emailCli || ""); if (to === null) return; const t = to.trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) { alert("Email inválido."); return; } accion({ accion: "enviar_confirmacion", numero, email: t }, `¿Enviar la confirmación de despacho del remito ${numero} a ${t}?`); }}
                       />
                     );
@@ -1575,8 +1576,27 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, transporteNombre, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion }: any) {
   const leerArchivo = (file: File, cb: (a: any) => void) => { const fr = new FileReader(); fr.onload = () => cb({ nombre: file.name, tipo: file.type, b64: String(fr.result) }); fr.readAsDataURL(file); };
+  // Cargar confirmación: lee el documento con IA, valida (es nuestro remito + tiene firma/sello, o si es del transporte) y lo carga.
+  const cargarConfirmacion = (numero: string) => (file: File) => leerArchivo(file, async (archivo) => {
+    let validacion: any = null;
+    try {
+      const v = await safeJson(await fetch("/api/validar-remito", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: archivo.b64, tipo: archivo.tipo, numero, transporte: transporteNombre }) }));
+      if (v?.ok && v.data) {
+        validacion = v.data;
+        const d = v.data;
+        let msg = `📄 ${d.observacion || "Documento leído"}.\n`;
+        if (d.es_remito_transporte) msg += `\n• Es un remito del transporte (${transporteNombre || "transporte"}) → se carga como está.`;
+        else if (d.es_nuestro_remito) msg += `\n• Coincide con nuestro remito ${numero}.`;
+        else msg += `\n• ⚠️ El N° detectado (${d.numero_detectado || "?"}) NO coincide con el remito ${numero}.`;
+        msg += d.tiene_firma_o_sello ? `\n• ✅ Tiene firma/sello.` : `\n• ⚠️ No se detecta firma ni sello.`;
+        msg += `\n\n¿Cargar este archivo como confirmación de despacho?`;
+        if (!confirm(msg)) return;
+      }
+    } catch { /* sin IA → carga sin validar */ }
+    onConfirmar(numero, archivo, validacion);
+  });
   // Cuánto se despachó por índice de ítem, sumando todos los remitos previos.
   const desp: Record<number, number> = {};
   (remitos || []).forEach((r: any) => (r.items || []).forEach((it: any) => { desp[it.idx] = (desp[it.idx] || 0) + (Number(it.cantidad) || 0); }));
@@ -1620,13 +1640,13 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
               {/* Confirmación de despacho: remito sellado por el transporte + envío al cliente */}
               <div className="flex flex-wrap items-center gap-2 mt-1 pl-5">
                 {r.confirmacion ? (
-                  <span className="text-xs text-emerald-700">📎 Confirmación cargada{r.confirmacion.enviada_at ? ` · ✉️ enviada${r.confirmacion.email ? " a " + r.confirmacion.email : ""}` : ""}</span>
+                  <span className="text-xs text-emerald-700">📎 Confirmación cargada{r.confirmacion.validacion ? (r.confirmacion.validacion.tiene_firma_o_sello ? " · ✅ firma/sello" : " · ⚠️ sin firma/sello") : ""}{r.confirmacion.validacion?.es_remito_transporte ? " · remito del transporte" : ""}{r.confirmacion.enviada_at ? ` · ✉️ enviada${r.confirmacion.email ? " a " + r.confirmacion.email : ""}` : ""}</span>
                 ) : (
                   <span className="text-xs text-gray-400">Sin confirmación de despacho</span>
                 )}
-                <label className={`px-2 py-0.5 rounded border border-gray-300 text-xs font-semibold cursor-pointer hover:bg-gray-50 ${busy ? "opacity-40" : ""}`} title="Subí el remito firmado/sellado por el transporte (PDF o imagen)">
+                <label className={`px-2 py-0.5 rounded border border-gray-300 text-xs font-semibold cursor-pointer hover:bg-gray-50 ${busy ? "opacity-40" : ""}`} title="Subí el remito firmado/sellado por el transporte (PDF o imagen). Se valida con IA: N° y firma/sello.">
                   📎 {r.confirmacion ? "Reemplazar" : "Cargar confirmación"}
-                  <input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) leerArchivo(f, (a) => onConfirmar(r.numero, a)); e.target.value = ""; }} />
+                  <input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) cargarConfirmacion(r.numero)(f); e.target.value = ""; }} />
                 </label>
                 {r.confirmacion && onEnviarConfirmacion && <button disabled={busy} onClick={() => onEnviarConfirmacion(r.numero)} className="px-2 py-0.5 rounded border border-blue-300 text-blue-700 text-xs font-semibold hover:bg-blue-50">✉️ Enviar al cliente</button>}
               </div>
