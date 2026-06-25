@@ -46,6 +46,13 @@ function estadoPedido(p: any): { txt: string; col: string } {
   return { txt: e || "—", col: EST_COL[e] || "#888" };
 }
 
+// Condiciones comerciales — MISMAS opciones que el cotizador FV (fv-febecos/cotizar.html).
+const FV_VALIDEZ = ["48 horas", "72 horas", "7 días", "15 días", "30 días"];
+const FV_COND_PAGO = ["Anticipado (100%)", "70% anticipado / 30% contra entrega", "50% anticipado / 50% contra entrega", "30% anticipado / 70% contra entrega", "Contra entrega", "A convenir"];
+const FV_FORMA_PAGO = ["Transferencia bancaria", "Efectivo", "Transferencia o efectivo", "A convenir"];
+const FV_PLAZO = ["A confirmar stock", "5 días hábiles", "10 días hábiles", "15 días hábiles", "20 días hábiles", "Inmediata"];
+const FV_LUGAR = ["Transporte indicado por el cliente. Flete a cargo del cliente.", "Retiro en depósito FEBECOS.", "Envío incluido en el precio.", "A coordinar con el cliente."];
+
 const SECCIONES = [
   { k: "presupuestos", icon: "📝", label: "Presupuestos" },
   { k: "pedidos", icon: "📦", label: "Pedidos" },
@@ -502,7 +509,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [pesos, setPesos] = useState(false);
   const [busy, setBusy] = useState(false);
   const [nota, setNota] = useState("");
-  const [dv, setDv] = useState({ condiciones_venta: "", forma_pago: "", lugar_entrega: "", tipo_transporte: "" });
+  const [dv, setDv] = useState({ validez: "", condiciones_venta: "", forma_pago: "", plazo_entrega: "", lugar_entrega: "", tipo_transporte: "" });
   const [valorDecl, setValorDecl] = useState(""); // valor declarado para el transporte (propio del pedido)
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
@@ -530,8 +537,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
       const dvp = d.pedido.payload?.datos_venta || {};
       const cond = d.pedido.payload?.condiciones || {};
       setDv({
+        validez: dvp.validez || cond.validez || "",
         condiciones_venta: dvp.condiciones_venta || cond.pago || "",
         forma_pago: dvp.forma_pago || cond.forma || "",
+        plazo_entrega: dvp.plazo_entrega || cond.plazo || "",
         lugar_entrega: dvp.lugar_entrega || cond.lugar || "",
         tipo_transporte: dvp.tipo_transporte || "",
       });
@@ -1116,18 +1125,32 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             );
           })()}
 
-          {/* Datos de venta (salen en la factura) */}
+          {/* Datos de venta (mismas condiciones comerciales que el cotizador FV) */}
           {tab === "venta" && <div className="border border-gray-200 rounded-lg p-3">
-            <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">🚚 Datos de venta (se imprimen en la factura)</div>
+            <div className="text-[11px] font-bold text-gray-400 uppercase mb-2">🚚 Datos de venta · condiciones comerciales</div>
+            <div className="text-[11px] text-gray-400 mb-2">Vienen del presupuesto FV; si están vacíos, elegí de la lista o escribí libremente. <b>Condición de pago, Forma de pago y Lugar de entrega</b> se imprimen en la factura.</div>
+            <datalist id="dl-validez">{FV_VALIDEZ.map((o) => <option key={o} value={o} />)}</datalist>
+            <datalist id="dl-condpago">{FV_COND_PAGO.map((o) => <option key={o} value={o} />)}</datalist>
+            <datalist id="dl-forma">{FV_FORMA_PAGO.map((o) => <option key={o} value={o} />)}</datalist>
+            <datalist id="dl-plazo">{FV_PLAZO.map((o) => <option key={o} value={o} />)}</datalist>
+            <datalist id="dl-lugar">{FV_LUGAR.map((o) => <option key={o} value={o} />)}</datalist>
             <div className="grid grid-cols-2 gap-2">
-              <label className="text-[11px] text-gray-500">Condiciones de Venta
-                <input value={dv.condiciones_venta} onChange={(e) => setDv({ ...dv, condiciones_venta: e.target.value })} placeholder="Ej: Anticipado / Contado / 30 días" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
-              <label className="text-[11px] text-gray-500">Forma de Pago
-                <input value={dv.forma_pago} onChange={(e) => setDv({ ...dv, forma_pago: e.target.value })} placeholder="Ej: Transferencia / Efectivo" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
-              <label className="text-[11px] text-gray-500 col-span-2">Lugar de Entrega
-                <input value={dv.lugar_entrega} onChange={(e) => setDv({ ...dv, lugar_entrega: e.target.value })} placeholder="Ej: Transporte indicado y flete a cargo del cliente" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+              <label className="text-[11px] text-gray-500">Validez
+                <input list="dl-validez" value={dv.validez} onChange={(e) => setDv({ ...dv, validez: e.target.value })} placeholder="Ej: 15 días" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+              <label className="text-[11px] text-gray-500">Plazo de Entrega
+                <input list="dl-plazo" value={dv.plazo_entrega} onChange={(e) => setDv({ ...dv, plazo_entrega: e.target.value })} placeholder="Ej: A confirmar stock" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+              <label className="text-[11px] text-gray-500">Condición de Pago <span className="text-emerald-600">· factura</span>
+                <input list="dl-condpago" value={dv.condiciones_venta} onChange={(e) => setDv({ ...dv, condiciones_venta: e.target.value })} placeholder="Ej: Anticipado (100%)" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+              <label className="text-[11px] text-gray-500">Forma de Pago <span className="text-emerald-600">· factura</span>
+                <input list="dl-forma" value={dv.forma_pago} onChange={(e) => setDv({ ...dv, forma_pago: e.target.value })} placeholder="Ej: Transferencia bancaria" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+              <label className="text-[11px] text-gray-500 col-span-2">Lugar de Entrega <span className="text-emerald-600">· factura</span>
+                <input list="dl-lugar" value={dv.lugar_entrega} onChange={(e) => setDv({ ...dv, lugar_entrega: e.target.value })} placeholder="Ej: Transporte indicado por el cliente. Flete a cargo del cliente." className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
               <label className="text-[11px] text-gray-500 col-span-2">Tipo de Transporte
-                <input value={dv.tipo_transporte} onChange={(e) => setDv({ ...dv, tipo_transporte: e.target.value })} placeholder="Ej: De Terceros - Expreso XYZ (011) …" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+                <div className="flex gap-1.5 mb-1">
+                  <button type="button" onClick={() => setDv({ ...dv, tipo_transporte: "Propio — FEBECOS" })} className="px-2 py-0.5 rounded border border-gray-300 text-[11px] hover:bg-gray-50">🚚 Propio</button>
+                  <button type="button" onClick={() => { const t = String(envioCli.empresa || "").trim(); setDv({ ...dv, tipo_transporte: t ? "De terceros — " + t : "De terceros — " }); }} title="Toma el transporte de la ficha del cliente (CRM › Datos Envíos)" className="px-2 py-0.5 rounded border border-gray-300 text-[11px] hover:bg-gray-50">🏢 De terceros (CRM{envioCli.empresa ? ": " + envioCli.empresa : ""})</button>
+                </div>
+                <input value={dv.tipo_transporte} onChange={(e) => setDv({ ...dv, tipo_transporte: e.target.value })} placeholder="Ej: De terceros — Vía Cargo" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
             </div>
             <div className="flex justify-end mt-2">
               <button disabled={busy} onClick={() => accion({ accion: "datos_venta", datos_venta: dv })} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">💾 Guardar datos de venta</button>

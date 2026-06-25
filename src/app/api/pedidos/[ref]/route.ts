@@ -779,7 +779,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     // Datos de venta (Condiciones de Venta / Forma de Pago / Lugar de Entrega / Tipo de Transporte) → factura.
     if (b.accion === "datos_venta") {
       const dv = b.datos_venta || {};
-      const clean = { condiciones_venta: String(dv.condiciones_venta || "").trim(), forma_pago: String(dv.forma_pago || "").trim(), lugar_entrega: String(dv.lugar_entrega || "").trim(), tipo_transporte: String(dv.tipo_transporte || "").trim() };
+      const clean = { validez: String(dv.validez || "").trim(), condiciones_venta: String(dv.condiciones_venta || "").trim(), forma_pago: String(dv.forma_pago || "").trim(), plazo_entrega: String(dv.plazo_entrega || "").trim(), lugar_entrega: String(dv.lugar_entrega || "").trim(), tipo_transporte: String(dv.tipo_transporte || "").trim() };
       if (esFv) await sql`UPDATE fv_pedidos SET payload = jsonb_set(coalesce(payload,'{}'::jsonb), '{datos_venta}', ${JSON.stringify(clean)}::jsonb) WHERE numero=${ref}`;
       return NextResponse.json({ ok: true });
     }
