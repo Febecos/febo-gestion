@@ -57,16 +57,21 @@ export function desglosarDesdeTotales(opts: {
   const { ivaDetalle, conv, netoUsd, esFacturaC } = opts;
   const neto = conv(netoUsd);
   if (esFacturaC) return { neto, ivaArr: [], impIVA: 0, total: neto };
-  // Importe de IVA por alícuota = el del presupuesto convertido. Base = importe / (alícuota).
+  // Base por alícuota: se parte de la del presupuesto (IVA / alícuota) SOLO para repartir el neto
+  // entre alícuotas. El importe de IVA NO se copia del presupuesto (ver abajo).
   const arr = (ivaDetalle || []).filter((d) => Number(d.monto) || Number(d.pct)).map((d) => {
-    const pct = Number(d.pct) || 0; const importe = conv(d.monto);
-    const base = pct > 0 ? +(importe / (pct / 100)).toFixed(2) : 0;
-    return { id: alicIvaId(pct), pct, base, importe };
+    const pct = Number(d.pct) || 0; const ivaPres = conv(d.monto);
+    const base = pct > 0 ? +(ivaPres / (pct / 100)).toFixed(2) : 0;
+    return { id: alicIvaId(pct), pct, base, importe: 0 };
   });
   // Residuo: que Σ BaseImp == ImpNeto exacto (lo exige AFIP) → al bucket de mayor base.
   const accBase = +arr.reduce((a, x) => a + x.base, 0).toFixed(2);
   const diff = +(neto - accBase).toFixed(2);
   if (arr.length && Math.abs(diff) >= 0.01) { const big = arr.reduce((a, b) => (b.base > a.base ? b : a)); big.base = +(big.base + diff).toFixed(2); }
+  // IVA EXACTO = Base × alícuota. AFIP valida Importe == Base × % (error 10051 si no cuadra), así
+  // que NO se puede copiar el IVA redondeado del cotizador. El total = neto + IVA recalculado
+  // (puede diferir centavos del total redondeado del presupuesto).
+  for (const x of arr) x.importe = +(x.base * x.pct / 100).toFixed(2);
   const impIVA = +arr.reduce((a, x) => a + x.importe, 0).toFixed(2);
   const total = +(neto + impIVA).toFixed(2);
   return { neto, ivaArr: arr.map(({ id, base, importe }) => ({ id, base, importe })), impIVA, total };
