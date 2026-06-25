@@ -203,6 +203,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         stock_validado: !!p.stock_validado, stock_validado_at: p.stock_validado_at, stock_override_by: p.stock_override_by || null,
         recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null, recibo_saldo: payloadEnriq.recibo_saldo ?? null,
         despacho_confirmado: !!payloadEnriq.despacho_confirmado, remito_preparado: !!payloadEnriq.remito_numero,
+        remito_externo: payloadEnriq.remito_externo || null,
         desglose_iva,
         notas_credito, anulado_por_nc,
         es_ultimo,
@@ -813,6 +814,55 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const remitos = ((row?.payload || {}).remitos || []).map((rr: any) => rr.numero === numero ? { ...rr, confirmacion: { ...(rr.confirmacion || {}), enviada_at: new Date().toISOString(), email } } : rr);
       await sql`UPDATE fv_pedidos SET payload = coalesce(payload,'{}'::jsonb) || ${JSON.stringify({ remitos })}::jsonb WHERE numero=${ref} RETURNING numero`;
       return NextResponse.json({ ok: true, email });
+    }
+    // REMITO DEL TRANSPORTE (Via Cargo, etc.): se carga el remito del transporte SIN generar el nuestro.
+    // Confirma el despacho directamente (no hay remito propio).
+    if (b.accion === "remito_externo") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const arch = b.archivo || null;
+      if (!arch?.b64) return NextResponse.json({ ok: false, error: "Falta el archivo del remito del transporte." }, { status: 400 });
+      const validacion = b.validacion && typeof b.validacion === "object" ? b.validacion : null;
+      await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS remito_externo_archivo JSONB`.catch(() => {});
+      const conf = { nombre: String(arch.nombre || "remito-transporte").slice(0, 120), tipo: String(arch.tipo || "application/octet-stream").slice(0, 60), b64: String(arch.b64), at: new Date().toISOString(), validacion };
+      const row = (await sql`SELECT estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const meta = { nombre: conf.nombre, at: conf.at, validacion };
+      await sql`UPDATE fv_pedidos SET estado='enviado', remito_externo_archivo=${JSON.stringify(conf)}::jsonb,
+        payload = coalesce(payload,'{}'::jsonb) || ${JSON.stringify({ remito_externo: meta, despacho_completo: true, despacho_confirmado: true, remito_preparado: true })}::jsonb
+        WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true });
+    }
+    // Enviar el remito del transporte por email al cliente.
+    if (b.accion === "enviar_remito_externo") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const email = String(b.email || "").trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return NextResponse.json({ ok: false, error: "Email inválido." }, { status: 400 });
+      const row = (await sql`SELECT payload, remito_externo_archivo, factura_numero FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const conf = row?.remito_externo_archivo;
+      if (!conf?.b64) return NextResponse.json({ ok: false, error: "No hay remito del transporte cargado." }, { status: 409 });
+      const cnombre = (row?.payload?.revendedor?.nombre || row?.payload?.cliente?.nombre || "");
+      const b64 = String(conf.b64).split(",").pop() || "";
+      const nombreArch = /\.(pdf|jpe?g|png|webp|gif)$/i.test(conf.nombre || "") ? conf.nombre : (conf.nombre || "remito") + (/pdf/i.test(conf.tipo || "") ? ".pdf" : ".jpg");
+      const html = `<div style="font-family:'Trebuchet MS',Segoe UI,Verdana,sans-serif;font-size:15px;color:#374151;line-height:1.7">
+        <p>Hola${cnombre ? " " + cnombre : ""},</p>
+        <p>Te adjuntamos el <b>remito del transporte</b> de tu pedido <b>${ref}</b>, como confirmación del despacho.</p>
+        <p>Cualquier consulta, respondé este correo.</p>
+        <p style="margin-top:18px;color:#0b3d6b"><b>FEBECOS — Energía Solar</b></p></div>`;
+      const r = await callSelector("mail_send_internal", { to: email, subject: `Confirmación de despacho — pedido ${ref}`, html, attachments: [{ filename: nombreArch, content: b64 }] });
+      if (!r?.ok) return NextResponse.json({ ok: false, error: r?.error || "No se pudo enviar el email" }, { status: 502 });
+      const meta = { ...(row?.payload?.remito_externo || {}), enviada_at: new Date().toISOString(), email };
+      await sql`UPDATE fv_pedidos SET payload = coalesce(payload,'{}'::jsonb) || ${JSON.stringify({ remito_externo: meta })}::jsonb WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true, email });
+    }
+    // Quitar el remito del transporte → el pedido vuelve a "pagado" (sin despacho).
+    if (b.accion === "eliminar_remito_externo") {
+      if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
+      const row = (await sql`SELECT estado, payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const hayRemitos = ((row?.payload || {}).remitos || []).length > 0;
+      const nuevoEstado = row?.estado === "enviado" && !hayRemitos ? "pagado" : row?.estado;
+      await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, remito_externo_archivo=NULL,
+        payload = (coalesce(payload,'{}'::jsonb) - 'remito_externo') || ${JSON.stringify({ despacho_completo: hayRemitos, despacho_confirmado: false })}::jsonb
+        WHERE numero=${ref} RETURNING numero`;
+      return NextResponse.json({ ok: true });
     }
     // Datos de venta (Condiciones de Venta / Forma de Pago / Lugar de Entrega / Tipo de Transporte) → factura.
     if (b.accion === "datos_venta") {
