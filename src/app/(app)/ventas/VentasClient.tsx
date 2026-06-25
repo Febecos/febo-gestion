@@ -38,7 +38,8 @@ const EST_COL: Record<string, string> = { emitido: "#64748b", enviada: "#2563eb"
 function estadoPedido(p: any): { txt: string; col: string } {
   const e = String(p.estado || "").toLowerCase();
   if (["cancelado", "anulado", "rechazado"].includes(e)) return { txt: e, col: "#e53935" };
-  if (p.remito_numero) return p.despacho_confirmado ? { txt: "despacho completo", col: "#059669" } : { txt: "remito preparado", col: "#2563eb" };
+  if (p.despacho_confirmado || e === "enviado") return { txt: "despacho completo", col: "#059669" };
+  if (p.remito_numero) return { txt: "remito preparado", col: "#2563eb" };
   if (p.factura_numero) return { txt: p.pagado ? "facturado y pagado" : "facturado", col: "#0b3d6b" };
   if (p.pagado) return { txt: "pagado", col: "#059669" };
   if (e === "aprobado") return { txt: "aprobado", col: "#059669" };
@@ -442,7 +443,7 @@ function PasosPedido({ p }: { p: any }) {
     { txt: "FA", on: !!p.factura_numero, color: "#059669", t: p.factura_numero ? "Factura " + p.factura_numero : "Sin facturar", token: p.factura_token },
     // La NC solo aparece si existe (no es un paso de todo pedido)
     ...(p.nc_numero ? [{ txt: "NC", on: true, color: "#e11d48", t: "Nota de Crédito " + p.nc_numero, token: p.nc_token }] : []),
-    { ic: "📦", on: !!p.remito_numero || p.estado === "enviado", color: p.remito_numero && !p.despacho_confirmado ? "#2563eb" : undefined, t: p.remito_numero ? (p.despacho_confirmado ? "Despacho completo · " + p.remito_numero : "Remito preparado " + p.remito_numero + " — falta confirmación del transporte") : "Sin remito / despacho" },
+    { ic: "📦", on: !!p.remito_numero || p.estado === "enviado" || !!p.despacho_confirmado, color: (p.remito_numero && !p.despacho_confirmado) ? "#2563eb" : undefined, t: p.despacho_confirmado ? "Despacho completo" + (p.remito_numero ? " · " + p.remito_numero : " (comprobante del transporte)") : (p.remito_numero ? "Remito preparado " + p.remito_numero + " — falta confirmación del transporte" : "Sin remito / despacho") },
   ] as { ic?: string; txt?: string; on: boolean; color?: string; t: string; token?: string }[];
   return <span className="inline-flex items-center gap-1 text-[15px]">{pasos.map((s, i) => {
     const style = { opacity: s.on ? 1 : 0.25, filter: s.on ? "none" : "grayscale(1)", color: s.color, fontWeight: (s.color || s.txt) ? 800 : undefined } as React.CSSProperties;
