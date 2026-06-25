@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
-// Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
+// Datos en vivo: no cachear. force-dynamic saca la ruta del prerender, pero NO frena el Data Cache
+// de las queries internas (neon corre sobre fetch y Next lo cachea → devolvía el snapshot del
+// borrador aun con la fila ya emitida). fetchCache=force-no-store obliga a leer la DB en cada request.
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
+export const revalidate = 0;
 
 // GET /api/public/[token]  → comprobante + ítems + datos del cliente, SOLO por token.
 // Público (sin sesión): el token aleatorio es la credencial.
