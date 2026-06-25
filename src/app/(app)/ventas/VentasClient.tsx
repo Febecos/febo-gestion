@@ -521,6 +521,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [preview, setPreview] = useState<any | null>(null); // revisión previa (dry-run) de la factura
   const [arcaOpen, setArcaOpen] = useState(false); // modal de autorización ARCA (paso 2)
   const [avisarPagoOpen, setAvisarPagoOpen] = useState(false); // modal: avisar pago OK al cliente
+  const [aprobarOpen, setAprobarOpen] = useState(false);       // modal: aprobar + email al cliente (editable)
   const [esOwner, setEsOwner] = useState(false); // confirmación de stock manual = solo owner (Guille)
   // Receptor de la factura: 0 = el revendedor mismo; o el id de un cliente final suyo.
   const [receptorId, setReceptorId] = useState<number>(0);
@@ -664,9 +665,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
       if (d.arca?.persistida) { await load(); onChanged(); } // ARCA cargó la condición fiscal → refrescar ficha
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
   };
-  const aprobar = async () => {
-    const d = await accion({ accion: "estado", estado: "aprobado" }, "¿Aprobar el pedido y avisar al cliente para el pago?");
+  const aprobar = async (avisar: boolean, email?: string) => {
+    const msg = avisar ? "¿Aprobar el pedido y ENVIAR el aviso de pago al cliente?" : "¿Aprobar el pedido SIN enviar email al cliente?";
+    const d = await accion({ accion: "estado", estado: "aprobado", avisar, ...(email ? { email } : {}) }, msg);
     if (!d) return;
+    if (!avisar) { alert("✅ Pedido aprobado (sin email al cliente)."); return; }
     const av = d.aviso_cliente;
     if (av && av.ok) alert("✅ Pedido aprobado. Aviso de pago enviado al cliente.");
     else if (av && !av.ok) alert("✅ Pedido aprobado, pero NO se pudo avisar al cliente:\n" + (av.error || "error") + "\n\nRevisá el email del cliente en la solapa Detalle.");
@@ -1363,10 +1366,16 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               const yaAvanzado = facturado || pagadoOk;            // ya facturado/pagado → no tiene sentido "aprobar"
               const aprobOk = ped.proveedor_confirmado && !yaAvanzado;
               return (
-                <button disabled={busy || !aprobOk}
-                  title={yaAvanzado ? "El pedido ya fue facturado/pagado — no requiere aprobación." : (ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor")}
-                  onClick={aprobar}
-                  className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${aprobOk ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
+                <span className="inline-flex gap-1">
+                  <button disabled={busy || !aprobOk}
+                    title={yaAvanzado ? "El pedido ya fue facturado/pagado — no requiere aprobación." : (ped.proveedor_confirmado ? "Aprobar sin enviar email al cliente" : "Primero confirmá el stock con el proveedor")}
+                    onClick={() => aprobar(false)}
+                    className={`px-3 py-2 rounded-lg text-white text-sm font-semibold ${aprobOk ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar</button>
+                  <button disabled={busy || !aprobOk}
+                    title={aprobOk ? "Aprobar y enviar email al cliente (podés editar el destinatario)" : (ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor")}
+                    onClick={() => { setAprobarOpen(true); }}
+                    className={`px-3 py-2 rounded-lg text-sm font-semibold border ${aprobOk ? "border-emerald-500 text-emerald-700 hover:bg-emerald-50" : "border-gray-200 text-gray-300 cursor-not-allowed"}`}>✅ Aprobar + ✉️ email</button>
+                </span>
               );
             })()}
           </>}
@@ -1379,6 +1388,28 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
       {preview && <RevisionFacturaModal data={preview} onClose={() => setPreview(null)} />}
       {arcaOpen && <AutorizarArcaModal refId={refId} onClose={() => setArcaOpen(false)} onDone={() => { setArcaOpen(false); load(); onChanged(); }} />}
       {avisarPagoOpen && <AvisarPagoModal refId={refId} defaultEmail={emailCli} onClose={() => setAvisarPagoOpen(false)} onDone={() => { setAvisarPagoOpen(false); load(); onChanged(); }} />}
+      {aprobarOpen && <AprobarEmailModal defaultEmail={emailCli} busy={busy} onClose={() => setAprobarOpen(false)} onConfirm={async (email) => { setAprobarOpen(false); await aprobar(true, email); }} />}
+    </div>
+  );
+}
+
+// Modal: aprobar el pedido enviando el aviso de pago al cliente, con email editable (prefill del CRM).
+function AprobarEmailModal({ defaultEmail, busy, onClose, onConfirm }: { defaultEmail: string; busy: boolean; onClose: () => void; onConfirm: (email: string) => void }) {
+  const [email, setEmail] = useState(defaultEmail || "");
+  const ok = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="text-lg font-bold text-gray-800 mb-1">✅ Aprobar + enviar email</div>
+        <div className="text-sm text-gray-500 mb-3">Se aprueba el pedido y se envía el aviso de pago al cliente. Revisá/editá el email del destinatario.</div>
+        <label className="text-[11px] font-semibold text-gray-500 uppercase">Email del cliente</label>
+        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="cliente@email.com" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1" autoFocus />
+        {!ok && email.length > 0 && <div className="text-xs text-red-500 mt-1">Email inválido.</div>}
+        <div className="flex justify-end gap-2 mt-4">
+          <button onClick={onClose} className="px-4 py-2 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">Cancelar</button>
+          <button disabled={busy || !ok} onClick={() => onConfirm(email.trim())} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ok ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar y enviar</button>
+        </div>
+      </div>
     </div>
   );
 }

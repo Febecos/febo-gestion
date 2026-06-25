@@ -316,7 +316,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         try {
           const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
           const pl = row?.payload || {}; const rev = pl.revendedor || pl.cliente || {};
-          const email = String(rev.email || "").trim();
+          const email = String(b.email || rev.email || "").trim(); // permite override del email desde el modal de aprobación
           if (!email) { aviso_cliente = { ok: false, error: "El cliente no tiene email cargado" }; }
           else {
             let link = "";
