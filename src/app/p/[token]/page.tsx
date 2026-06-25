@@ -512,7 +512,7 @@ function ReciboX({ c, cli, emp, admin, onEmail, sending }: { c: any; cli: any; e
               <tr key={i}>
                 <td>{p.fecha ? fmtF(p.fecha) : "—"}</td>
                 <td>{titleCase(p.medio || "Transferencia")}</td>
-                <td>{p.retencion ? `Retención${p.retencion.pct ? " " + p.retencion.pct + "%" : ""}${p.retencion.certificado ? " · Cert. " + p.retencion.certificado : ""}` : ""}{p.archivo ? (p.retencion ? " · " : "") + "📎 " + p.archivo : ""}</td>
+                <td>{[p.banco, p.ref_numero ? "N° " + p.ref_numero : "", p.retencion ? `Retención${p.retencion.pct ? " " + p.retencion.pct + "%" : ""}${p.retencion.certificado ? " · Cert. " + p.retencion.certificado : ""}` : ""].filter(Boolean).join(" · ")}</td>
                 <td className="r">{fmt(p.monto)}</td>
               </tr>
             ))}

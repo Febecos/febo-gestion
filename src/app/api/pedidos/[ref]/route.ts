@@ -394,8 +394,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         const pagos: any[] = Array.isArray(row?.pagos_recibidos) ? row.pagos_recibidos : [];
         const idx = Number(b.index);
         if (!(idx >= 0 && idx < pagos.length)) return NextResponse.json({ ok: false, error: "pago no encontrado" }, { status: 404 });
-        const esRet = b.medio === "Retención";
-        pagos[idx] = { ...pagos[idx], medio: String(b.medio || pagos[idx].medio || "Transferencia"),
+        const esRet = (b.medio ?? pagos[idx].medio) === "Retención";
+        pagos[idx] = { ...pagos[idx],
+          medio: String(b.medio ?? pagos[idx].medio ?? "Transferencia"),
+          banco: b.banco !== undefined ? (b.banco || null) : (pagos[idx].banco ?? null),
+          ref_numero: b.ref_numero !== undefined ? (b.ref_numero || null) : (pagos[idx].ref_numero ?? null),
+          fecha: b.fecha ? b.fecha : pagos[idx].fecha,
           retencion: esRet ? { pct: b.ret_pct ? Number(b.ret_pct) : (pagos[idx].retencion?.pct ?? null), certificado: b.ret_cert ?? pagos[idx].retencion?.certificado ?? null } : null };
         await sql`UPDATE fv_pedidos SET pagos_recibidos=${JSON.stringify(pagos)}::jsonb WHERE numero=${ref}`;
       }
@@ -413,34 +417,40 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const fac = row.factura_numero ? (await sql`SELECT id, cliente_id, cliente_nombre, total, moneda FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0] : null;
       const cid = fac?.cliente_id ?? cidEnvio;
       const cnombre = fac?.cliente_nombre || plr.revendedor?.nombre || plr.cliente?.nombre || null;
-      const monedaFac = String(fac?.moneda || (pagos[0]?.moneda_factura === "ars" ? "ARS" : pagos[0]?.moneda_factura === "usd" ? "USD" : "") || "ARS").toUpperCase();
-      // Total a cobrar: si hay factura, su total; si todavía NO se facturó, el total del PEDIDO
-      // (neto+IVA del presupuesto), convertido a la moneda en que se registraron los pagos.
-      let totalCobrar = fac?.total != null ? Number(fac.total) : 0;
-      let totalLabel = fac?.total != null ? "Total facturado" : "Total del pedido";
+      const tt = plr.totales || {};
+      // Moneda del RECIBO = la del presupuesto/pedido (USD presupuesto → todo USD; Pesos → todo pesos).
+      // Si ya se facturó, la de la factura emitida. Todos los pagos se convierten a esta moneda.
+      const pedMon = String(tt.moneda || "USD").toUpperCase();
+      const monedaRec = String(fac?.moneda || pedMon).toUpperCase();
+      const totalLabel = fac?.total != null ? "Total facturado" : "Total del pedido";
       const referencia = row.factura_numero || ref;
-      if (fac?.total == null) {
-        const tt = plr.totales || {};
+      let totalCobrar = 0;
+      if (fac?.total != null) totalCobrar = Number(fac.total);
+      else {
         const ivaSum = Array.isArray(tt.iva_detalle) ? tt.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
         const netoN = Number(tt.neto);
-        const totalReal = (!isNaN(netoN) && Array.isArray(tt.iva_detalle) && tt.iva_detalle.length) ? +(netoN + ivaSum).toFixed(2) : (Number(tt.total) || 0);
-        const pedMon = String(tt.moneda || "USD").toUpperCase();
-        const tc = Number(tt.tc) || Number(pagos[0]?.tc) || 0;
-        if (monedaFac === pedMon) totalCobrar = totalReal;
-        else if (monedaFac === "ARS" && pedMon === "USD") totalCobrar = tc ? Math.round(totalReal * tc) : 0;
-        else if (monedaFac === "USD" && pedMon === "ARS") totalCobrar = tc ? +(totalReal / tc).toFixed(2) : 0;
-        else totalCobrar = totalReal;
+        totalCobrar = (!isNaN(netoN) && Array.isArray(tt.iva_detalle) && tt.iva_detalle.length) ? +(netoN + ivaSum).toFixed(2) : (Number(tt.total) || 0);
       }
+      const tcGlobal = Number(tt.tc) || Number(pagos[0]?.tc) || 0;
+      // Convierte un pago a la moneda del recibo: USD usa monto_usd; ARS usa el monto en pesos.
+      const aRec = (p: any) => {
+        const tc = Number(p.tc) || tcGlobal || 0;
+        if (monedaRec === "USD") return +(Number(p.monto_usd) || (String(p.moneda).toLowerCase() === "usd" ? Number(p.monto) : (tc ? Number(p.monto) / tc : 0))).toFixed(2);
+        if (String(p.moneda).toLowerCase() === "ars") return Math.round(Number(p.monto));
+        return Math.round((Number(p.monto_usd) || Number(p.monto)) * (tc || 0));
+      };
       const det = pagos.map((p: any) => ({
         fecha: String(p.fecha || "").slice(0, 10),
         medio: p.medio || "Transferencia",
+        banco: p.banco || null,
+        ref_numero: p.ref_numero || null,
         retencion: p.retencion || null,
-        archivo: p.archivo_nombre || null,
-        monto: Number(p.monto_factura ?? p.monto) || 0,
-        moneda: String(p.moneda_factura || p.moneda || monedaFac).toUpperCase(),
+        monto: aRec(p),
+        moneda: monedaRec,
       }));
       const totalPagado = +det.reduce((a, x) => a + x.monto, 0).toFixed(2);
       const saldo = +(totalCobrar - totalPagado).toFixed(2);
+      const monedaFac = monedaRec;
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS datos_recibo JSONB`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS letra TEXT`.catch(() => {});
       const datosRecibo = { factura_nro: row.factura_numero || null, referencia, total_label: totalLabel, total_cobrar: totalCobrar, total_pagado: totalPagado, saldo, moneda: monedaFac, pagos: det, emitido_at: new Date().toISOString() };
@@ -451,8 +461,11 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         VALUES ('recibo','X','emitido',${numero},${cid},${cnombre},${fac?.id ?? null}, now(), ${totalPagado}, ${totalPagado}, ${monedaFac}, ${"Recibo del pedido " + ref + (row.factura_numero ? " · " + row.factura_numero : "")}, gen_random_uuid()::text, ${JSON.stringify(datosRecibo)}::jsonb)
         RETURNING id, token` as any[])[0];
       let orden = 0;
-      for (const d of det) await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
-        VALUES (${comp.id}, ${(d.medio + " · " + d.fecha + (d.retencion ? ` · retención ${d.retencion.pct ? d.retencion.pct + "% " : ""}${d.retencion.certificado || ""}` : "")).slice(0, 300)}, 1, ${d.monto}, ${d.monto}, ${orden++})`;
+      for (const d of det) {
+        const desc = [d.medio, d.banco, d.ref_numero ? `N° ${d.ref_numero}` : "", d.fecha, d.retencion ? `retención ${d.retencion.pct ? d.retencion.pct + "% " : ""}${d.retencion.certificado || ""}` : ""].filter(Boolean).join(" · ");
+        await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
+          VALUES (${comp.id}, ${desc.slice(0, 300)}, 1, ${d.monto}, ${d.monto}, ${orden++})`;
+      }
       await sql`UPDATE fv_pedidos SET payload = jsonb_set(jsonb_set(coalesce(payload,'{}'::jsonb),'{recibo_numero}',to_jsonb(${numero}::text)),'{recibo_token}',to_jsonb(${comp.token}::text)) WHERE numero=${ref}`;
       return NextResponse.json({ ok: true, recibo_numero: numero, recibo_token: comp.token, saldo });
     }

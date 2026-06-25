@@ -496,7 +496,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [provData, setProvData] = useState<Record<string, { email: string; mensaje: string }>>({});
   const [provSel, setProvSel] = useState<Record<string, Record<number, boolean>>>({});
   const [unlockedProv, setUnlockedProv] = useState<Record<string, boolean>>({});
-  const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "", medio: "Transferencia", ret_pct: "", ret_cert: "", archivo_nombre: "" });
+  const [vf, setVf] = useState({ tc: "", moneda: "usd", monto: "", redondeo: "", medio: "Transferencia", ret_pct: "", ret_cert: "", archivo_nombre: "", banco: "", ref_numero: "", fecha: "" });
   const [emailCli, setEmailCli] = useState("");
   const [tals, setTals] = useState<any[]>([]); const [talSel, setTalSel] = useState<string>("");
   const [facMoneda, setFacMoneda] = useState("USD"); const [facTc, setFacTc] = useState("");
@@ -901,10 +901,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               if (esRet && !archivos.length) { if (!confirm("Es una retención pero no subiste el certificado (img/pdf). ¿Guardar igual?")) return; }
               const montoUsd = enPesos ? +(esteEnFactura / (tcPed || 1)).toFixed(2) : esteEnFactura;
               const ultArch = vf.archivo_nombre || (archivos.length ? archivos[archivos.length - 1].nombre : null);
-              accion({ accion: "verificar", pago: { monto: montoN, moneda: vf.moneda, tc: tcPed, monto_usd: montoUsd, monto_factura: esteEnFactura, moneda_factura: enPesos ? "ars" : "usd", ok: okPago, fecha: new Date().toISOString(),
-                medio: vf.medio, archivo_nombre: ultArch,
+              const fechaPago = vf.fecha ? new Date(vf.fecha + "T12:00:00").toISOString() : new Date().toISOString();
+              accion({ accion: "verificar", pago: { monto: montoN, moneda: vf.moneda, tc: tcPed, monto_usd: montoUsd, monto_factura: esteEnFactura, moneda_factura: enPesos ? "ars" : "usd", ok: okPago, fecha: fechaPago,
+                medio: vf.medio, archivo_nombre: ultArch, banco: vf.banco || null, ref_numero: vf.ref_numero || null,
                 retencion: esRet ? { pct: vf.ret_pct ? Number(vf.ret_pct) : null, certificado: vf.ret_cert || null } : null } });
-              setVf({ ...vf, monto: "", ret_pct: "", ret_cert: "", archivo_nombre: "" });
+              setVf({ ...vf, monto: "", ret_pct: "", ret_cert: "", archivo_nombre: "", banco: "", ref_numero: "", fecha: "" });
             };
             const generarRecibo = async () => {
               if (!pagosRec.length) { alert("Cargá al menos un pago antes de generar el recibo."); return; }
@@ -934,6 +935,14 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   {montoN > 0 && <span className={`text-xs font-semibold ${okPago ? "text-emerald-600" : "text-amber-600"}`}>{okPago ? "✔ saldo 0 — habilita facturar" : `quedaría saldo ${fmtP(saldoTrasEste)}`}</span>}
                   <button disabled={busy} onClick={guardarPago} className="px-3 py-1.5 rounded-lg bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-700">💾 Guardar pago</button>
                 </div>
+                {vf.medio !== "Efectivo" && vf.medio !== "Retención" && (
+                  <div className="flex flex-wrap gap-2 items-center mt-2">
+                    <input type="date" value={vf.fecha} onChange={(e) => setVf({ ...vf, fecha: e.target.value })} title="Fecha del pago" className="border border-gray-300 rounded px-2 py-1 text-sm" />
+                    <input value={vf.banco} onChange={(e) => setVf({ ...vf, banco: e.target.value })} placeholder="Banco" className="border border-gray-300 rounded px-2 py-1 text-sm w-40" />
+                    <input value={vf.ref_numero} onChange={(e) => setVf({ ...vf, ref_numero: e.target.value })} placeholder={vf.medio === "Cheque" ? "N° de cheque" : "N° de operación"} className="border border-gray-300 rounded px-2 py-1 text-sm w-44" />
+                    <span className="text-[11px] text-gray-400">{vf.medio === "Cheque" ? "Datos del cheque (van en el recibo)" : "Banco y N° de operación (van en el recibo)"}</span>
+                  </div>
+                )}
                 {esRet && (
                   <div className="flex flex-wrap gap-2 items-center mt-2 bg-amber-50 border border-amber-200 rounded-lg p-2">
                     <span className="text-[11px] font-bold text-amber-700 uppercase">↩️ Retención</span>
