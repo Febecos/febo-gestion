@@ -96,6 +96,19 @@ export function normalizarTotales(tot: any): { tot: any; arsNativo: boolean } {
   return { tot: { ...tot, neto, iva_detalle: [{ pct, monto: iva }] }, arsNativo };
 }
 
+// Split de un kit de bomba: dado el TOTAL con IVA y el NETO de paneles (10,5%), arma el desglose
+// de dos alícuotas (paneles 10,5% + resto 21%) PRESERVANDO el total. Los montos quedan en la misma
+// moneda que el total (para bombas, pesos).
+export function splitPanelResto(totalConIva: number, netoPanel: number): { neto: number; iva_detalle: { pct: number; monto: number }[] } {
+  const np = Math.max(0, Number(netoPanel) || 0);
+  const ivaPanel = +(np * 0.105).toFixed(2);
+  const panelConIva = +(np + ivaPanel).toFixed(2);
+  const restoConIva = +(Math.max(0, (Number(totalConIva) || 0) - panelConIva)).toFixed(2);
+  const netoResto = +(restoConIva / 1.21).toFixed(2);
+  const ivaResto = +(restoConIva - netoResto).toFixed(2);
+  return { neto: +(np + netoResto).toFixed(2), iva_detalle: [{ pct: 10.5, monto: ivaPanel }, { pct: 21, monto: ivaResto }] };
+}
+
 // Elige el método: si el pedido tiene `iva_detalle` pactado → ancla a él (presupuesto==factura);
 // si no (pedidos viejos sin desglose) → recalcula desde los ítems.
 export function desglosarFactura(opts: { items: any[]; tot: any; conv: (n: any) => number; esFacturaC: boolean }) {

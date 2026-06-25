@@ -518,6 +518,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
   const [emailCli, setEmailCli] = useState("");
   const [tals, setTals] = useState<any[]>([]); const [talSel, setTalSel] = useState<string>("");
   const [facMoneda, setFacMoneda] = useState("USD"); const [facTc, setFacTc] = useState("");
+  const [splitPanel, setSplitPanel] = useState(""); // neto de paneles (10,5%) para kits de bomba
   const [preview, setPreview] = useState<any | null>(null); // revisión previa (dry-run) de la factura
   const [arcaOpen, setArcaOpen] = useState(false); // modal de autorización ARCA (paso 2)
   const [avisarPagoOpen, setAvisarPagoOpen] = useState(false); // modal: avisar pago OK al cliente
@@ -659,7 +660,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
     setBusy(true);
     try {
       const tcUsar = Number(facTc) || dolar || 0;
-      const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "facturar_preview", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: facMoneda, tc: facMoneda === "ARS" ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined }) });
+      const r = await fetch("/api/pedidos/" + encodeURIComponent(refId), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "facturar_preview", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: facMoneda, tc: facMoneda === "ARS" ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined, split_panel_neto: Number(splitPanel) || undefined }) });
       const d = await safeJson(r); if (!d.ok) throw new Error(d.error);
       setPreview(d);
       if (d.arca?.persistida) { await load(); onChanged(); } // ARCA cargó la condición fiscal → refrescar ficha
@@ -1341,6 +1342,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 </select>}
                 {puedeFacturar && <select value={facMoneda} onChange={(e) => setFacMoneda(e.target.value)} title="Moneda de la factura" className="border border-gray-300 rounded-lg px-2 py-2 text-sm bg-white"><option value="USD">USD</option><option value="ARS">$ Pesos</option></select>}
                 {puedeFacturar && facMoneda === "ARS" && <input type="number" value={facTc} onChange={(e) => setFacTc(e.target.value)} placeholder={"TC " + (dolar || "")} title="Tipo de cambio (editable)" className="border border-gray-300 rounded-lg px-2 py-2 text-sm w-24" />}
+                {puedeFacturar && (pl.tipo_presupuesto === "bomba" || items.some((it: any) => /pan(el)?|fotovolt|m[oó]dulo\s*solar/i.test(String(it.codigo || "") + " " + String(it.descripcion || "")))) && <input type="number" value={splitPanel} onChange={(e) => setSplitPanel(e.target.value)} placeholder="Neto paneles 10,5%" title="Kit de bomba: ingresá el NETO de paneles (alícuota 10,5%) según el presupuesto. El resto va a 21%. Vacío = todo a 21%." className="border border-amber-300 rounded-lg px-2 py-2 text-sm w-36" />}
                 <button disabled={busy} onClick={revisar} title="Revisión previa: muestra letra, condición IVA del receptor, neto, IVA por alícuota y total SIN emitir CAE. Para validar los cálculos antes de facturar." className="px-3 py-2 rounded-lg border border-blue-300 text-blue-700 text-sm font-semibold hover:bg-blue-50">🔍 Revisar</button>
                 <button disabled={busy || !puedeFacturar}
                   title={cancelado ? "Pedido cancelado" : !ped.proveedor_confirmado ? "Confirmá el stock con el proveedor antes de facturar" : !letraReq ? "El cliente no tiene condición fiscal: cargala en Detalle/ficha del cliente" : talsLetra.length === 0 ? `No hay talonario de Factura ${letraReq} cargado (Configuración → Talonarios)` : !pagoCubierto ? "Falta que el pago recibido cubra el total exacto (saldo 0) para poder facturar" : `Facturar ${letraReq} en gestión (paso 1: borrador; después se autoriza a ARCA)`}
@@ -1356,7 +1358,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     // Recomendación de carga: avisar si el presupuesto NO trae TC pactado (se usa el dólar del día → puede diferir).
                     const sinTcPactado = ars && !Number(tot.tc);
                     const aviso = sinTcPactado ? `\\n\\n⚠️ Este presupuesto no tiene TC pactado: se factura al dólar del día (${tcUsar}). Recomendado: fijar el TC en el presupuesto para que NO cambie entre cotizar y facturar.` : "";
-                    accion({ accion: "facturar", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: facMoneda, tc: ars ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined },
+                    accion({ accion: "facturar", talonario_id: talEfectivo ? Number(talEfectivo) : undefined, moneda: facMoneda, tc: ars ? tcUsar : undefined, receptor_cliente_id: receptorId || undefined, split_panel_neto: Number(splitPanel) || undefined },
                       `¿Facturar la ${letraReq} en GESTIÓN a ${nombreReceptor} en ${ars ? "PESOS (TC " + tcUsar + ")" : "USD"}?\\n\\nNeto: ${f$(netoUsdTot)}\\nIVA: ${f$(ivaUsdTot)}\\nTOTAL: ${totalP}\\n(coincide con el presupuesto)${aviso}\\n\\nQueda como BORRADOR. Después la autorizás y enviás a ARCA (paso 2) para el CAE.`); }}
                   className={`px-3 py-2 rounded-lg text-sm font-semibold ${puedeFacturar ? "border border-emerald-400 text-emerald-700 hover:bg-emerald-50" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>🧾 Facturar en gestión{letraReq ? " " + letraReq : ""}</button>
               </div>}

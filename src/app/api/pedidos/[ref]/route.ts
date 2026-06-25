@@ -5,7 +5,7 @@ import { resolveProveedor } from "@/lib/proveedores";
 import { numeroDesdeTalonario, letraFacturaPara, leyendasFactura, condicionIvaReceptor } from "@/lib/talonarios";
 import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 import { tipoCbteAfip, docTipoReceptor, condicionIvaReceptorId } from "@/lib/afip-codigos";
-import { desglosarFactura, normalizarTotales } from "@/lib/factura-calc";
+import { desglosarFactura, normalizarTotales, splitPanelResto } from "@/lib/factura-calc";
 import { validarStock, descontarStock, restituirStock } from "@/lib/stock";
 import { getUser } from "@/lib/owner";
 
@@ -866,9 +866,18 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const esFacturaC = tipoTal?.letra === "C";
       // Presupuestos que guardan SOLO el total (bombas) → derivar neto/IVA del total. Si el total ya
       // está en pesos (arsNativo) la factura ARS NO le re-aplica el TC (conv identidad).
+      // ARS nativo: el total ya está en pesos (tc null, moneda ARS) → la factura ARS NO re-aplica el TC.
+      const arsNatP = (tot?.tc == null) && (tot?.moneda === "ARS" || tot?.moneda === "$") && Number(tot?.total) > 0;
       const normP = normalizarTotales(tot);
-      const convP = (normP.arsNativo && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
-      const des = desglosarFactura({ items, tot: normP.tot, conv: convP, esFacturaC });
+      let totP = normP.tot;
+      let convP: (n: any) => number = ((arsNatP || normP.arsNativo) && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
+      // Split manual de kit de bomba: neto de paneles (10,5%) → el resto va a 21%, preservando el total.
+      if (Number(b.split_panel_neto) > 0 && Number(tot?.total) > 0) {
+        const sp = splitPanelResto(Number(tot.total), Number(b.split_panel_neto));
+        totP = { ...tot, neto: sp.neto, iva_detalle: sp.iva_detalle };
+        convP = (n: any) => Math.round(Number(n) || 0); // el split ya está en pesos (total del pedido)
+      }
+      const des = desglosarFactura({ items, tot: totP, conv: convP, esFacturaC });
       const doc = docTipoReceptor(clienteCuit);
       if (letra === "A" && doc.tipo !== 80) bloqueos.push("Factura A requiere CUIT válido del receptor.");
 
@@ -960,9 +969,16 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       //    que el dry-run "revisar" → presupuesto == revisar == factura == cta cte, al peso. ──
       const esFacturaC = tipoTal?.letra === "C";
       // Presupuestos con SOLO total (bombas): derivar neto/IVA del total acordado (lo preserva).
+      const arsNatF = (tot?.tc == null) && (tot?.moneda === "ARS" || tot?.moneda === "$") && Number(tot?.total) > 0;
       const normF = normalizarTotales(tot);
-      const totF = normF.tot;
-      const convF = (normF.arsNativo && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
+      let totF = normF.tot;
+      let convF: (n: any) => number = ((arsNatF || normF.arsNativo) && facturaMoneda === "ARS") ? ((n: any) => Math.round(Number(n) || 0)) : conv;
+      // Split manual paneles 10,5% / resto 21% (igual que el preview).
+      if (Number(b.split_panel_neto) > 0 && Number(tot?.total) > 0) {
+        const sp = splitPanelResto(Number(tot.total), Number(b.split_panel_neto));
+        totF = { ...tot, neto: sp.neto, iva_detalle: sp.iva_detalle };
+        convF = (n: any) => Math.round(Number(n) || 0);
+      }
       const netoUsd = Number(totF.neto ?? totF.total ?? 0);
       const sumIvaUsd = Array.isArray(totF.iva_detalle) ? totF.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
       const totalUsd = esFacturaC ? +netoUsd.toFixed(2) : +(netoUsd + sumIvaUsd).toFixed(2);

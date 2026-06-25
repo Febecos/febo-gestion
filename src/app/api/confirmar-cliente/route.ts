@@ -102,6 +102,30 @@ export async function POST(req: NextRequest) {
             descuento_pct: descPct || null, descuento_monto: descMonto || null,
             moneda: pr.moneda || (pr.tipo === "bomba" ? "ARS" : "USD"), tc: pr.tc ? Number(pr.tc) : null,
           };
+          // KIT DE BOMBA: snapshot del desglose de IVA (paneles 10,5% / resto 21%), igual que el portal.
+          // Se calcula con el precio del panel del momento → queda FIJO en el pedido para facturar.
+          if (pr.tipo === "bomba" && Number(totales.total) > 0) {
+            try {
+              const pump = (await sql`SELECT id, cant_paneles FROM pumps WHERE regexp_replace(lower(codigo),'[[:space:]]','','g')=regexp_replace(lower(${pr.bomba_codigo || ""}),'[[:space:]]','','g') LIMIT 1` as any[])[0];
+              if (pump) {
+                const panRow = (await sql`SELECT cc.precio_ars, pc.cantidad FROM pump_components pc JOIN components cc ON cc.id=pc.component_id WHERE pc.pump_id=${pump.id} AND lower(cc.familia)='panel' LIMIT 1` as any[])[0];
+                const cantPan = Number(pump.cant_paneles) || Number(panRow?.cantidad) || 0;
+                const panelPublico = (Number(panRow?.precio_ars) || 0) * cantPan;
+                const listTotal = Number(pr.precio_publico) || Number(totales.total);
+                const factor = listTotal > 0 ? (Number(totales.total) / listTotal) : 1;
+                const panelEnPrecio = panelPublico * factor;
+                if (panelEnPrecio > 0 && panelEnPrecio < Number(totales.total)) {
+                  const netoPanel = +(panelEnPrecio / 1.105).toFixed(2);
+                  const ivaPanel = +(netoPanel * 0.105).toFixed(2);
+                  const netoResto = +((Number(totales.total) - panelEnPrecio) / 1.21).toFixed(2);
+                  const ivaResto = +(netoResto * 0.21).toFixed(2);
+                  totales.neto = +(netoPanel + netoResto).toFixed(2);
+                  totales.iva = +(ivaPanel + ivaResto).toFixed(2);
+                  totales.iva_detalle = [{ pct: 10.5, monto: ivaPanel }, { pct: 21, monto: ivaResto }];
+                }
+              }
+            } catch { /* sin kit en catálogo → queda el total sin desglose (se factura con split manual) */ }
+          }
           const itemsPed = items.map((it: any) => ({
             ...it,
             pvp_sin_iva_usd: it.pvp_sin_iva_usd ?? +(((Number(it.subtotal) || 0) / (Number(it.cantidad) || 1)).toFixed(2)),
