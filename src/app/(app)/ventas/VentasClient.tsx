@@ -1124,7 +1124,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     {(env.domicilio_transporte || env.telefono_transporte) && <><br /><span className="text-gray-400">{[env.domicilio_transporte, env.telefono_transporte].filter(Boolean).join(" · ")}</span></>}
                   </div>
                 ) : (
-                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-2">⏳ Este cliente todavía no tiene datos de envío cargados. Cargalos en su ficha (CRM › Datos Envíos) o enviale el link para que los complete.</div>
+                  <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <span>⏳ Este cliente todavía no tiene datos de envío cargados. Cargalos en su ficha (CRM › Datos Envíos) o enviale el link para que los complete.</span>
+                    <button disabled={busy} onClick={() => load()} title="Volver a consultar el CRM por si el cliente ya cargó sus datos de envío" className="px-2.5 py-1 rounded-lg border border-amber-400 text-amber-700 text-xs font-semibold hover:bg-amber-100 whitespace-nowrap">🔄 Actualizar</button>
+                  </div>
                 )}
                 {!completo && tieneAlgo && <div className="text-[11px] text-amber-600 mb-2">Falta: {["nombre","direccion","localidad","provincia"].filter((k)=>!String((env as any)[k]||"").trim()).map((k)=>({nombre:"destinatario",direccion:"dirección",localidad:"localidad",provincia:"provincia"} as any)[k]).join(", ")}.</div>}
 
@@ -1153,7 +1156,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 <div className="flex flex-wrap gap-2">
                   <button disabled={!ped.public_token} onClick={() => { navigator.clipboard.writeText(link); alert("Link copiado:\n" + link); }} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">🔗 Copiar link para el cliente</button>
                   {ped.public_token && <a href={link} target="_blank" rel="noreferrer" className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">✏️ Abrir formulario</a>}
-                  {emailCli && <button disabled={busy} onClick={() => accion({ accion: "pedir_envio", email: emailCli, link })} className="px-3 py-1.5 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold hover:bg-blue-50">✉️ Enviar link al cliente</button>}
+                  <button disabled={busy} onClick={() => { const to = window.prompt("Enviar el link de datos de envío a:", emailCli || ""); if (to === null) return; const t = to.trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) { alert("Email inválido."); return; } accion({ accion: "pedir_envio", email: t, link }); }} className="px-3 py-1.5 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold hover:bg-blue-50">✉️ Enviar link al cliente</button>
                 </div>
                 <div className="text-[11px] text-gray-400 mt-1">Los datos de envío se administran en la <b>ficha del cliente</b> (CRM › Datos Envíos) — acá se muestran de solo lectura. El cliente también puede cargarlos desde el link.</div>
 
