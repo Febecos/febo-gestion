@@ -1299,7 +1299,16 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               </div>}
           {ped.estado === "pendiente_confirmacion" && <>
             <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "cancelado" }, "¿Rechazar el pedido?")} className="px-4 py-2 rounded-lg bg-red-500 text-white text-sm font-semibold hover:bg-red-600">✕ Rechazar</button>
-            <button disabled={busy || !ped.proveedor_confirmado} title={ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor"} onClick={aprobar} className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${ped.proveedor_confirmado ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
+            {(() => {
+              const yaAvanzado = facturado || pagadoOk;            // ya facturado/pagado → no tiene sentido "aprobar"
+              const aprobOk = ped.proveedor_confirmado && !yaAvanzado;
+              return (
+                <button disabled={busy || !aprobOk}
+                  title={yaAvanzado ? "El pedido ya fue facturado/pagado — no requiere aprobación." : (ped.proveedor_confirmado ? "" : "Primero confirmá el stock con el proveedor")}
+                  onClick={aprobar}
+                  className={`px-4 py-2 rounded-lg text-white text-sm font-semibold ${aprobOk ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gray-300 cursor-not-allowed"}`}>✅ Aprobar pedido</button>
+              );
+            })()}
           </>}
           {(ped.estado === "aprobado" || (ped.estado === "pagado" && pagosRec.length === 0)) && <button disabled={busy} onClick={() => setAvisarPagoOpen(true)} title="Confirma al cliente que su pago está OK (email desde administración) y marca el pedido como pagado" className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">✅ Avisar pago OK al cliente</button>}
           {ped.estado === "pagado" && pagosRec.length > 0 && !ped.anulado_por_nc && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}
