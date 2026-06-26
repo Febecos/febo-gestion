@@ -399,7 +399,15 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
     if (b.accion === "verificar") {
       // b.pago = { monto, moneda, tc, redondeo, monto_usd, diff_usd, ok, fecha }
       if (esFv) {
-        const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+        const row = (await sql`SELECT payload, pagos_recibidos FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+        // Dedupe: NO sumar el mismo pago dos veces (re-leer un comprobante y volver a Guardar) →
+        // evita saldo negativo. Mismo monto + fecha (día) + medio + N° de operación = mismo pago.
+        const existentes: any[] = Array.isArray(row?.pagos_recibidos) ? row.pagos_recibidos : [];
+        const mismaClave = (a: any, x: any) => Math.abs((Number(a.monto) || 0) - (Number(x.monto) || 0)) < 0.01
+          && String(a.fecha || "").slice(0, 10) === String(x.fecha || "").slice(0, 10)
+          && String(a.medio || "") === String(x.medio || "")
+          && String(a.ref_numero || "") === String(x.ref_numero || "");
+        if (existentes.some((e) => mismaClave(e, b.pago))) return NextResponse.json({ ok: true, duplicado: true });
         await sql`UPDATE fv_pedidos
           SET pagos_recibidos = coalesce(pagos_recibidos,'[]'::jsonb) || ${JSON.stringify([b.pago])}::jsonb,
               verificacion_pago = ${JSON.stringify(b.pago)}::jsonb

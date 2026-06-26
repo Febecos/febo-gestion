@@ -988,15 +988,16 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               } catch (e: any) { alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano."); }
             };
             const esRet = vf.medio === "Retención";
-            const guardarPago = () => {
+            const guardarPago = async () => {
               if (!montoN) { alert("Ingresá el monto recibido"); return; }
               if (esRet && !archivos.length) { if (!confirm("Es una retención pero no subiste el certificado (img/pdf). ¿Guardar igual?")) return; }
               const montoUsd = enPesos ? +(esteEnFactura / (tcPed || 1)).toFixed(2) : esteEnFactura;
               const ultArch = vf.archivo_nombre || (archivos.length ? archivos[archivos.length - 1].nombre : null);
               const fechaPago = vf.fecha ? new Date(vf.fecha + "T12:00:00").toISOString() : new Date().toISOString();
-              accion({ accion: "verificar", pago: { monto: montoN, moneda: vf.moneda, tc: tcPed, monto_usd: montoUsd, monto_factura: esteEnFactura, moneda_factura: enPesos ? "ars" : "usd", ok: okPago, fecha: fechaPago,
+              const d = await accion({ accion: "verificar", pago: { monto: montoN, moneda: vf.moneda, tc: tcPed, monto_usd: montoUsd, monto_factura: esteEnFactura, moneda_factura: enPesos ? "ars" : "usd", ok: okPago, fecha: fechaPago,
                 medio: vf.medio, archivo_nombre: ultArch, banco: vf.banco || null, ref_numero: vf.ref_numero || null,
                 retencion: esRet ? { pct: vf.ret_pct ? Number(vf.ret_pct) : null, certificado: vf.ret_cert || null } : null } });
+              if (d?.duplicado) alert("⚠️ Ese pago ya estaba cargado (mismo monto, fecha, medio y N°) — no se duplicó. Si querés re-leer el comprobante, eliminá primero el pago existente con 🗑.");
               setVf({ ...vf, monto: "", ret_pct: "", ret_cert: "", archivo_nombre: "", banco: "", ref_numero: "", fecha: "" });
             };
             const generarRecibo = async () => {
