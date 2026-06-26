@@ -331,8 +331,8 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
               <div className="col-span-2 border-t border-gray-100 mt-1 pt-2 text-[11px] font-bold text-gray-400 uppercase">🚚 Transporte</div>
               <label className={lbl + " col-span-2"}>EMPRESA DE TRANSPORTE
                 <input value={envioForm.empresa} onChange={(e) => setE("empresa", e.target.value)} list="cli-transportes-envio" className={inp} placeholder={(envioForm.provincia || envioForm.localidad) ? "Elegí de la lista (sugeridos por zona) o escribí…" : "Cargá localidad/provincia para ver sugerencias"} />
-                <datalist id="cli-transportes-envio">{(sugeridos.length ? sugeridos : transportes).map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
-                {sugeridos.length > 0 && <span className="text-[10px] text-emerald-600 font-normal">✓ {sugeridos.length} transporte(s) cubren {envioForm.localidad || envioForm.provincia}</span>}
+                <datalist id="cli-transportes-envio">{[...sugeridos, ...transportes.filter((t: any) => !sugeridos.some((s: any) => s.id === t.id))].map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
+                {sugeridos.length > 0 && <span className="text-[10px] text-emerald-600 font-normal">✓ {sugeridos.length} sugeridos por zona ({envioForm.localidad || envioForm.provincia}) — la lista incluye TODOS los transportes</span>}
               </label>
               <label className={lbl + " col-span-2"}>TIPO DE ENVÍO<select value={envioForm.tipo_envio} onChange={(e) => setE("tipo_envio", e.target.value)} className={inp}>{TIPOS_ENVIO.map((t) => <option key={t} value={t}>{t || "Seleccioná…"}</option>)}</select></label>
               <label className={lbl + " col-span-2"}>DOMICILIO DE LA SUCURSAL<input value={envioForm.domicilio_transporte} onChange={(e) => setE("domicilio_transporte", e.target.value)} className={inp} placeholder="Si es a sucursal de transporte" /></label>
