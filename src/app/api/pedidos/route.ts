@@ -23,7 +23,7 @@ export async function GET(_req: NextRequest) {
         SELECT fp.numero, fp.estado, fp.public_token, fp.payload, fp.metodo_pago,
                fp.factura_numero, fp.proveedor_confirmado, fp.pagos_recibidos,
                pr.public_token AS presup_token,
-               fac.fac_token, fac.nc_numero, fac.nc_token,
+               fac.fac_token, fac.fac_cae, fac.nc_numero, fac.nc_token,
                c.id AS cliente_id,
                COALESCE(NULLIF(c.nombre,''), NULLIF(c.razon_social,'')) AS cliente_crm
         FROM fv_pedidos fp
