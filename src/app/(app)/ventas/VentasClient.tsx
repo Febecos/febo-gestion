@@ -1269,7 +1269,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         facturado={facturado}
                         pagadoOk={pagadoOk}
                         busy={busy}
-                        valorBase={Number(pl.valor_declarado) || (ped.desglose_iva ? ped.desglose_iva.total : totalCobrar) || 0}
+                        valorBase={ped.desglose_iva ? Number(ped.desglose_iva.total) : (enPesos ? Number(totalCobrar) : Math.round((Number(totalUsdReal) || 0) * (Number(tcMostrar) || Number(tcPed) || 1)))}
                         onGenerar={(sel: any[], valorDecl: number) => accion({ accion: "remitir", items: sel, valor_declarado: valorDecl }, "¿Generar el REMITO con los ítems marcados?")}
                         onRegenerar={(numero: string) => accion({ accion: "regenerar_remito", numero }, `¿Regenerar el remito ${numero} con los datos de envío/transporte actuales? Mantiene el mismo número.`)}
                         onEliminar={(numero: string) => accion({ accion: "eliminar_remito", numero }, `¿Eliminar el remito ${numero}? Solo se puede si es el último emitido.`)}
