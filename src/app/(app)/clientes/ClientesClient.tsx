@@ -334,10 +334,11 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
                   const v = e.target.value;
                   const t = transportes.find((x: any) => x.nombre === v); // al elegir del listado → auto-completa del maestro
                   if (t) {
+                    // Al elegir un transporte del maestro → REEMPLAZA sus datos (CUIT/domicilio/teléfono).
                     const cont: any[] = Array.isArray(t.contactos) ? t.contactos : [];
-                    const tel = cont.find((c) => /phone|tel|mobile|cel|whats/i.test(c.type || ""))?.value;
-                    const dir = cont.find((c) => /address|domicil|direcc/i.test(c.type || ""))?.value;
-                    setEnvioForm((p: any) => ({ ...p, empresa: v, cuit_transporte: t.tax_id || p.cuit_transporte, telefono_transporte: tel || p.telefono_transporte, domicilio_transporte: dir || p.domicilio_transporte }));
+                    const tel = cont.find((c) => /phone|tel|mobile|cel|whats/i.test(c.type || ""))?.value || "";
+                    const dir = cont.find((c) => /address|domicil|direcc/i.test(c.type || ""))?.value || "";
+                    setEnvioForm((p: any) => ({ ...p, empresa: v, cuit_transporte: t.tax_id || "", telefono_transporte: tel, domicilio_transporte: dir }));
                   } else setE("empresa", v);
                 }} list="cli-transportes-envio" className={inp} placeholder={(envioForm.provincia || envioForm.localidad) ? "Elegí de la lista (sugeridos por zona) o escribí…" : "Cargá localidad/provincia para ver sugerencias"} />
                 <datalist id="cli-transportes-envio">{[...sugeridos, ...transportes.filter((t: any) => !sugeridos.some((s: any) => s.id === t.id))].map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
