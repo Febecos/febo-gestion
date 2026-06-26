@@ -1421,7 +1421,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               );
             })()}
           </>}
-          {(ped.estado === "aprobado" || (ped.estado === "pagado" && pagosRec.length === 0)) && <button disabled={busy} onClick={() => setAvisarPagoOpen(true)} title="Confirma al cliente que su pago está OK (email desde administración) y marca el pedido como pagado" className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">✅ Avisar pago OK al cliente</button>}
+          {(ped.estado === "aprobado" || ped.estado === "pagado") && pagosRec.length === 0 && <button disabled={busy} onClick={() => setAvisarPagoOpen(true)} title="Confirma al cliente que su pago está OK (email desde administración) y marca el pedido como pagado. Se oculta una vez que cargás un pago." className="px-4 py-2 rounded-lg bg-blue-500 text-white text-sm font-semibold hover:bg-blue-600">✅ Avisar pago OK al cliente</button>}
           {ped.estado === "pagado" && pagosRec.length > 0 && !ped.anulado_por_nc && <button disabled={busy} onClick={() => accion({ accion: "estado", estado: "enviado" }, "¿Marcar como enviado?")} className="px-4 py-2 rounded-lg bg-violet-500 text-white text-sm font-semibold hover:bg-violet-600">📦 Marcar enviado</button>}
           {ped.es_ultimo && !facturado && !despachado && !pagadoOk && !ped.proveedor_confirmado && !["cancelado", "anulado"].includes(ped.estado) &&
             <button disabled={busy} onClick={revertir} title="Deshacer: borra el último pedido (sin pasos iniciados), libera el número y devuelve el presupuesto a Presupuestos" className="px-4 py-2 rounded-lg border border-amber-400 text-amber-700 text-sm font-semibold hover:bg-amber-50">↩ Revertir pedido</button>}
