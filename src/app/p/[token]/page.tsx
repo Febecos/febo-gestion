@@ -372,7 +372,8 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
   const mm = fecha ? String(fecha.getMonth() + 1).padStart(2, "0") : "";
   const yyyy = fecha ? String(fecha.getFullYear()) : "";
   const nombre = titleCase(snap?.cliente?.nombre || cli?.nombre || cli?.razon_social || c.cliente_nombre || "");
-  const dom = snap?.cliente?.domicilio || [cli?.domicilio, cli?.localidad, cli?.provincia, cli?.cod_postal && `- ${cli.cod_postal}`].filter(Boolean).join(" ");
+  // Title Case (capitalizado) en vez de las MAYÚSCULAS de AFIP → ocupa menos ancho y entra mejor.
+  const dom = titleCase(snap?.cliente?.domicilio || [cli?.domicilio, cli?.localidad, cli?.provincia, cli?.cod_postal && `- ${cli.cod_postal}`].filter(Boolean).join(" "));
   const cuit = cuitFmt(snap?.cliente?.cuit || cli?.cuit || c.cliente_cuit || "");
   const cond = String(snap?.cliente?.condicion_fiscal || cli?.condicion_fiscal || "").toLowerCase();
   const ivaPos = POS.iva[cond];
@@ -381,7 +382,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
     : (String(c.notas || "").includes("·") ? String(c.notas).split("·").pop()!.trim().replace(/^FA[^0-9]*/i, "") : "");
   // Transporte: empresa en su renglón y el DOMICILIO del transporte en el renglón que corresponde.
   const transpEmpresa = snap?.transporte?.empresa || c.tipo_transporte || "";
-  const transpDom = snap?.transporte?.domicilio || "";
+  const transpDom = titleCase(snap?.transporte?.domicilio || "");
   const transpCuit = cuitFmt(snap?.transporte?.cuit || "");
   const vdNum = Number(String(snap?.valor_declarado ?? "").replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
   const valorDeclTxt = vdNum > 0 ? `VALOR DECLARADO $ ${vdNum.toLocaleString("es-AR")}` : "";
