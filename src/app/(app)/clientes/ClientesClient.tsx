@@ -242,7 +242,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
       const dom = d.domicilio || {};
       const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" ");
       // La RAZÓN SOCIAL es el dato legal de AFIP: ARCA manda (pisa lo tipeado). El resto se completa si está vacío.
-      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: p.domicilio || dom.direccion || "", localidad: p.localidad || dom.localidad || "", provincia: p.provincia || dom.provincia || "", cod_postal: p.cod_postal || dom.codPostal || "" }));
+      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: dom.direccion || p.domicilio || "", localidad: dom.localidad || p.localidad || "", provincia: dom.provincia || p.provincia || "", cod_postal: dom.codPostal || p.cod_postal || "" }));
       setArca("✓ " + (nom || cuit));
     } catch (e: any) { setArca("✕ " + e.message); }
   }
@@ -525,7 +525,7 @@ function ClientesFinales({ revendedorId }: { revendedorId: number }) {
       const dom = d.domicilio || {};
       const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" ");
       // La RAZÓN SOCIAL es el dato legal de AFIP: ARCA manda (pisa lo tipeado). El resto se completa si está vacío.
-      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: p.domicilio || dom.direccion || "", localidad: p.localidad || dom.localidad || "", provincia: p.provincia || dom.provincia || "", cod_postal: p.cod_postal || dom.codPostal || "" }));
+      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: dom.direccion || p.domicilio || "", localidad: dom.localidad || p.localidad || "", provincia: dom.provincia || p.provincia || "", cod_postal: dom.codPostal || p.cod_postal || "" }));
       setArca("✓ " + (nom || cuit));
     } catch (e: any) { setArca("✕ " + e.message); }
   }

@@ -686,7 +686,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const datosRemito = {
         cliente: {
           nombre: recep?.nombre || recep?.razon_social || cnombre || env.nombre || "",
-          domicilio: [recep?.domicilio, recep?.localidad, recep?.provincia, recep?.cod_postal && `(${recep.cod_postal})`].filter(Boolean).join(" "),
+          domicilio: [recep?.domicilio, recep?.localidad, (recep?.provincia && String(recep.provincia).toLowerCase() !== String(recep?.localidad || "").toLowerCase()) ? recep.provincia : null, recep?.cod_postal && `(${recep.cod_postal})`].filter(Boolean).join(" "),
           cuit: recep?.cuit || env.dni || "",
           condicion_fiscal: recep?.condicion_fiscal || "",
         },
@@ -770,7 +770,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         ...prev,
         cliente: {
           nombre: recep?.nombre || recep?.razon_social || prev?.cliente?.nombre || env.nombre || "",
-          domicilio: [recep?.domicilio, recep?.localidad, recep?.provincia, recep?.cod_postal && `(${recep.cod_postal})`].filter(Boolean).join(" "),
+          domicilio: [recep?.domicilio, recep?.localidad, (recep?.provincia && String(recep.provincia).toLowerCase() !== String(recep?.localidad || "").toLowerCase()) ? recep.provincia : null, recep?.cod_postal && `(${recep.cod_postal})`].filter(Boolean).join(" "),
           cuit: recep?.cuit || env.dni || "",
           condicion_fiscal: recep?.condicion_fiscal || "",
         },
