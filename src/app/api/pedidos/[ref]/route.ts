@@ -21,6 +21,28 @@ async function callSelector(action: string, body?: any): Promise<any> {
   return r.json().catch(() => ({ ok: false, error: "respuesta no-JSON del admin" }));
 }
 
+// Resuelve los datos del transporte (CUIT/domicilio/teléfono) desde el MAESTRO de transportistas
+// (logistics.carriers en el selector), por nombre. Devuelve null si no lo encuentra.
+async function resolverTransporte(empresa: string): Promise<{ cuit: string; domicilio: string; telefono: string } | null> {
+  const nom = String(empresa || "").trim();
+  if (!nom) return null;
+  try {
+    const internal = process.env.INTERNAL_SERVICE_SECRET; const fvTok = process.env.FV_ADMIN_TOKEN;
+    const headers: Record<string, string> = {};
+    if (internal) headers["Authorization"] = "Bearer " + internal; else if (fvTok) headers["X-Admin-Token"] = fvTok;
+    const r = await fetch("https://febecos.com/api/transportistas?soloActivos=true", { headers, signal: AbortSignal.timeout(8000) });
+    const d = await r.json().catch(() => null);
+    const rows: any[] = Array.isArray(d?.rows) ? d.rows : [];
+    const norm = (s: string) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+    const t = rows.find((x) => norm(x.nombre) === norm(nom)) || rows.find((x) => norm(nom).includes(norm(x.nombre)) || norm(x.nombre).includes(norm(nom)));
+    if (!t) return null;
+    const cont: any[] = Array.isArray(t.contactos) ? t.contactos : [];
+    const tel = cont.find((c) => /phone|tel|mobile|cel|whats/i.test(c.type || ""))?.value || "";
+    const dir = cont.find((c) => /address|domicil|direcc/i.test(c.type || ""))?.value || "";
+    return { cuit: String(t.tax_id || ""), domicilio: String(dir || ""), telefono: String(tel || "") };
+  } catch { return null; }
+}
+
 // Total a mostrarle al cliente en los emails (datos para abonar / pago recibido).
 // En pedidos FV los montos de `totales` están en USD base con `moneda` = la moneda de
 // la cotización (ej "ARS") + `tc`. Hay que convertir (neto+iva)*tc para que el email
@@ -636,6 +658,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const fac = (await sql`SELECT cliente_id, cliente_nombre FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0];
       const cid = fac?.cliente_id ?? cidEnvio;
       const cnombre = fac?.cliente_nombre || plr.revendedor?.nombre || null;
+      const tMaster = await resolverTransporte(env.empresa); // datos del transporte directo del maestro
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS lugar_entrega TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS tipo_transporte TEXT`.catch(() => {});
       await sql`ALTER TABLE fg_comprobantes ADD COLUMN IF NOT EXISTS talonario_id INT`.catch(() => {});
@@ -667,7 +690,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
           cuit: recep?.cuit || env.dni || "",
           condicion_fiscal: recep?.condicion_fiscal || "",
         },
-        transporte: { empresa: env.empresa || "", domicilio: env.domicilio_transporte || "", telefono: env.telefono_transporte || "", cuit: env.cuit_transporte || "" },
+        transporte: { empresa: env.empresa || "", domicilio: env.domicilio_transporte || tMaster?.domicilio || "", telefono: env.telefono_transporte || tMaster?.telefono || "", cuit: env.cuit_transporte || tMaster?.cuit || "" },
         entrega: lugar,
         factura_nro: row.factura_numero || null,
         imagen_fondo: (remTal && remTal.imagen_fondo) ? remTal.imagen_fondo : "remito-fondo.png",
@@ -741,6 +764,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const recep = cid ? (await sql`SELECT nombre, razon_social, cuit, condicion_fiscal, domicilio, localidad, provincia, cod_postal FROM clientes WHERE id=${cid} LIMIT 1` as any[])[0] : null;
       const lugar = [env.direccion, env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") || plr.datos_venta?.lugar_entrega || null;
       const transp = env.empresa || plr.datos_venta?.tipo_transporte || null;
+      const tMaster = await resolverTransporte(env.empresa); // datos del transporte directo del maestro
       const prev = rem.datos_remito || {};
       const datosRemito = {
         ...prev,
@@ -750,7 +774,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
           cuit: recep?.cuit || env.dni || "",
           condicion_fiscal: recep?.condicion_fiscal || "",
         },
-        transporte: { empresa: env.empresa || "", domicilio: env.domicilio_transporte || "", telefono: env.telefono_transporte || "", cuit: env.cuit_transporte || "" },
+        transporte: { empresa: env.empresa || "", domicilio: env.domicilio_transporte || tMaster?.domicilio || "", telefono: env.telefono_transporte || tMaster?.telefono || "", cuit: env.cuit_transporte || tMaster?.cuit || "" },
         entrega: lugar,
         valor_declarado: plr.valor_declarado ?? prev?.valor_declarado ?? null,
         regenerado_at: new Date().toISOString(),
