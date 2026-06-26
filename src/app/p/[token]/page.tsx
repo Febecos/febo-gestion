@@ -350,7 +350,7 @@ const POS = {
     monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
   itemsTop: 46.0, itemRowH: 2.74, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 11, detMaxChars: 70,
-  valorDeclarado: { top: 88.2, left: 56, w: 42, size: 10.5, bold: true },
+  valorDeclarado: { top: 84.5, left: 22.3, w: 60, size: 11, bold: true }, // top se recalcula en el render (debajo de los ítems)
 };
 
 // Recorta una frase al máximo de caracteres SIN cortar palabras (corta la frase, no la palabra).
@@ -422,7 +422,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {ivaPos && <div style={{ position: "absolute", top: ivaPos.top + "%", left: ivaPos.left + "%", fontSize: "11pt", fontWeight: 700, color: "#111", lineHeight: 1, fontFamily: FONT }}>X</div>}
         {transpEmpresa && T(POS.transporte, transpEmpresa)}
         {transpDom && T(POS.transporteDom, transpDom)}
-        {valorDeclTxt && T(POS.valorDeclarado, valorDeclTxt)}
+        {valorDeclTxt && T({ ...POS.valorDeclarado, top: Math.min(85, POS.itemsTop + (items.length + leyendas.length + 1.5) * POS.itemRowH) }, valorDeclTxt)}
         {items.map((it, i) => (
           <div key={i}>
             <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "pt", textAlign: "center", color: "#111", lineHeight: 1, fontFamily: FONT }}>{it.cantidad}</div>
