@@ -776,7 +776,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         },
         transporte: { empresa: env.empresa || "", domicilio: env.domicilio_transporte || tMaster?.domicilio || "", telefono: env.telefono_transporte || tMaster?.telefono || "", cuit: env.cuit_transporte || tMaster?.cuit || "" },
         entrega: lugar,
-        valor_declarado: plr.valor_declarado ?? prev?.valor_declarado ?? null,
+        valor_declarado: prev?.valor_declarado ?? plr.valor_declarado ?? null, // conserva el valor PROPIO del remito (regenerar NO lo pisa con el del pedido)
         regenerado_at: new Date().toISOString(),
       };
       await sql`UPDATE fg_comprobantes SET lugar_entrega=${lugar}, tipo_transporte=${transp}, datos_remito=${JSON.stringify(datosRemito)}::jsonb WHERE id=${rem.id}`;
