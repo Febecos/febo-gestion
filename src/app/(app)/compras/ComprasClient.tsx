@@ -43,6 +43,8 @@ export default function ComprasClient() {
     .filter((p: any) => stockF === "todos" || (stockF === "stock" ? p.en_stock : p.a_confirmar))
     .filter((p: any) => filtroProvs.length === 0 || filtroProvs.includes(provDe(p)));
   useEffect(() => { setSel(0); }, [q, cat, stockF, data, filtroProvs]);
+  // El scroll sigue a la selección (↑↓) para que la fila marcada no se pierda de vista.
+  useEffect(() => { document.getElementById("cmp-row-" + sel)?.scrollIntoView({ block: "nearest" }); }, [sel]);
 
   const dispBadge = (p: any) => {
     if (p.en_stock) return chip("en stock", "#16a34a");
@@ -94,6 +96,28 @@ export default function ComprasClient() {
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
   };
 
+  // Carrito agrupado por proveedor (emisor||proveedor del producto).
+  const gruposCart: Record<string, any[]> = {};
+  cart.forEach((it) => { const k = it.emisor || it.proveedor || "Sin proveedor"; (gruposCart[k] = gruposCart[k] || []).push(it); });
+  const nombresGrupos = Object.keys(gruposCart);
+
+  // Carga TODOS los ítems separados por proveedor: 1 pedido pendiente por cada proveedor.
+  const cargarTodos = async () => {
+    if (!cart.length) { alert("Agregá al menos un producto."); return; }
+    if (!confirm(`¿Cargar ${nombresGrupos.length} pedido(s) pendientes, uno por proveedor?\n\n${nombresGrupos.map((g) => `• ${g}: ${gruposCart[g].length} ítem(s)`).join("\n")}`)) return;
+    setBusy(true);
+    try {
+      let n = 0;
+      for (const g of nombresGrupos) {
+        const pc = provs.find((x: any) => norm(x.razon_social || x.nombre_fantasia) === norm(g)) || provs.find((x: any) => norm((x.razon_social || "") + " " + (x.nombre_fantasia || "") + " " + (x.alias || "")).includes(norm(g)));
+        const r = await fetch("/api/pedidos-proveedor", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proveedor: pc?.razon_social || pc?.nombre_fantasia || g, items: gruposCart[g], email_destinatario: pc?.cont_comercial_email || pc?.email || "", origen: "compra" }) });
+        const d = await r.json(); if (d.ok) n++;
+      }
+      alert(`✅ ${n} pedido(s) cargado(s) como PENDIENTES, separados por proveedor. Abrilos en el historial y enviá cada uno cuando quieras.`);
+      setCart([]); setMensaje(""); loadPend();
+    } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
+  };
+
   const card = "bg-white rounded-xl border border-gray-200";
 
   return (
@@ -135,7 +159,7 @@ export default function ComprasClient() {
                 <tbody>
                   {productosFiltrados.length === 0 ? <tr><td colSpan={4} className="text-center py-6 text-gray-400">{q || cat || filtroProvs.length ? "Sin resultados" : "Escribí para buscar productos"}</td></tr> :
                   productosFiltrados.slice(0, 60).map((p: any, i: number) => (
-                    <tr key={p.id} onMouseEnter={() => setSel(i)} onClick={() => add(p)} className={`border-t border-gray-100 cursor-pointer ${i === sel ? "bg-blue-100" : "hover:bg-blue-50"}`}>
+                    <tr key={p.id} id={"cmp-row-" + i} onMouseEnter={() => setSel(i)} onClick={() => add(p)} className={`border-t border-gray-100 cursor-pointer ${i === sel ? "bg-blue-100" : "hover:bg-blue-50"}`}>
                       <td className="px-3 py-1.5"><div className="font-semibold text-febo-azul flex items-center gap-1 flex-wrap">{p.codigo} {dispBadge(p)}</div><div className="text-[11px] text-gray-500">{p.descripcion || ""}</div></td>
                       <td className="px-3 py-1.5 text-[11px] text-gray-600">{p.emisor || p.proveedor || "—"}</td>
                       <td className="px-3 py-1.5 text-right tabular-nums">{p.costo_usd ? Number(p.costo_usd).toFixed(2) : "—"}</td>
@@ -166,6 +190,12 @@ export default function ComprasClient() {
                 </tbody>
                 <tfoot><tr className="border-t-2 border-gray-200"><td colSpan={3} className="text-right py-2 font-bold text-febo-azul">TOTAL COSTO</td><td className="text-right py-2 font-bold text-febo-azul tabular-nums">USD {total.toFixed(2)}</td><td></td></tr></tfoot>
               </table>
+            )}
+            {nombresGrupos.length > 1 && (
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="text-[11px] text-gray-500 mb-2">Hay ítems de <b>{nombresGrupos.length} proveedores</b>: {nombresGrupos.map((g) => `${g} (${gruposCart[g].length})`).join(" · ")}. Podés cargar cada uno por separado (arriba, eligiendo el proveedor) o <b>todos de una</b>:</div>
+                <button disabled={busy} onClick={cargarTodos} className="w-full px-4 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-violet-700">{busy ? "Guardando…" : `📦 Cargar TODOS separados por proveedor (${nombresGrupos.length} pedidos)`}</button>
+              </div>
             )}
           </div>
 
