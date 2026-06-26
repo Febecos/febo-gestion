@@ -1268,7 +1268,8 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         facturado={facturado}
                         pagadoOk={pagadoOk}
                         busy={busy}
-                        onGenerar={(sel: any[]) => accion({ accion: "remitir", items: sel }, "¿Generar el REMITO con los ítems marcados?")}
+                        valorBase={Number(pl.valor_declarado) || (ped.desglose_iva ? ped.desglose_iva.total : totalCobrar) || 0}
+                        onGenerar={(sel: any[], valorDecl: number) => accion({ accion: "remitir", items: sel, valor_declarado: valorDecl }, "¿Generar el REMITO con los ítems marcados?")}
                         onRegenerar={(numero: string) => accion({ accion: "regenerar_remito", numero }, `¿Regenerar el remito ${numero} con los datos de envío/transporte actuales? Mantiene el mismo número.`)}
                         onEliminar={(numero: string) => accion({ accion: "eliminar_remito", numero }, `¿Eliminar el remito ${numero}? Solo se puede si es el último emitido.`)}
                         transporteNombre={String(env.empresa || "")}
@@ -1686,7 +1687,7 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, transporteNombre, facturado, pagadoOk, busy, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion, remitoExterno, onRemitoExterno, onEliminarRemitoExterno, onEnviarRemitoExterno }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, transporteNombre, facturado, pagadoOk, busy, valorBase, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion, remitoExterno, onRemitoExterno, onEliminarRemitoExterno, onEnviarRemitoExterno }: any) {
   const leerArchivo = (file: File, cb: (a: any) => void) => { const fr = new FileReader(); fr.onload = () => cb({ nombre: file.name, tipo: file.type, b64: String(fr.result) }); fr.readAsDataURL(file); };
   // Cargar el remito del TRANSPORTE (Via Cargo, etc.) directo, sin generar el nuestro: valida con IA y confirma despacho.
   const cargarRemitoExterno = (file: File) => leerArchivo(file, async (archivo) => {
@@ -1731,6 +1732,15 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
   const setCant = (idx: number, max: number, v: string) => { const n = Math.max(0, Math.min(max, Math.floor(Number(v) || 0))); setSel((s) => ({ ...s, [idx]: n })); };
   const toggle = (idx: number, pend: number) => setSel((s) => ({ ...s, [idx]: (s[idx] || 0) > 0 ? 0 : pend }));
   const seleccion = lineas.filter((l: any) => l.pendiente > 0 && (sel[l.idx] || 0) > 0).map((l: any) => ({ idx: l.idx, cantidad: sel[l.idx] }));
+  // Valor declarado de ESTE remito: proporcional al valor de los ítems marcados (editable).
+  const valItem = (it: any) => Number(it?.subtotal) || 0;
+  const totalValAll = (items || []).reduce((a: number, it: any) => a + valItem(it), 0);
+  const selVal = seleccion.reduce((a: number, x: any) => { const it = items[x.idx]; const full = Number(it?.cantidad) || 1; return a + valItem(it) * (x.cantidad / full); }, 0);
+  const totQtyAll = (items || []).reduce((a: number, it: any) => a + (esFlete(it) ? 0 : (Number(it?.cantidad) || 0)), 0);
+  const selQty = seleccion.reduce((a: number, x: any) => a + x.cantidad, 0);
+  const shareSel = totalValAll > 0 ? selVal / totalValAll : (totQtyAll > 0 ? selQty / totQtyAll : 1);
+  const valDeclAuto = Math.round((Number(valorBase) || 0) * shareSel);
+  const [valDecl, setValDecl] = useState("");
 
   const faltan = [!envioCompleto && "cargar los datos de envío del cliente", !transporteOk && "cargar el transporte", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean) as string[];
   const habil = envioCompleto && transporteOk && facturado && pagadoOk;
@@ -1828,12 +1838,17 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
               </table>
             </div>
           )}
-          <button disabled={busy || !habil || !seleccion.length}
-            title={!habil ? "Faltan pasos: " + faltan.join(", ") : (!seleccion.length ? "Marcá al menos un ítem a despachar" : "Generar remito de los ítems marcados")}
-            onClick={() => onGenerar(seleccion)}
-            className={`px-4 py-2 rounded-lg text-sm font-semibold ${habil && seleccion.length ? "bg-violet-500 text-white hover:bg-violet-600" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>
-            📦 Generar remito {seleccion.length > 0 && `(${seleccion.reduce((a: number, x: any) => a + x.cantidad, 0)} u.)`}
-          </button>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-[11px] text-gray-500">💰 Valor declarado de este remito ($)
+              <input value={valDecl} onChange={(e) => setValDecl(e.target.value.replace(/[^\d]/g, ""))} placeholder={valDeclAuto ? valDeclAuto.toLocaleString("es-AR") : "0"} title="Por defecto = parte proporcional del valor del pedido según los ítems marcados. Editable." className="block mt-0.5 w-40 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+            </label>
+            <button disabled={busy || !habil || !seleccion.length}
+              title={!habil ? "Faltan pasos: " + faltan.join(", ") : (!seleccion.length ? "Marcá al menos un ítem a despachar" : "Generar remito de los ítems marcados")}
+              onClick={() => onGenerar(seleccion, valDecl !== "" ? Number(valDecl) : valDeclAuto)}
+              className={`px-4 py-2 rounded-lg text-sm font-semibold ${habil && seleccion.length ? "bg-violet-500 text-white hover:bg-violet-600" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>
+              📦 Generar remito {seleccion.length > 0 && `(${seleccion.reduce((a: number, x: any) => a + x.cantidad, 0)} u.)`}
+            </button>
+          </div>
           {!despachoCompleto && links.length > 0 && <div className="text-[11px] text-gray-400">Quedan ítems pendientes: podés generar otro remito cuando despaches el resto.</div>}
         </>
       )}

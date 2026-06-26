@@ -350,7 +350,7 @@ const POS = {
     monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
   itemsTop: 46.0, itemRowH: 2.74, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 11, detMaxChars: 70,
-  valorDeclarado: { top: 88.0, left: 1.5, w: 23, size: 10, bold: true, right: true },
+  valorDeclarado: { top: 88.2, left: 56, w: 42, size: 10.5, bold: true },
 };
 
 // Recorta una frase al máximo de caracteres SIN cortar palabras (corta la frase, no la palabra).

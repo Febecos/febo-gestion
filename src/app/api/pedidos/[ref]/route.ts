@@ -613,6 +613,17 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const despAcc: Record<number, number> = { ...yaDesp };
       for (const it of aDespachar) despAcc[it.idx] = (despAcc[it.idx] || 0) + it.cantidad;
       const completo = itemsPed.every((it: any, idx: number) => esFlete(it) || (despAcc[idx] || 0) >= (Number(it.cantidad) || 0));
+      // VALOR DECLARADO del remito: el que indique el front (b.valor_declarado) o, por defecto,
+      // proporcional al valor de los ítems de ESTA tanda respecto del total del pedido. Así con 2
+      // remitos cada uno declara su parte.
+      const valItem = (it: any) => Number(it?.subtotal) || 0;
+      const totalVal = itemsPed.reduce((a: number, it: any) => a + valItem(it), 0);
+      const remVal = aDespachar.reduce((a: number, x: any) => { const it = itemsPed[x.idx]; const full = Number(it?.cantidad) || 1; return a + valItem(it) * (x.cantidad / full); }, 0);
+      const totQty = itemsPed.reduce((a: number, it: any) => a + (esFlete(it) ? 0 : (Number(it?.cantidad) || 0)), 0);
+      const remQty = aDespachar.reduce((a: number, x: any) => a + x.cantidad, 0);
+      const share = totalVal > 0 ? (remVal / totalVal) : (totQty > 0 ? (remQty / totQty) : 1);
+      const baseDeclarado = Number(plr.valor_declarado) || Number(plr.totales?.total) || 0;
+      const valorDeclaradoRemito = (b.valor_declarado != null && String(b.valor_declarado) !== "") ? Math.round(Number(b.valor_declarado)) : Math.round(baseDeclarado * share);
       // El remito va al MISMO receptor que la factura (puede ser un cliente final del revendedor).
       const fac = (await sql`SELECT cliente_id, cliente_nombre FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0];
       const cid = fac?.cliente_id ?? cidEnvio;
@@ -654,7 +665,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         imagen_fondo: (remTal && remTal.imagen_fondo) ? remTal.imagen_fondo : "remito-fondo.png",
         emitido_at: new Date().toISOString(),
         parcial: !completo,
-        valor_declarado: plr.valor_declarado || null,
+        valor_declarado: valorDeclaradoRemito || null,
         items: aDespachar.map((x) => ({ codigo: x.codigo, descripcion: x.descripcion, cantidad: x.cantidad })),
       };
       const comp = (await sql`
