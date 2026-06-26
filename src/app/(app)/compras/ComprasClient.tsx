@@ -191,10 +191,13 @@ export default function ComprasClient() {
                 <tfoot><tr className="border-t-2 border-gray-200"><td colSpan={3} className="text-right py-2 font-bold text-febo-azul">TOTAL COSTO</td><td className="text-right py-2 font-bold text-febo-azul tabular-nums">USD {total.toFixed(2)}</td><td></td></tr></tfoot>
               </table>
             )}
-            {nombresGrupos.length > 1 && (
+            {cart.length > 0 && (
               <div className="mt-3 pt-3 border-t border-gray-100">
-                <div className="text-[11px] text-gray-500 mb-2">Hay ítems de <b>{nombresGrupos.length} proveedores</b>: {nombresGrupos.map((g) => `${g} (${gruposCart[g].length})`).join(" · ")}. Podés cargar cada uno por separado (arriba, eligiendo el proveedor) o <b>todos de una</b>:</div>
-                <button disabled={busy} onClick={cargarTodos} className="w-full px-4 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-violet-700">{busy ? "Guardando…" : `📦 Cargar TODOS separados por proveedor (${nombresGrupos.length} pedidos)`}</button>
+                <div className="text-[11px] text-gray-500 mb-2">{nombresGrupos.length > 1
+                  ? <>Hay ítems de <b>{nombresGrupos.length} proveedores</b>: {nombresGrupos.map((g) => `${g} (${gruposCart[g].length})`).join(" · ")} → se crea <b>un pedido por cada uno</b>.</>
+                  : <>Proveedor: <b>{nombresGrupos[0]}</b> ({gruposCart[nombresGrupos[0]].length} ítem(s)) → queda pendiente, sin tener que buscar el proveedor.</>}</div>
+                <button disabled={busy} onClick={cargarTodos} className="w-full px-4 py-2.5 rounded-lg bg-violet-600 text-white text-sm font-semibold disabled:opacity-50 hover:bg-violet-700">{busy ? "Guardando…" : (nombresGrupos.length > 1 ? `📦 Cargar ${nombresGrupos.length} pedidos (separados por proveedor)` : `📝 Cargar pedido — ${nombresGrupos[0]}`)}</button>
+                <div className="text-[10px] text-gray-400 mt-1 text-center">Usa el proveedor de cada ítem (no hace falta seleccionarlo a mano). El envío se hace después desde el detalle.</div>
               </div>
             )}
           </div>
