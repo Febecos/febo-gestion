@@ -330,7 +330,16 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
               <label className={lbl}>EMAIL<input value={envioForm.email} onChange={(e) => setE("email", e.target.value)} className={inp} /></label>
               <div className="col-span-2 border-t border-gray-100 mt-1 pt-2 text-[11px] font-bold text-gray-400 uppercase">🚚 Transporte</div>
               <label className={lbl + " col-span-2"}>EMPRESA DE TRANSPORTE
-                <input value={envioForm.empresa} onChange={(e) => setE("empresa", e.target.value)} list="cli-transportes-envio" className={inp} placeholder={(envioForm.provincia || envioForm.localidad) ? "Elegí de la lista (sugeridos por zona) o escribí…" : "Cargá localidad/provincia para ver sugerencias"} />
+                <input value={envioForm.empresa} onChange={(e) => {
+                  const v = e.target.value;
+                  const t = transportes.find((x: any) => x.nombre === v); // al elegir del listado → auto-completa del maestro
+                  if (t) {
+                    const cont: any[] = Array.isArray(t.contactos) ? t.contactos : [];
+                    const tel = cont.find((c) => /phone|tel|mobile|cel|whats/i.test(c.type || ""))?.value;
+                    const dir = cont.find((c) => /address|domicil|direcc/i.test(c.type || ""))?.value;
+                    setEnvioForm((p: any) => ({ ...p, empresa: v, cuit_transporte: t.tax_id || p.cuit_transporte, telefono_transporte: tel || p.telefono_transporte, domicilio_transporte: dir || p.domicilio_transporte }));
+                  } else setE("empresa", v);
+                }} list="cli-transportes-envio" className={inp} placeholder={(envioForm.provincia || envioForm.localidad) ? "Elegí de la lista (sugeridos por zona) o escribí…" : "Cargá localidad/provincia para ver sugerencias"} />
                 <datalist id="cli-transportes-envio">{[...sugeridos, ...transportes.filter((t: any) => !sugeridos.some((s: any) => s.id === t.id))].map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
                 {sugeridos.length > 0 && <span className="text-[10px] text-emerald-600 font-normal">✓ {sugeridos.length} sugeridos por zona ({envioForm.localidad || envioForm.provincia}) — la lista incluye TODOS los transportes</span>}
               </label>
