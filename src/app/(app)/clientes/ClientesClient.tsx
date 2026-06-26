@@ -163,7 +163,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
       direccion: e.direccion || cliente?.domicilio || "", localidad: e.localidad || cliente?.localidad || "",
       provincia: e.provincia || cliente?.provincia || "", cp: e.cp || cliente?.cod_postal || "",
       empresa: e.empresa || cliente?.transporte || "", tipo_envio: e.tipo_envio || "",
-      domicilio_transporte: e.domicilio_transporte || "", telefono_transporte: e.telefono_transporte || "",
+      domicilio_transporte: e.domicilio_transporte || "", telefono_transporte: e.telefono_transporte || "", cuit_transporte: e.cuit_transporte || "",
       valor_declarado: e.valor_declarado || "",
     };
   });
@@ -336,7 +336,8 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
               </label>
               <label className={lbl + " col-span-2"}>TIPO DE ENVÍO<select value={envioForm.tipo_envio} onChange={(e) => setE("tipo_envio", e.target.value)} className={inp}>{TIPOS_ENVIO.map((t) => <option key={t} value={t}>{t || "Seleccioná…"}</option>)}</select></label>
               <label className={lbl + " col-span-2"}>DOMICILIO DE LA SUCURSAL<input value={envioForm.domicilio_transporte} onChange={(e) => setE("domicilio_transporte", e.target.value)} className={inp} placeholder="Si es a sucursal de transporte" /></label>
-              <label className={lbl + " col-span-2"}>TELÉFONO DEL TRANSPORTE<input value={envioForm.telefono_transporte} onChange={(e) => setE("telefono_transporte", e.target.value)} className={inp} /></label>
+              <label className={lbl}>TELÉFONO DEL TRANSPORTE<input value={envioForm.telefono_transporte} onChange={(e) => setE("telefono_transporte", e.target.value)} className={inp} /></label>
+              <label className={lbl}>CUIT DEL TRANSPORTE<input value={envioForm.cuit_transporte} onChange={(e) => setE("cuit_transporte", e.target.value)} className={inp} placeholder="Sale en el remito" /></label>
             </div>
           </div>
         ) : (

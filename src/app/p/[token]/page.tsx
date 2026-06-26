@@ -340,7 +340,8 @@ const POS = {
   cuit: { top: 28.1, left: 72.7, w: 25, size: 11 },
   facturaNro: { top: 31.0, left: 70.5, w: 27, size: 13, bold: true },
   transporte: { top: 34.6, left: 25.4, w: 71, size: 11 },
-  transporteDom: { top: 37.0, left: 16.3, w: 55, size: 11 },
+  transporteDom: { top: 37.0, left: 16.3, w: 50, size: 11 },
+  transporteCuit: { top: 37.0, left: 76, w: 22, size: 11 },
   iva: {
     responsable_inscripto: { top: 31.4, left: 30.4 },
     consumidor_final: { top: 32.8, left: 30.4 },
@@ -381,6 +382,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
   // Transporte: empresa en su renglón y el DOMICILIO del transporte en el renglón que corresponde.
   const transpEmpresa = snap?.transporte?.empresa || c.tipo_transporte || "";
   const transpDom = snap?.transporte?.domicilio || "";
+  const transpCuit = cuitFmt(snap?.transporte?.cuit || "");
   const vdNum = Number(String(snap?.valor_declarado ?? "").replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
   const valorDeclTxt = vdNum > 0 ? `VALOR DECLARADO $ ${vdNum.toLocaleString("es-AR")}` : "";
   const fondo = "/images/" + (snap?.imagen_fondo || "remito-fondo.png");
@@ -422,6 +424,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {ivaPos && <div style={{ position: "absolute", top: ivaPos.top + "%", left: ivaPos.left + "%", fontSize: "11pt", fontWeight: 700, color: "#111", lineHeight: 1, fontFamily: FONT }}>X</div>}
         {transpEmpresa && T(POS.transporte, transpEmpresa)}
         {transpDom && T(POS.transporteDom, transpDom)}
+        {transpCuit && T(POS.transporteCuit, transpCuit)}
         {valorDeclTxt && T({ ...POS.valorDeclarado, top: Math.min(85, POS.itemsTop + (items.length + leyendas.length + 1.5) * POS.itemRowH) }, valorDeclTxt)}
         {items.map((it, i) => (
           <div key={i}>
