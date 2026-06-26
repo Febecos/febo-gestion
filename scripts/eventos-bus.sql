@@ -17,11 +17,27 @@ CREATE TABLE IF NOT EXISTS eventos (
   entidad_id      TEXT,                                       -- clave de negocio: 'PED-0039' | 'PREV-2026-0223' | cuit | sku
   payload         JSONB       NOT NULL DEFAULT '{}'::jsonb,   -- datos del evento (snapshot mínimo necesario para reaccionar)
   idempotency_key TEXT        UNIQUE,                         -- dedupe del productor (re-emisión segura). NULL = sin dedupe.
+  cliente_id      BIGINT,                                     -- cliente resuelto (CRM clientes.id), top-level. NULL si no aplica/aún no resuelto.
+                                                              --   Desnormalizado para filtrar por cliente SIN parsear JSONB (pedido D1 del coordinador).
+                                                              --   El productor la puebla apenas tenga el cliente_id (FEBO AI se compromete a poblarla).
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS eventos_tipo_idx       ON eventos (tipo);
-CREATE INDEX IF NOT EXISTS eventos_entidad_idx    ON eventos (entidad, entidad_id);
-CREATE INDEX IF NOT EXISTS eventos_created_at_idx ON eventos (created_at);
+CREATE INDEX IF NOT EXISTS eventos_tipo_idx        ON eventos (tipo);
+CREATE INDEX IF NOT EXISTS eventos_entidad_idx     ON eventos (entidad, entidad_id);
+CREATE INDEX IF NOT EXISTS eventos_created_at_idx  ON eventos (created_at);
+CREATE INDEX IF NOT EXISTS eventos_cliente_id_idx  ON eventos (cliente_id) WHERE cliente_id IS NOT NULL;
+-- Migración aditiva sobre tablas v1 (que no tenían cliente_id):
+ALTER TABLE eventos ADD COLUMN IF NOT EXISTS cliente_id BIGINT;
+
+-- ----------------------------------------------------------------------------
+-- CATÁLOGO DE TIPOS (D2). `tipo` es texto libre (sin enum) → los productores pueden
+-- emitir YA; el catálogo es el acuerdo de nombres entre productor y consumidores.
+-- Convención: entidad.acción (lower). Ej: pedido.creado · pago.aprobado · stock.cambio ·
+--   cotizacion.creada · cliente.actualizado · lead.creado
+--   conversacion.escalada  ← FEBO AI: escalación de conversación al humano.
+--        entidad='conversacion', entidad_id=<conv_id/whatsapp>,
+--        payload={motivo, canal, ...}, idempotency_key='febo-ai:escalada:<conv_id>'.
+-- ----------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS eventos_consumo (
   consumidor   TEXT        NOT NULL,                          -- 'envios' | 'ads' | 'gestion-facturar' | 'febo-ai' | ...
