@@ -167,6 +167,7 @@ function Modal({ carrier, onClose, onSaved }: { carrier: Carrier | null; onClose
   const [cuit, setCuit] = useState(c.tax_id || "");
   const [tel, setTel] = useState(contactoDe(c, ["phone", "tel"]));
   const [wa, setWa] = useState(contactoDe(c, ["whatsapp", "mobile"]));
+  const [domLegal, setDomLegal] = useState(contactoDe(c, ["legal_address", "fiscal"]));
   const [deposito, setDeposito] = useState(contactoDe(c, ["address", "deposito"]));
   const [email, setEmail] = useState(contactoDe(c, ["email"]));
   const [web, setWeb] = useState(contactoDe(c, ["web", "url"]));
@@ -191,10 +192,9 @@ function Modal({ carrier, onClose, onSaved }: { carrier: Carrier | null; onClose
       const dom = d.domicilio || {};
       const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" ");
       if (nom) setLegal(nom);
-      if (!deposito.trim()) {
-        const partes = [dom.direccion, dom.localidad, dom.provincia, dom.codPostal ? "CP " + dom.codPostal : ""].filter(Boolean);
-        if (partes.length) setDeposito(partes.join(", "));
-      }
+      // El domicilio LEGAL/fiscal lo manda AFIP → completa su propio campo (pisa). El Depósito es manual.
+      const partes = [dom.direccion, dom.localidad, dom.provincia, dom.codPostal ? "CP " + dom.codPostal : ""].filter(Boolean);
+      if (partes.length) setDomLegal(partes.join(", "));
       setArca("✓ " + (nom || c11));
     } catch (e: any) { setArca("✕ " + e.message); }
   }
@@ -225,6 +225,7 @@ function Modal({ carrier, onClose, onSaved }: { carrier: Carrier | null; onClose
       email.trim() && { type: "email", value: email.trim() },
       web.trim() && { type: "web", value: web.trim() },
       deposito.trim() && { type: "address", value: deposito.trim(), label: "Depósito" },
+      domLegal.trim() && { type: "legal_address", value: domLegal.trim(), label: "Domicilio legal" },
     ].filter(Boolean);
     const zonasBody = zonas.map((z) => ({ province: z.province, locality: z.locality || null, coverage_type: z.locality ? "locality_specific" : "province_wide" }));
     const body: any = { nombre: nombre.trim(), legal_name: legal.trim(), tax_id: cuit.trim(), notas: notas.trim(), activo, contactos, zonas: zonasBody };
@@ -256,6 +257,7 @@ function Modal({ carrier, onClose, onSaved }: { carrier: Carrier | null; onClose
           <label className={lbl}>Razón social (ARCA)<input value={legal} onChange={(e) => setLegal(e.target.value)} placeholder="Ej: Lobruno S.A." className={inp} /></label>
           <label className={lbl}>CUIT<div className="flex gap-1.5"><input value={cuit} onChange={(e) => setCuit(e.target.value)} placeholder="Ej: 30-12345678-9" className={inp} /><button type="button" onClick={buscarArca} title="Leer datos del CUIT en ARCA" className="bg-febo-cyan text-white rounded-lg px-3 text-sm whitespace-nowrap">🔍 ARCA</button></div></label>
           {arca && <div className="col-span-2 text-[11px] -mt-1.5" style={{ color: arca.startsWith("✓") ? "#059669" : "#e53935" }}>{arca}</div>}
+          <label className={lbl + " col-span-2"}>🏛 Domicilio legal (ARCA)<input value={domLegal} onChange={(e) => setDomLegal(e.target.value)} placeholder="Se completa con 🔍 ARCA (o cargalo manual)" className={inp} /></label>
           <label className={lbl}>☎ Teléfono<input value={tel} onChange={(e) => setTel(e.target.value)} className={inp} /></label>
           <label className={lbl}>📱 WhatsApp<input value={wa} onChange={(e) => setWa(e.target.value)} className={inp} /></label>
           <label className={lbl + " col-span-2"}>📍 Depósito / Domicilio<input value={deposito} onChange={(e) => setDeposito(e.target.value)} placeholder="Ej: Berón de Astrada 2850, CABA — L-V 8:00-17:00" className={inp} /></label>
