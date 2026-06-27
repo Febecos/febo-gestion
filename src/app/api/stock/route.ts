@@ -72,7 +72,18 @@ export async function GET(req: NextRequest) {
     const FV_RX = "(panel|inversor|bater|regulador|microinversor|optimizador|mc4|cable|estructura|gabinete|proteccion|comunicacion|all-in-one|cargador|estacion|sensor)";
     const limit = Math.min(300, Number(sp.get("limit")) || 150);
     const rows = await sql`
-      SELECT id, codigo, descripcion, categoria, proveedor, emisor, origen, disponibilidad, stock, stock_minimo, COALESCE(clasif,'{}') AS clasif FROM fg_productos
+      SELECT id, codigo, descripcion, categoria, proveedor, emisor, origen, disponibilidad, stock, stock_minimo, COALESCE(clasif,'{}') AS clasif,
+        (categoria = 'BOMBAS SOLARES') AS es_bomba,
+        EXISTS (
+          SELECT 1 FROM pumps p
+          WHERE regexp_replace(lower(p.codigo),'[[:space:]]','','g') = regexp_replace(lower(fg_productos.codigo),'[[:space:]]','','g')
+             OR EXISTS (
+               SELECT 1 FROM fg_codigo_map m WHERE m.activo
+                 AND regexp_replace(lower(m.cod_deposito),'[[:space:]]','','g') = regexp_replace(lower(fg_productos.codigo),'[[:space:]]','','g')
+                 AND regexp_replace(lower(m.cod_catalogo),'[[:space:]]','','g') = regexp_replace(lower(p.codigo),'[[:space:]]','','g')
+             )
+        ) AS cat_match
+      FROM fg_productos
       WHERE activo = true AND codigo IS NOT NULL
         AND COALESCE(origen,'') NOT IN ('pumps','kit_bomba')
         AND (${q} = '' OR lower(coalesce(codigo,'')||' '||coalesce(descripcion,'')) LIKE ${like})

@@ -98,7 +98,10 @@ export default function StockClient() {
             : rows.length === 0 ? <tr><td colSpan={8} className="text-center py-8 text-gray-400">Sin productos</td></tr>
             : rows.map((r) => (
               <tr key={r.id} className={"border-t border-gray-100 " + (bajo(r) ? "bg-red-50" : "hover:bg-blue-50/40")}>
-                <td onClick={() => setEdit(r)} className="px-3 py-1.5 font-mono text-xs cursor-pointer hover:text-febo-azul">{r.codigo}</td>
+                <td onClick={() => setEdit(r)} className="px-3 py-1.5 font-mono text-xs cursor-pointer hover:text-febo-azul">
+                  {r.codigo}
+                  {r.es_bomba && !r.cat_match && <span title="⚠️ Este código NO coincide con ningún SKU del catálogo de bombas. El stock que cargues acá NO se va a reflejar en el catálogo. Verificá que el código sea el SKU exacto del catálogo (ej. SCPM6.6/35-D48/750), no la descripción." className="ml-1 cursor-help">⚠️</span>}
+                </td>
                 <td onClick={() => setEdit(r)} className="px-3 py-1.5 cursor-pointer hover:text-febo-azul"><div style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }} title="Abrir para ajustar">{r.descripcion}</div></td>
                 <td onClick={() => setEdit(r)} className="px-3 py-1.5 text-gray-500 text-xs cursor-pointer" title={r.emisor ? "Emisor: " + r.emisor : ""}>{fuenteLista(r)}</td>
                 <td className="px-3 py-1.5 text-center text-[11px]"><span className={/stock/i.test(r.disponibilidad || "") ? "text-green-600 font-semibold" : "text-gray-400"}>{r.disponibilidad || "—"}</span></td>

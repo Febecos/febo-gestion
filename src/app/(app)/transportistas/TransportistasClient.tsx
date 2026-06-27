@@ -178,6 +178,26 @@ function Modal({ carrier, onClose, onSaved }: { carrier: Carrier | null; onClose
     return (c.provincias || []).map((p) => ({ province: p, locality: null }));
   });
   const [busy, setBusy] = useState(false);
+  const [arca, setArca] = useState("");
+
+  // Lee el CUIT en ARCA y completa razón social (dato legal AFIP, pisa) + domicilio/depósito si está vacío.
+  async function buscarArca() {
+    const c11 = (cuit || "").replace(/\D/g, "");
+    if (c11.length !== 11) { setArca("El CUIT debe tener 11 dígitos."); return; }
+    setArca("Buscando en ARCA…");
+    try {
+      const r = await fetch("/api/consultar-cuit?cuit=" + c11); const d = await r.json();
+      if (!d.ok || d.valido === false) throw new Error(d.error || "CUIT sin datos");
+      const dom = d.domicilio || {};
+      const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" ");
+      if (nom) setLegal(nom);
+      if (!deposito.trim()) {
+        const partes = [dom.direccion, dom.localidad, dom.provincia, dom.codPostal ? "CP " + dom.codPostal : ""].filter(Boolean);
+        if (partes.length) setDeposito(partes.join(", "));
+      }
+      setArca("✓ " + (nom || c11));
+    } catch (e: any) { setArca("✕ " + e.message); }
+  }
 
   const [zq, setZq] = useState("");
   const [zsug, setZsug] = useState<{ nombre: string; prov: string }[]>([]);
@@ -233,8 +253,9 @@ function Modal({ carrier, onClose, onSaved }: { carrier: Carrier | null; onClose
         {!nuevo && <div className="text-[11px] text-gray-400 mb-3">ID #{carrier!.id}{carrier!.source ? " · " + carrier!.source : ""}</div>}
         <div className="grid grid-cols-2 gap-3 mt-2">
           <label className={lbl + " col-span-2"}>Empresa / Nombre *<input value={nombre} onChange={(e) => setNombre(e.target.value)} className={inp} /></label>
-          <label className={lbl}>Razón social<input value={legal} onChange={(e) => setLegal(e.target.value)} placeholder="Ej: Lobruno S.A." className={inp} /></label>
-          <label className={lbl}>CUIT<input value={cuit} onChange={(e) => setCuit(e.target.value)} placeholder="Ej: 30-12345678-9" className={inp} /></label>
+          <label className={lbl}>Razón social (ARCA)<input value={legal} onChange={(e) => setLegal(e.target.value)} placeholder="Ej: Lobruno S.A." className={inp} /></label>
+          <label className={lbl}>CUIT<div className="flex gap-1.5"><input value={cuit} onChange={(e) => setCuit(e.target.value)} placeholder="Ej: 30-12345678-9" className={inp} /><button type="button" onClick={buscarArca} title="Leer datos del CUIT en ARCA" className="bg-febo-cyan text-white rounded-lg px-3 text-sm whitespace-nowrap">🔍 ARCA</button></div></label>
+          {arca && <div className="col-span-2 text-[11px] -mt-1.5" style={{ color: arca.startsWith("✓") ? "#059669" : "#e53935" }}>{arca}</div>}
           <label className={lbl}>☎ Teléfono<input value={tel} onChange={(e) => setTel(e.target.value)} className={inp} /></label>
           <label className={lbl}>📱 WhatsApp<input value={wa} onChange={(e) => setWa(e.target.value)} className={inp} /></label>
           <label className={lbl + " col-span-2"}>📍 Depósito / Domicilio<input value={deposito} onChange={(e) => setDeposito(e.target.value)} placeholder="Ej: Berón de Astrada 2850, CABA — L-V 8:00-17:00" className={inp} /></label>
