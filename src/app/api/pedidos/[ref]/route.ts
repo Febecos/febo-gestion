@@ -59,6 +59,18 @@ function totalParaCliente(tot: any): { total: number | null; moneda: string } {
   return { total: tot?.total != null ? baseTotal : null, moneda };
 }
 
+// Nombre de pila para saludar en los emails al cliente. ARCA devuelve "Apellido, Nombres"
+// (ej. "Calabres, Yanina Bobbio") → el saludo NO debe decir "Calabres,". Si hay coma,
+// tomamos lo que va DESPUÉS (los nombres) y nos quedamos con el primero.
+function nombreSaludo(rev: any): string {
+  const raw = String(rev?.nombre || rev?.empresa || "").trim();
+  if (!raw) return "";
+  const base = raw.includes(",") ? raw.split(",").slice(1).join(",").trim() : raw;
+  const primero = (base.split(/\s+/)[0] || "").trim();
+  if (!primero) return "";
+  return primero.charAt(0).toUpperCase() + primero.slice(1).toLowerCase();
+}
+
 // Kit de bomba: NETO de paneles (10,5%) calculado igual que el portal de bombas, leyendo del
 // PRESUPUESTO (descuento) + catálogo (precio del panel × cant). factor = 1 − descuento%/100.
 // Devuelve el neto de paneles, o null si no es un kit con panel en catálogo.
@@ -388,7 +400,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
             const tpc = totalParaCliente(pl.totales);
             const r = await fetch("https://febecos.com/api/admin?action=notificar-pago-cliente", {
               method: "POST", headers,
-              body: JSON.stringify({ email, nombre: rev.nombre || "", pedido_numero: ref, total: tpc.total, moneda: tpc.moneda, link }),
+              body: JSON.stringify({ email, nombre: nombreSaludo(rev), pedido_numero: ref, total: tpc.total, moneda: tpc.moneda, link }),
             });
             aviso_cliente = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON" }));
           }
@@ -407,7 +419,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         let link = "";
         if (pl.presupuesto_numero) { const pr = await sql`SELECT public_token FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; if (pr[0]?.public_token) link = `https://fv.febecos.com/ver-presupuesto?token=${pr[0].public_token}`; }
         const tpc = totalParaCliente(pl.totales);
-        try { aviso_cliente = await callSelector("confirmar-pago-cliente", { email, nombre: rev.nombre || "", pedido_numero: ref, total: tpc.total, moneda: tpc.moneda, link }); }
+        try { aviso_cliente = await callSelector("confirmar-pago-cliente", { email, nombre: nombreSaludo(rev), pedido_numero: ref, total: tpc.total, moneda: tpc.moneda, link }); }
         catch (e: any) { aviso_cliente = { ok: false, error: e.message }; }
       }
       if (esFv) await sql`UPDATE fv_pedidos SET estado='pagado' WHERE numero=${ref}`.catch(() => {});
