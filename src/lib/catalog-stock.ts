@@ -1,3 +1,5 @@
+import { emitEvento } from "./eventos";
+
 // Liga el stock del CATÁLOGO de bombas (tabla `pumps`, área DEV ROI) al stock del DEPÓSITO
 // (fg_productos del módulo Stock). pumps.stock = SUMA del depósito por código NORMALIZADO
 // (sin espacios, case-insensitive) + un mapa de equivalencias (fg_codigo_map) para los códigos
@@ -5,8 +7,12 @@
 // Se llama tras cada cambio de stock. ROI: campo bloqueado + su sync no pisa pumps.stock.
 
 // Recalcula TODO el catálogo (es barato: ~28 pumps). Lo llamamos en cada cambio de stock.
+// Bus (C5/colisión #1): tras recalcular, emite `stock.cambiado` por cada SKU cuyo stock
+// cambió, con stock_anterior (clave: el consumidor de Envíos detecta la transición 0→>0).
 export async function syncCatalogStockAll(sql: any) {
   try {
+    const antes = (await sql`SELECT codigo, stock FROM pumps` as any[]);
+    const mapAntes = new Map<string, number>(antes.map((r: any) => [r.codigo, Number(r.stock) || 0]));
     await sql`
       UPDATE pumps p SET stock = COALESCE((
         SELECT SUM(f.stock) FROM fg_productos f
@@ -20,6 +26,19 @@ export async function syncCatalogStockAll(sql: any) {
             )
           )
       ), 0)`;
+    // Diff before/after → emitir solo los SKU que cambiaron (fire-and-forget vía emitEvento).
+    const despues = (await sql`SELECT codigo, stock FROM pumps` as any[]);
+    const ts = new Date().toISOString();
+    for (const r of despues) {
+      const anterior = mapAntes.get(r.codigo);
+      const nuevo = Number(r.stock) || 0;
+      if (anterior === undefined || anterior === nuevo) continue;
+      await emitEvento(sql, {
+        tipo: "stock.cambiado", entidad: "producto", entidadId: r.codigo,
+        payload: { codigo: r.codigo, stock_anterior: anterior, stock_nuevo: nuevo, ts },
+        idempotencyKey: `gestion:stock.cambiado:${r.codigo}:${ts}`,
+      });
+    }
   } catch { /* pumps es de ROI; si falla no rompe el flujo de stock */ }
 }
 
