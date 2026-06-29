@@ -8,6 +8,7 @@ import { tipoCbteAfip, docTipoReceptor, condicionIvaReceptorId } from "@/lib/afi
 import { desglosarFactura, normalizarTotales, splitPanelResto } from "@/lib/factura-calc";
 import { validarStock, descontarStock, restituirStock } from "@/lib/stock";
 import { getUser } from "@/lib/owner";
+import { emitEvento } from "@/lib/eventos";
 
 // Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
 export const dynamic = "force-dynamic";
@@ -307,6 +308,9 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
           const pr = await resolveProveedor(sql, prov);
           await movCtaCte(sql, { ambito: "proveedor", proveedor: prov, proveedor_id: pr?.id ?? null, fecha: hoy(), concepto: "Pedido confirmado " + ref, pedido_ref: ref, haber: +costo.toFixed(2), uniq: `provconf:${ref}:${prov}` });
         }
+        await emitEvento(sql, { tipo: "proveedor.confirmado", entidad: "pedido", entidadId: ref,
+          payload: { proveedores: Object.keys(porProv) }, idempotencyKey: `gestion:proveedor.confirmado:${ref}`,
+          clienteId: await clienteIdDe(sql, row?.payload) });
       }
       return NextResponse.json({ ok: true });
     }
@@ -453,6 +457,10 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
             concepto: "Pago recibido", pedido_ref: ref, haber: +Number(b.pago.monto_usd).toFixed(2),
             detalle: b.pago, uniq: `pcli:${ref}:${b.pago.fecha}` });
         }
+        await emitEvento(sql, { tipo: "pago.recibido", entidad: "pedido", entidadId: ref,
+          payload: { monto: b.pago?.monto, moneda: b.pago?.moneda, medio: b.pago?.medio, monto_usd: b.pago?.monto_usd, fecha: b.pago?.fecha, ref_numero: b.pago?.ref_numero },
+          idempotencyKey: `gestion:pago.recibido:${ref}:${String(b.pago?.fecha || "").slice(0,10)}:${b.pago?.monto}:${b.pago?.medio || ""}:${b.pago?.ref_numero || ""}`,
+          clienteId: cid });
       }
       return NextResponse.json({ ok: true });
     }
@@ -1269,6 +1277,9 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (revendedor_id && comisionMonto > 0) {
         await movCtaCte(sql, { ambito: "cliente", cliente_id: revendedor_id, fecha: hoy(), concepto: `Comisión ${comisionPct}% s/ ${facturaNum}${receptorFinalId ? " (venta a cliente)" : ""}`, comprobante: facturaNum, pedido_ref: ref, haber: comisionMonto, detalle: { tipo: "comision_revendedor", pct: comisionPct, factura: facturaNum }, uniq: `com:${facturaNum}` });
       }
+      await emitEvento(sql, { tipo: "factura.emitida", entidad: "factura", entidadId: facturaNum,
+        payload: { pedido_ref: ref, total_usd: totalUsd, moneda: facturaMoneda, electronica: false, proforma: true, comision_monto: comisionMonto, comision_pct: comisionPct, revendedor_id, receptor_cliente_id: receptorFinalId || null },
+        idempotencyKey: `gestion:factura.emitida:${facturaNum}`, clienteId: cliente_id });
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: comp.token, comision_monto: comisionMonto, comision_pct: comisionPct });
     }
 
@@ -1325,6 +1336,9 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         await sql`UPDATE fg_comprobantes SET comision_pct=${comisionPct}, comision_monto=${comisionMonto} WHERE id=${cb.id}`.catch(() => {});
         await movCtaCte(sql, { ambito: "cliente", cliente_id: revendedor_id, fecha: hoy(), concepto: `Comisión ${comisionPct}% s/ ${facturaNum}${receptorFinalId ? " (venta a cliente)" : ""}`, comprobante: facturaNum, pedido_ref: ref, haber: comisionMonto, detalle: { tipo: "comision_revendedor", pct: comisionPct, factura: facturaNum }, uniq: `com:${facturaNum}` });
       }
+      await emitEvento(sql, { tipo: "factura.emitida", entidad: "factura", entidadId: facturaNum,
+        payload: { pedido_ref: ref, total_usd: totalUsd, moneda: meta.facturaMoneda || "USD", electronica: true, cae: res.cae || null, comision_monto: comisionMonto, comision_pct: comisionPct, revendedor_id, receptor_cliente_id: receptorFinalId || null },
+        idempotencyKey: `gestion:factura.emitida:${facturaNum}`, clienteId: cliente_id });
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: cb.token, cae: res.cae, cae_vto: res.caeVto, comision_monto: comisionMonto, comision_pct: comisionPct });
     }
     return NextResponse.json({ ok: false, error: "acción inválida" }, { status: 400 });

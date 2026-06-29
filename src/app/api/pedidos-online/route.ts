@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { emitEvento } from "@/lib/eventos";
 
 export const runtime = "nodejs";
 
@@ -158,6 +159,11 @@ export async function POST(req: NextRequest) {
 
       // ── 3. Completar el link (el lock gestion_tomado_at ya fue reclamado arriba) ──
       await sql`UPDATE pedidos SET gestion_pedido_id = ${pedido_numero} WHERE id::text = ${id}`;
+
+      // Bus de eventos (C5): pedido online tomado por gestión.
+      await emitEvento(sql, { tipo: "pedido.creado", entidad: "pedido", entidadId: pedido_numero,
+        payload: { origen: "online", pagado: pagadoOnline, total: payload?.totales?.total ?? null, moneda: payload?.totales?.moneda ?? null, utm: payload?.utm ?? null },
+        idempotencyKey: `gestion:pedido.creado:${pedido_numero}`, clienteId: typeof clienteId === "number" ? clienteId : null });
 
       return NextResponse.json({ ok: true, pedido_numero, cliente_id: clienteId });
     } catch (e: any) {

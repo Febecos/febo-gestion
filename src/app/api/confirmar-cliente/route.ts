@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { validarStock, descontarStock } from "@/lib/stock";
 import { getUser } from "@/lib/owner";
+import { emitEvento } from "@/lib/eventos";
 
 export const runtime = "nodejs";
 
@@ -134,6 +135,12 @@ export async function POST(req: NextRequest) {
               if (sinStock) await sql`UPDATE fv_pedidos SET stock_validado=true, stock_validado_at=now(), stock_override_by=${usuario?.email || "owner"} WHERE numero=${pedido_numero}`;
               else await sql`UPDATE fv_pedidos SET stock_validado=true, stock_validado_at=now() WHERE numero=${pedido_numero}`;
             } catch (stkErr: any) { console.error("[confirmar-cliente] descuento de stock falló:", stkErr.message); }
+            // Bus de eventos (C5): el cliente confirmó el presupuesto → nace el pedido.
+            const cidEv = (await sql`SELECT cliente_id FROM presupuestos WHERE numero=${numero} LIMIT 1` as any[])[0]?.cliente_id ?? null;
+            await emitEvento(sql, { tipo: "presupuesto.aceptado", entidad: "presupuesto", entidadId: numero,
+              payload: { pedido_numero, total: totales?.total ?? null, moneda: totales?.moneda ?? null }, idempotencyKey: `gestion:presupuesto.aceptado:${numero}`, clienteId: cidEv });
+            await emitEvento(sql, { tipo: "pedido.creado", entidad: "pedido", entidadId: pedido_numero,
+              payload: { presupuesto_numero: numero, origen: "confirmacion_cliente", sin_stock: sinStock, total: totales?.total ?? null, moneda: totales?.moneda ?? null }, idempotencyKey: `gestion:pedido.creado:${pedido_numero}`, clienteId: cidEv });
           } catch (insErr) {
             // Liberar el número si el INSERT falló (no quemar números → evita huecos).
             await sql`UPDATE pedidos_counter SET ultimo_numero = ultimo_numero - 1 WHERE clave='PED' AND ultimo_numero = ${nro}`.catch(() => {});
