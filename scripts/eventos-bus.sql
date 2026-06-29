@@ -11,7 +11,7 @@
 
 CREATE TABLE IF NOT EXISTS eventos (
   id              BIGSERIAL   PRIMARY KEY,
-  tipo            TEXT        NOT NULL,                       -- 'pedido.creado' | 'pago.aprobado' | 'stock.cambio' | 'cotizacion.creada' | ...
+  tipo            TEXT        NOT NULL,                       -- 'pedido.creado' | 'pago.recibido' | 'stock.cambiado' | 'cotizacion.creada' | ...
   origen          TEXT        NOT NULL,                       -- productor: 'gestion' | 'febo-ai' | 'febo-rev' | 'envios' | 'selector' | 'ads'
   entidad         TEXT,                                       -- 'pedido' | 'presupuesto' | 'cliente' | 'stock' | ...
   entidad_id      TEXT,                                       -- clave de negocio: 'PED-0039' | 'PREV-2026-0223' | cuit | sku
@@ -32,7 +32,8 @@ ALTER TABLE eventos ADD COLUMN IF NOT EXISTS cliente_id BIGINT;
 -- ----------------------------------------------------------------------------
 -- CATÁLOGO DE TIPOS (D2). `tipo` es texto libre (sin enum) → los productores pueden
 -- emitir YA; el catálogo es el acuerdo de nombres entre productor y consumidores.
--- Convención: entidad.acción (lower). Ej: pedido.creado · pago.aprobado · stock.cambio ·
+-- Convención: entidad.acción en PARTICIPIO PASADO (lower). Ej: pedido.creado · pago.recibido · stock.cambiado ·
+--   CANÓNICO: stock.cambiado (NO 'stock.cambio') · pago.recibido (NO 'pago.aprobado') — fijado 29/06 para zanjar duplicados.
 --   cotizacion.creada · cliente.actualizado · lead.creado
 --   conversacion.escalada  ← FEBO AI: escalación de conversación al humano.
 --        entidad='conversacion', entidad_id=<conv_id/whatsapp>,
@@ -64,10 +65,11 @@ CREATE INDEX IF NOT EXISTS eventos_consumo_pendientes_idx
 -- USO
 --
 -- PRODUCIR (fire-and-forget, idempotente):
---   INSERT INTO eventos (tipo, origen, entidad, entidad_id, payload, idempotency_key)
---   VALUES ('pago.aprobado', 'febo-ai', 'pedido', 'PED-0039',
---           '{"monto": 12345, "metodo": "transferencia"}'::jsonb,
---           'febo-ai:pago:PED-0039')                 -- clave estable → re-emitir no duplica
+--   INSERT INTO eventos (tipo, origen, entidad, entidad_id, payload, idempotency_key, cliente_id)
+--   VALUES ('pago.recibido', 'gestion', 'pedido', 'PED-0039',
+--           '{"monto": 12345, "medio": "transferencia"}'::jsonb,
+--           'gestion:pago.recibido:PED-0039', 4231)  -- clave estable → re-emitir no duplica
+--   -- idempotency_key = '<origen>:<tipo>:<id>'
 --   ON CONFLICT (idempotency_key) DO NOTHING
 --   RETURNING id;
 --
@@ -75,7 +77,7 @@ CREATE INDEX IF NOT EXISTS eventos_consumo_pendientes_idx
 --   -- 1) reclamar eventos nuevos para este consumidor
 --   INSERT INTO eventos_consumo (consumidor, evento_id)
 --   SELECT 'envios', e.id FROM eventos e
---   WHERE e.tipo = ANY(ARRAY['stock.cambio','pedido.creado'])
+--   WHERE e.tipo = ANY(ARRAY['stock.cambiado','pedido.creado'])
 --     AND NOT EXISTS (SELECT 1 FROM eventos_consumo c WHERE c.consumidor='envios' AND c.evento_id=e.id)
 --   ON CONFLICT DO NOTHING;
 --   -- 2) procesar los pendientes y marcarlos
