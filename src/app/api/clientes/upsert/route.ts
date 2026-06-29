@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import jwt from "jsonwebtoken";
+
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 // ── D1 (OBJETIVO-99): ENDPOINT ÚNICO DE CLIENTES ────────────────────────────
 // Gestión es el DUEÑO del dato `clientes` (Neon central). Este es el contrato que
@@ -16,11 +20,23 @@ import { getDb } from "@/lib/db";
 
 const digits = (s: any) => String(s || "").replace(/\D/g, "");
 
+// Identidad de servicio (D1, contrato de DEV Seguridad — patrón P5):
+//  - JWT corto (internal:true, scope:'clientes:write', exp 30m) firmado con
+//    FV_BRIDGE_SECRET || INTERNAL_SERVICE_SECRET, emitido por internal-session.js?scope=clientes:write.
+//  - Fallback de rollout: bearer == secret estático (se retira cuando Portal/Admin/Cursos migren al JWT).
+//  Verifica contra AMBOS secrets (acepta el token sin importar con cuál se firmó).
 function autorizado(req: NextRequest): boolean {
-  const sec = process.env.INTERNAL_SERVICE_SECRET;
-  if (!sec) return false;
   const bearer = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
-  return !!bearer && bearer === sec;
+  if (!bearer) return false;
+  const secrets = [process.env.FV_BRIDGE_SECRET, process.env.INTERNAL_SERVICE_SECRET].filter(Boolean) as string[];
+  for (const sec of secrets) {
+    if (bearer === sec) return true; // fallback estático (rollout)
+    try {
+      const p: any = jwt.verify(bearer, sec);
+      if (p?.internal === true && p?.scope === "clientes:write") return true;
+    } catch { /* probar el siguiente secret */ }
+  }
+  return false;
 }
 
 export async function POST(req: NextRequest) {
