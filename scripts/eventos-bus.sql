@@ -37,6 +37,13 @@ ALTER TABLE eventos ADD COLUMN IF NOT EXISTS cliente_id BIGINT;
 --   conversacion.escalada  ← FEBO AI: escalación de conversación al humano.
 --        entidad='conversacion', entidad_id=<conv_id/whatsapp>,
 --        payload={motivo, canal, ...}, idempotency_key='febo-ai:escalada:<conv_id>'.
+--   GESTIÓN (productor, origen='gestion'): presupuesto.aceptado · pedido.creado ·
+--        proveedor.confirmado · pago.recibido · factura.emitida.
+--   pedido.estado_cambiado  ← GESTIÓN (C1): aviso de estado al cliente. Consumen Envíos (email)
+--        y FEBO AI (WhatsApp). entidad='pedido', entidad_id=<PED-xxxx>,
+--        payload={pedido_ref, estado_nuevo, cliente_id, telefono, email},
+--        estado_nuevo ∈ {aprobado|pagado|facturado|despachado|enviado|cancelado},
+--        idempotency_key='gestion:pedido.estado_cambiado:<ref>:<estado>'.
 -- ----------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS eventos_consumo (

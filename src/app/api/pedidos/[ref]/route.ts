@@ -117,6 +117,27 @@ async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
   const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pn} LIMIT 1` as any[];
   return pr[0]?.cliente_id ?? null;
 }
+
+// C1 (OBJETIVO-99): emite `pedido.estado_cambiado` para que Envíos (email) y FEBO AI (WhatsApp)
+// avisen al cliente. Resuelve cliente_id + teléfono + email (de la ficha del cliente o del payload).
+// Idempotente por (pedido, estado) → cada transición avisa una sola vez. No manda el mail/WA acá.
+async function emitEstadoPedido(sql: any, ref: string, estadoNuevo: string): Promise<void> {
+  try {
+    const row = (await sql`SELECT payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+    const pl = row?.payload || {};
+    const cid = await clienteIdDe(sql, pl);
+    const c = pl.revendedor || pl.cliente || {};
+    let email: string | null = c.email || pl.cliente?.email || null;
+    let telefono: string | null = c.whatsapp || c.telefono || null;
+    if (cid) {
+      const cl = (await sql`SELECT email, whatsapp FROM clientes WHERE id=${cid} LIMIT 1` as any[])[0];
+      if (cl) { email = email || cl.email || null; telefono = telefono || cl.whatsapp || null; }
+    }
+    await emitEvento(sql, { tipo: "pedido.estado_cambiado", entidad: "pedido", entidadId: ref,
+      payload: { pedido_ref: ref, estado_nuevo: estadoNuevo, cliente_id: cid, telefono, email },
+      idempotencyKey: `gestion:pedido.estado_cambiado:${ref}:${estadoNuevo}`, clienteId: cid });
+  } catch { /* fire-and-forget */ }
+}
 const hoy = () => new Date().toISOString().slice(0, 10);
 
 // Enriquece los ítems con el `emisor` (Multiradio/Multisolar/Multipoint) y el `costo_usd`
@@ -384,6 +405,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         else await sql`UPDATE fv_pedidos SET estado=${b.estado} WHERE numero=${ref}`;
       } else await sql`UPDATE pedidos SET estado=${b.estado} WHERE id::text=${ref} OR numero=${ref}`;
 
+      await emitEstadoPedido(sql, ref, b.estado);
+
       // Al APROBAR un pedido FV → avisar al cliente para el pago (email vía selector/Resend).
       let aviso_cliente: any = undefined;
       if (b.estado === "aprobado" && esFv && b.avisar !== false) {
@@ -426,7 +449,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         try { aviso_cliente = await callSelector("confirmar-pago-cliente", { email, nombre: nombreSaludo(rev), pedido_numero: ref, total: tpc.total, moneda: tpc.moneda, link }); }
         catch (e: any) { aviso_cliente = { ok: false, error: e.message }; }
       }
-      if (esFv) await sql`UPDATE fv_pedidos SET estado='pagado' WHERE numero=${ref}`.catch(() => {});
+      if (esFv) { await sql`UPDATE fv_pedidos SET estado='pagado' WHERE numero=${ref}`.catch(() => {}); await emitEstadoPedido(sql, ref, "pagado"); }
       return NextResponse.json({ ok: true, estado: "pagado", aviso_cliente });
     }
     if (b.accion === "comprobante") {
@@ -828,6 +851,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const merge = JSON.stringify({ remitos, despacho_completo: itemsCompletos, despacho_confirmado: confirmado, remito_preparado: true });
       const nuevoEstado = confirmado ? "enviado" : row?.estado;
       await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, payload = coalesce(payload,'{}'::jsonb) || ${merge}::jsonb WHERE numero=${ref} RETURNING numero`;
+      if (confirmado) await emitEstadoPedido(sql, ref, "despachado");
       return NextResponse.json({ ok: true, remito_numero: numero, despacho_confirmado: confirmado });
     }
     // Quitar la confirmación de despacho de un remito → vuelve a "remito preparado".
@@ -1280,6 +1304,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await emitEvento(sql, { tipo: "factura.emitida", entidad: "factura", entidadId: facturaNum,
         payload: { pedido_ref: ref, total_usd: totalUsd, moneda: facturaMoneda, electronica: false, proforma: true, comision_monto: comisionMonto, comision_pct: comisionPct, revendedor_id, receptor_cliente_id: receptorFinalId || null },
         idempotencyKey: `gestion:factura.emitida:${facturaNum}`, clienteId: cliente_id });
+      await emitEstadoPedido(sql, ref, "facturado");
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: comp.token, comision_monto: comisionMonto, comision_pct: comisionPct });
     }
 
@@ -1339,6 +1364,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await emitEvento(sql, { tipo: "factura.emitida", entidad: "factura", entidadId: facturaNum,
         payload: { pedido_ref: ref, total_usd: totalUsd, moneda: meta.facturaMoneda || "USD", electronica: true, cae: res.cae || null, comision_monto: comisionMonto, comision_pct: comisionPct, revendedor_id, receptor_cliente_id: receptorFinalId || null },
         idempotencyKey: `gestion:factura.emitida:${facturaNum}`, clienteId: cliente_id });
+      await emitEstadoPedido(sql, ref, "facturado");
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: cb.token, cae: res.cae, cae_vto: res.caeVto, comision_monto: comisionMonto, comision_pct: comisionPct });
     }
     return NextResponse.json({ ok: false, error: "acción inválida" }, { status: 400 });
