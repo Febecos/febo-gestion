@@ -108,5 +108,8 @@ CREATE INDEX IF NOT EXISTS eventos_consumo_pendientes_idx
 --        libre → podés emitir ya; el catálogo es el acuerdo de nombres con los consumidores.
 --
 -- Productores externos en cola (29/06): Portal → cotizacion.creada / cotizacion.vista ·
---   Admin → pedido.creado (checkout) / stock.cambiado / lead.creado.
+--   Admin → pedido.creado (checkout) / lead.creado.
+-- ⚠️ stock.cambiado lo emite GESTIÓN (colisión #1): es el ÚNICO escritor de pumps.stock
+--   (recalc en catalog-stock.ts desde el depósito; el checkout del selector ya NO decrementa
+--   pumps.stock — ROI sacó esos decrementos en 30d97c1). Admin NO emite stock.cambiado.
 -- ============================================================================
