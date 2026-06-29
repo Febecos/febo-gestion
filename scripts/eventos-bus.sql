@@ -82,3 +82,29 @@ CREATE INDEX IF NOT EXISTS eventos_consumo_pendientes_idx
 --   UPDATE eventos_consumo SET estado='procesado', procesado_at=now()
 --   WHERE consumidor='envios' AND evento_id = $1;
 -- ----------------------------------------------------------------------------
+
+-- ============================================================================
+-- CONTRATO PARA PRODUCTORES EXTERNOS (confirmado por DEV Gestión, dueño del bus · 29/06)
+-- Cualquier repo puede ESCRIBIR en `eventos` directo (INSERT, sin helper ni HTTP
+-- cross-dominio) — es append-only y desacoplado. Reglas obligatorias:
+--
+--   1) COLUMNAS:  tipo, origen, entidad, entidad_id, payload (jsonb), idempotency_key,
+--                 + cliente_id (BIGINT top-level) apenas se resuelva (para filtrar sin parsear JSONB).
+--   2) origen POR REPO (string fijo):
+--        'gestion'      → DEV ERP Gestión (febo-gestion)
+--        'revendedores' → DEV Portal      (repo revendedores)
+--        'selector'     → DEV Admin       (febecos-selector)
+--        'febo-ai'      → DEV FEBO AI
+--        'ads'          → DEV Facebook
+--   3) idempotency_key = '<origen>:<tipo>:<id>'  (id = clave de negocio estable: PED-xxxx,
+--        PREV-xxxx, public_token, etc.). Ej: 'revendedores:cotizacion.creada:PREV-2026-0223'.
+--        Si querés dedup por sub-evento, sufijá: '<origen>:<tipo>:<id>:<discriminante>'.
+--   4) SIEMPRE  ON CONFLICT (idempotency_key) DO NOTHING  → re-emisión segura.
+--   5) FIRE-AND-FORGET: envolvé el INSERT en try/catch; un fallo del bus NUNCA debe
+--        romper tu flujo de negocio (POST/GET).
+--   6) tipo: usar el catálogo D2 de arriba (convención entidad.acción, lower). Es texto
+--        libre → podés emitir ya; el catálogo es el acuerdo de nombres con los consumidores.
+--
+-- Productores externos en cola (29/06): Portal → cotizacion.creada / cotizacion.vista ·
+--   Admin → pedido.creado (checkout) / stock.cambiado / lead.creado.
+-- ============================================================================
