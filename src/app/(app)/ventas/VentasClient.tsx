@@ -787,15 +787,30 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 <th className="text-right px-2 py-1">Costo</th><th className="text-right px-2 py-1">PVP s/IVA</th><th className="text-right px-2 py-1">Subtotal</th>
               </tr></thead>
               <tbody>
-                {items.map((it: any, i: number) => (
-                  <tr key={i} className="border-t border-gray-100 align-top">
-                    <td className="px-2 py-1.5"><div className="font-semibold text-febo-azul">{it.codigo} {(it.emisor || it.proveedor) && chip(it.emisor || it.proveedor, "#64748b")}</div><div className="text-xs text-gray-500">{it.descripcion}</div></td>
-                    <td className="px-2 py-1.5 text-center font-bold">{it.cantidad}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{nf(v(it.costo_usd))}</td>
-                    <td className="px-2 py-1.5 text-right tabular-nums">{nf(v(it.pvp_sin_iva_usd))}</td>
-                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{nf(v(it.subtotal))}</td>
-                  </tr>
-                ))}
+                {(() => {
+                  // Multi-equipo (Portal): si el presupuesto tiene N bombas, agrupa los ítems por `equipo`
+                  // con un encabezado. 1 solo equipo (o presupuestos viejos sin `equipo`) → idéntico al anterior.
+                  const multiEq = new Set(items.map((x: any) => x.equipo || 1)).size > 1;
+                  const disp = multiEq ? [...items].sort((a: any, b: any) => (a.equipo || 1) - (b.equipo || 1)) : items;
+                  const out: any[] = []; let lastEq: any = null;
+                  disp.forEach((it: any, i: number) => {
+                    const eq = it.equipo || 1;
+                    if (multiEq && eq !== lastEq) {
+                      out.push(<tr key={"eq" + eq} className="bg-slate-50"><td colSpan={5} className="px-2 py-1 text-[11px] font-bold text-slate-600">🔧 Equipo {eq}</td></tr>);
+                      lastEq = eq;
+                    }
+                    out.push(
+                      <tr key={i} className="border-t border-gray-100 align-top">
+                        <td className="px-2 py-1.5"><div className="font-semibold text-febo-azul">{it.codigo} {(it.emisor || it.proveedor) && chip(it.emisor || it.proveedor, "#64748b")}</div><div className="text-xs text-gray-500">{it.descripcion}</div></td>
+                        <td className="px-2 py-1.5 text-center font-bold">{it.cantidad}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{nf(v(it.costo_usd))}</td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">{nf(v(it.pvp_sin_iva_usd))}</td>
+                        <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{nf(v(it.subtotal))}</td>
+                      </tr>
+                    );
+                  });
+                  return out;
+                })()}
               </tbody>
               <tfoot className="text-sm">
                 {costoTot > 0 && <tr className="text-[11px] text-gray-400"><td colSpan={4} className="text-right px-2 py-1">Costo total FEBECOS</td><td className="text-right px-2 py-1">{money(costoTot)}</td></tr>}
