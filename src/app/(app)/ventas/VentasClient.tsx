@@ -1292,10 +1292,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         onConfirmar={(numero: string, archivo: any, validacion: any) => accion({ accion: "confirmacion_despacho", numero, archivo, validacion })}
                         onEliminarConfirmacion={(numero: string) => accion({ accion: "eliminar_confirmacion", numero }, `¿Quitar la confirmación de despacho del remito ${numero}? El pedido vuelve a "remito preparado".`)}
                         onEnviarConfirmacion={(numero: string) => { const to = window.prompt("Enviar la confirmación de despacho a:", emailCli || ""); if (to === null) return; const t = to.trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) { alert("Email inválido."); return; } accion({ accion: "enviar_confirmacion", numero, email: t }, `¿Enviar la confirmación de despacho del remito ${numero} a ${t}?`); }}
-                        remitoExterno={ped.remito_externo}
+                        remitosExternos={ped.remitos_externos}
                         onRemitoExterno={(archivo: any, validacion: any) => accion({ accion: "remito_externo", archivo, validacion })}
-                        onEliminarRemitoExterno={() => accion({ accion: "eliminar_remito_externo" }, "¿Quitar el remito del transporte? El pedido vuelve a 'pagado' (sin despacho).")}
-                        onEnviarRemitoExterno={() => { const to = window.prompt("Enviar el remito del transporte a:", emailCli || ""); if (to === null) return; const t = to.trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) { alert("Email inválido."); return; } accion({ accion: "enviar_remito_externo", email: t }, `¿Enviar el remito del transporte a ${t}?`); }}
+                        onEliminarRemitoExterno={(id: string) => accion({ accion: "eliminar_remito_externo", id }, "¿Quitar este comprobante del transporte?")}
+                        onEnviarRemitoExterno={(id: string) => { const to = window.prompt("Enviar el comprobante del transporte a:", emailCli || ""); if (to === null) return; const t = to.trim(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(t)) { alert("Email inválido."); return; } accion({ accion: "enviar_remito_externo", id, email: t }, `¿Enviar el comprobante del transporte a ${t}?`); }}
                       />
                     );
                   })()}
@@ -1703,7 +1703,7 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, transporteNombre, facturado, pagadoOk, busy, valorBase, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion, remitoExterno, onRemitoExterno, onEliminarRemitoExterno, onEnviarRemitoExterno }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, transporteNombre, facturado, pagadoOk, busy, valorBase, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion, remitosExternos, onRemitoExterno, onEliminarRemitoExterno, onEnviarRemitoExterno }: any) {
   const leerArchivo = (file: File, cb: (a: any) => void) => { const fr = new FileReader(); fr.onload = () => cb({ nombre: file.name, tipo: file.type, b64: String(fr.result) }); fr.readAsDataURL(file); };
   // Cargar el remito del TRANSPORTE (Via Cargo, etc.) directo, sin generar el nuestro: valida con IA y confirma despacho.
   const cargarRemitoExterno = (file: File) => leerArchivo(file, async (archivo) => {
@@ -1765,24 +1765,31 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
   return (
     <div className="space-y-3">
       {/* Remito del TRANSPORTE (Via Cargo, etc.): cargar directo sin generar el nuestro → confirma despacho */}
-      {onRemitoExterno && (
+      {onRemitoExterno && (() => {
+        const reList: any[] = Array.isArray(remitosExternos) ? remitosExternos : [];
+        return (
         <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-2.5">
-          <div className="text-[11px] font-bold text-indigo-500 uppercase mb-1">🚚 Comprobante del transporte (sin remito propio)</div>
-          {remitoExterno ? (
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-emerald-700">📎 Cargado{remitoExterno.validacion ? (remitoExterno.validacion.tiene_firma_o_sello ? " · ✅ firma/sello" : " · ⚠️ sin firma/sello") : ""}{remitoExterno.enviada_at ? ` · ✉️ enviado${remitoExterno.email ? " a " + remitoExterno.email : ""}` : ""}</span>
-              <label className={`px-2 py-0.5 rounded border border-gray-300 text-xs font-semibold cursor-pointer hover:bg-gray-50 ${busy ? "opacity-40" : ""}`}>📎 Reemplazar<input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) cargarRemitoExterno(f); e.target.value = ""; }} /></label>
-              {onEnviarRemitoExterno && <button disabled={busy} onClick={onEnviarRemitoExterno} className="px-2 py-0.5 rounded border border-blue-300 text-blue-700 text-xs font-semibold hover:bg-blue-50">✉️ Enviar al cliente</button>}
-              {onEliminarRemitoExterno && <button disabled={busy} onClick={onEliminarRemitoExterno} className="px-2 py-0.5 rounded border border-red-300 text-red-600 text-xs font-semibold hover:bg-red-50">🗑 Quitar</button>}
+          <div className="text-[11px] font-bold text-indigo-500 uppercase mb-1">🚚 Comprobantes del transporte (sin remito propio)</div>
+          {reList.length > 0 ? (
+            <div className="space-y-1.5">
+              {reList.map((re: any, i: number) => (
+                <div key={re.id || i} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-emerald-700">📎 {re.nombre || `Comprobante ${i + 1}`}{re.validacion ? (re.validacion.tiene_firma_o_sello ? " · ✅ firma/sello" : " · ⚠️ sin firma/sello") : ""}{re.enviada_at ? ` · ✉️ enviado${re.email ? " a " + re.email : ""}` : ""}</span>
+                  {onEnviarRemitoExterno && <button disabled={busy} onClick={() => onEnviarRemitoExterno(re.id)} className="px-2 py-0.5 rounded border border-blue-300 text-blue-700 text-xs font-semibold hover:bg-blue-50">✉️ Enviar al cliente</button>}
+                  {onEliminarRemitoExterno && <button disabled={busy} onClick={() => onEliminarRemitoExterno(re.id)} className="px-2 py-0.5 rounded border border-red-300 text-red-600 text-xs font-semibold hover:bg-red-50">🗑 Quitar</button>}
+                </div>
+              ))}
+              <label className={`inline-block mt-1 px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold cursor-pointer hover:bg-indigo-700 ${busy ? "opacity-40" : ""}`}>＋ Agregar otro comprobante<input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) cargarRemitoExterno(f); e.target.value = ""; }} /></label>
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-gray-500">Si el transporte emite su propio comprobante (remito de Via Cargo, <b>ticket de despacho de Correo Argentino</b>, guía de Andreani, etc.), cargalo acá y el pedido queda <b>despachado</b> sin generar remito nuestro.</span>
+              <span className="text-xs text-gray-500">Si el transporte emite su propio comprobante (remito de Via Cargo, <b>ticket de despacho de Correo Argentino</b>, guía de Andreani, etc.), cargalo acá y el pedido queda <b>despachado</b> sin generar remito nuestro. Podés cargar <b>varios</b>.</span>
               <label className={`px-2.5 py-1 rounded-lg bg-indigo-600 text-white text-xs font-semibold cursor-pointer hover:bg-indigo-700 ${busy ? "opacity-40" : ""}`}>📎 Cargar comprobante del transporte<input type="file" accept="application/pdf,image/*" disabled={busy} className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) cargarRemitoExterno(f); e.target.value = ""; }} /></label>
             </div>
           )}
         </div>
-      )}
+        );
+      })()}
 
       {/* Remitos ya generados */}
       {legacyNumero ? (

@@ -131,6 +131,20 @@ async function clienteIdDe(sql: any, payload: any): Promise<number | null> {
   return pr[0]?.cliente_id ?? null;
 }
 
+// Comprobantes del transporte (sin remito propio): lista normalizada. Migra el single legacy
+// (`remito_externo_archivo`) al array `remito_externo_archivos` para soportar VARIOS.
+function normalizarRemitosExt(row: any): any[] {
+  const arr = Array.isArray(row?.remito_externo_archivos) ? row.remito_externo_archivos : [];
+  if (arr.length) return arr;
+  const lg = row?.remito_externo_archivo;
+  if (lg?.b64) return [{ id: "legacy", nombre: lg.nombre, tipo: lg.tipo, b64: lg.b64, at: lg.at, validacion: lg.validacion ?? null, enviada_at: lg.enviada_at ?? null, email: lg.email ?? null }];
+  return [];
+}
+// Meta liviana (sin el b64) que va al payload para que el front liste los comprobantes.
+function metasRemitosExt(arr: any[]): any[] {
+  return (arr || []).map((x) => ({ id: x.id, nombre: x.nombre, at: x.at, validacion: x.validacion ?? null, enviada_at: x.enviada_at ?? null, email: x.email ?? null }));
+}
+
 // C1 (OBJETIVO-99): emite `pedido.estado_cambiado` para que Envíos (email) y FEBO AI (WhatsApp)
 // avisen al cliente. Resuelve cliente_id + teléfono + email (de la ficha del cliente o del payload).
 // Idempotente por (pedido, estado) → cada transición avisa una sola vez. No manda el mail/WA acá.
@@ -273,6 +287,8 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         recibo_numero: payloadEnriq.recibo_numero || null, recibo_token: payloadEnriq.recibo_token || null, recibo_saldo: payloadEnriq.recibo_saldo ?? null,
         despacho_confirmado: !!payloadEnriq.despacho_confirmado, remito_preparado: !!payloadEnriq.remito_numero,
         remito_externo: payloadEnriq.remito_externo || null,
+        remitos_externos: Array.isArray(payloadEnriq.remitos_externos) ? payloadEnriq.remitos_externos
+          : (payloadEnriq.remito_externo ? [{ id: "legacy", ...payloadEnriq.remito_externo }] : []),
         desglose_iva,
         notas_credito, anulado_por_nc,
         es_ultimo,
@@ -923,21 +939,26 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (!arch?.b64) return NextResponse.json({ ok: false, error: "Falta el archivo del remito del transporte." }, { status: 400 });
       const validacion = b.validacion && typeof b.validacion === "object" ? b.validacion : null;
       await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS remito_externo_archivo JSONB`.catch(() => {});
-      const conf = { nombre: String(arch.nombre || "remito-transporte").slice(0, 120), tipo: String(arch.tipo || "application/octet-stream").slice(0, 60), b64: String(arch.b64), at: new Date().toISOString(), validacion };
-      const row = (await sql`SELECT estado FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
-      const meta = { nombre: conf.nombre, at: conf.at, validacion };
-      await sql`UPDATE fv_pedidos SET estado='enviado', remito_externo_archivo=${JSON.stringify(conf)}::jsonb,
-        payload = coalesce(payload,'{}'::jsonb) || ${JSON.stringify({ remito_externo: meta, despacho_completo: true, despacho_confirmado: true, remito_preparado: true })}::jsonb
+      await sql`ALTER TABLE fv_pedidos ADD COLUMN IF NOT EXISTS remito_externo_archivos JSONB`.catch(() => {});
+      const row = (await sql`SELECT remito_externo_archivo, remito_externo_archivos FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const arr = normalizarRemitosExt(row);   // migra el single legacy al array
+      const id = "r" + Date.now();
+      const nuevo = { id, nombre: String(arch.nombre || "remito-transporte").slice(0, 120), tipo: String(arch.tipo || "application/octet-stream").slice(0, 60), b64: String(arch.b64), at: new Date().toISOString(), validacion, enviada_at: null, email: null };
+      const full = [...arr, nuevo];
+      await sql`UPDATE fv_pedidos SET estado='enviado', remito_externo_archivo=NULL, remito_externo_archivos=${JSON.stringify(full)}::jsonb,
+        payload = (coalesce(payload,'{}'::jsonb) - 'remito_externo') || ${JSON.stringify({ remitos_externos: metasRemitosExt(full), despacho_completo: true, despacho_confirmado: true, remito_preparado: true })}::jsonb
         WHERE numero=${ref} RETURNING numero`;
-      return NextResponse.json({ ok: true });
+      return NextResponse.json({ ok: true, id });
     }
     // Enviar el remito del transporte por email al cliente.
     if (b.accion === "enviar_remito_externo") {
       if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
       const email = String(b.email || "").trim();
       if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return NextResponse.json({ ok: false, error: "Email inválido." }, { status: 400 });
-      const row = (await sql`SELECT payload, remito_externo_archivo, factura_numero FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
-      const conf = row?.remito_externo_archivo;
+      const row = (await sql`SELECT payload, remito_externo_archivo, remito_externo_archivos, factura_numero FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const arr = normalizarRemitosExt(row);
+      const id = String(b.id || "").trim();
+      const conf = (id ? arr.find((x: any) => x.id === id) : arr[0]) || arr[0];
       if (!conf?.b64) return NextResponse.json({ ok: false, error: "No hay remito del transporte cargado." }, { status: 409 });
       const cnombre = (row?.payload?.revendedor?.nombre || row?.payload?.cliente?.nombre || "");
       const b64 = String(conf.b64).split(",").pop() || "";
@@ -949,18 +970,23 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         <p style="margin-top:18px;color:#0b3d6b"><b>FEBECOS — Energía Solar</b></p></div>`;
       const r = await callSelector("mail_send_internal", { to: email, subject: `Confirmación de despacho — pedido ${ref}`, html, attachments: [{ filename: nombreArch, content: b64 }] });
       if (!r?.ok) return NextResponse.json({ ok: false, error: r?.error || "No se pudo enviar el email" }, { status: 502 });
-      const meta = { ...(row?.payload?.remito_externo || {}), enviada_at: new Date().toISOString(), email };
-      await sql`UPDATE fv_pedidos SET payload = coalesce(payload,'{}'::jsonb) || ${JSON.stringify({ remito_externo: meta })}::jsonb WHERE numero=${ref} RETURNING numero`;
+      const full = arr.map((x: any) => x.id === conf.id ? { ...x, enviada_at: new Date().toISOString(), email } : x);
+      await sql`UPDATE fv_pedidos SET remito_externo_archivos=${JSON.stringify(full)}::jsonb,
+        payload = (coalesce(payload,'{}'::jsonb) - 'remito_externo') || ${JSON.stringify({ remitos_externos: metasRemitosExt(full) })}::jsonb WHERE numero=${ref} RETURNING numero`;
       return NextResponse.json({ ok: true, email });
     }
     // Quitar el remito del transporte → el pedido vuelve a "pagado" (sin despacho).
     if (b.accion === "eliminar_remito_externo") {
       if (!esFv) return NextResponse.json({ ok: false, error: "solo FV por ahora" }, { status: 400 });
-      const row = (await sql`SELECT estado, payload FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const row = (await sql`SELECT estado, payload, remito_externo_archivo, remito_externo_archivos FROM fv_pedidos WHERE numero=${ref} LIMIT 1` as any[])[0];
+      const id = String(b.id || "").trim();
+      const arr = normalizarRemitosExt(row);
+      const full = id ? arr.filter((x: any) => x.id !== id) : arr.slice(0, -1);   // quita por id (o el último)
+      const quedanExternos = full.length > 0;
       const hayRemitos = ((row?.payload || {}).remitos || []).length > 0;
-      const nuevoEstado = row?.estado === "enviado" && !hayRemitos ? "pagado" : row?.estado;
-      await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, remito_externo_archivo=NULL,
-        payload = (coalesce(payload,'{}'::jsonb) - 'remito_externo') || ${JSON.stringify({ despacho_completo: hayRemitos, despacho_confirmado: false })}::jsonb
+      const nuevoEstado = (row?.estado === "enviado" && !hayRemitos && !quedanExternos) ? "pagado" : row?.estado;
+      await sql`UPDATE fv_pedidos SET estado=${nuevoEstado}, remito_externo_archivo=NULL, remito_externo_archivos=${JSON.stringify(full)}::jsonb,
+        payload = (coalesce(payload,'{}'::jsonb) - 'remito_externo') || ${JSON.stringify({ remitos_externos: metasRemitosExt(full), despacho_completo: hayRemitos || quedanExternos, despacho_confirmado: quedanExternos })}::jsonb
         WHERE numero=${ref} RETURNING numero`;
       return NextResponse.json({ ok: true });
     }
