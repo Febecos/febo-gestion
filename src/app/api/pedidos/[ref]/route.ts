@@ -75,16 +75,29 @@ function nombreSaludo(rev: any): string {
 // Kit de bomba: NETO de paneles (10,5%) calculado igual que el portal de bombas, leyendo del
 // PRESUPUESTO (descuento) + catálogo (precio del panel × cant). factor = 1 − descuento%/100.
 // Devuelve el neto de paneles, o null si no es un kit con panel en catálogo.
-async function netoPanelKit(sql: any, presupNum: string | null, totalConIva: number): Promise<number | null> {
+// Neto (sin IVA) de los PANELES del kit, para el split de IVA 10,5% (panel) / 21% (resto).
+// Multi-equipo (Portal): SUMA los paneles de TODAS las bombas del presupuesto, tomando los
+// códigos de los ítems `es_bomba` (cada equipo su bomba). Si no hay ítems es_bomba (presupuestos
+// viejos de 1 bomba) cae al `presupuestos.bomba_codigo` único → resultado IDÉNTICO al anterior.
+async function netoPanelKit(sql: any, presupNum: string | null, totalConIva: number, items?: any[]): Promise<number | null> {
   if (!presupNum || !(totalConIva > 0)) return null;
   try {
     const pr = (await sql`SELECT descuento_pct, bomba_codigo, tipo FROM presupuestos WHERE numero=${presupNum} LIMIT 1` as any[])[0];
     if (!pr || pr.tipo !== "bomba") return null;
-    const pump = (await sql`SELECT id, cant_paneles FROM pumps WHERE regexp_replace(lower(codigo),'[[:space:]]','','g')=regexp_replace(lower(${pr.bomba_codigo || ""}),'[[:space:]]','','g') LIMIT 1` as any[])[0];
-    if (!pump) return null;
-    const panRow = (await sql`SELECT cc.precio_ars, pc.cantidad FROM pump_components pc JOIN components cc ON cc.id=pc.component_id WHERE pc.pump_id=${pump.id} AND lower(cc.familia)='panel' LIMIT 1` as any[])[0];
-    const cantPan = Number(pump.cant_paneles) || Number(panRow?.cantidad) || 0;
-    const panelPublico = (Number(panRow?.precio_ars) || 0) * cantPan;
+    // Códigos de bomba: de los ítems es_bomba (multi-equipo) o el bomba_codigo único (legacy).
+    const deItems = Array.isArray(items)
+      ? items.filter((it) => it && it.es_bomba).map((it) => String(it.bomba_codigo || it.codigo || "").trim()).filter(Boolean)
+      : [];
+    const codigos = deItems.length ? deItems : (pr.bomba_codigo ? [String(pr.bomba_codigo)] : []);
+    if (!codigos.length) return null;
+    let panelPublico = 0;
+    for (const cod of codigos) {
+      const pump = (await sql`SELECT id, cant_paneles FROM pumps WHERE regexp_replace(lower(codigo),'[[:space:]]','','g')=regexp_replace(lower(${cod}),'[[:space:]]','','g') LIMIT 1` as any[])[0];
+      if (!pump) continue;
+      const panRow = (await sql`SELECT cc.precio_ars, pc.cantidad FROM pump_components pc JOIN components cc ON cc.id=pc.component_id WHERE pc.pump_id=${pump.id} AND lower(cc.familia)='panel' LIMIT 1` as any[])[0];
+      const cantPan = Number(pump.cant_paneles) || Number(panRow?.cantidad) || 0;
+      panelPublico += (Number(panRow?.precio_ars) || 0) * cantPan;
+    }
     const factor = 1 - (Number(pr.descuento_pct) || 0) / 100;
     const panelEnPrecio = panelPublico * factor;
     if (!(panelEnPrecio > 0 && panelEnPrecio < totalConIva)) return null;
@@ -238,7 +251,7 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
       let desglose_iva: any = null;
       const totG = payloadEnriq.totales || {};
       if (Number(totG.total) > 0 && !(Number(totG.neto) > 0)) {
-        const pn = await netoPanelKit(sql, payloadEnriq.presupuesto_numero || null, Number(totG.total));
+        const pn = await netoPanelKit(sql, payloadEnriq.presupuesto_numero || null, Number(totG.total), payloadEnriq.items);
         if (pn && pn > 0) {
           const sp = splitPanelResto(Number(totG.total), pn);
           desglose_iva = { neto: sp.neto, iva: +sp.iva_detalle.reduce((a, d) => a + d.monto, 0).toFixed(2), iva_detalle: sp.iva_detalle, total: Number(totG.total) };
@@ -1059,7 +1072,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const arsNatP = (tot?.tc == null) && (tot?.moneda === "ARS" || tot?.moneda === "$") && Number(tot?.total) > 0;
       // Kit de bomba: neto de paneles (10,5%). Manual (b.split_panel_neto) o leído del presupuesto+catálogo.
       let panelNetoP = Number(b.split_panel_neto) || 0;
-      if (!panelNetoP && Number(tot?.total) > 0) panelNetoP = (await netoPanelKit(sql, pl.presupuesto_numero || null, Number(tot.total))) || 0;
+      if (!panelNetoP && Number(tot?.total) > 0) panelNetoP = (await netoPanelKit(sql, pl.presupuesto_numero || null, Number(tot.total), pl.items)) || 0;
       let totP: any, convP: (n: any) => number;
       if (panelNetoP > 0 && Number(tot?.total) > 0) {
         const sp = splitPanelResto(Number(tot.total), panelNetoP);
@@ -1183,7 +1196,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const arsNatF = (tot?.tc == null) && (tot?.moneda === "ARS" || tot?.moneda === "$") && Number(tot?.total) > 0;
       // Kit de bomba: neto paneles (10,5%) manual o leído del presupuesto+catálogo (igual que el preview).
       let panelNetoF = Number(b.split_panel_neto) || 0;
-      if (!panelNetoF && Number(tot?.total) > 0) panelNetoF = (await netoPanelKit(sql, pl.presupuesto_numero || null, Number(tot.total))) || 0;
+      if (!panelNetoF && Number(tot?.total) > 0) panelNetoF = (await netoPanelKit(sql, pl.presupuesto_numero || null, Number(tot.total), pl.items)) || 0;
       let totF: any, convF: (n: any) => number;
       if (panelNetoF > 0 && Number(tot?.total) > 0) {
         const sp = splitPanelResto(Number(tot.total), panelNetoF);
