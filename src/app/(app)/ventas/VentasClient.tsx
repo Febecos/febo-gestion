@@ -461,7 +461,6 @@ function PasosPedido({ p }: { p: any }) {
 function Pedidos() {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
-  const [fEv, setFEv] = useState(false);
   const { openFicha } = useWindows();
   const load = () => fetch("/api/pedidos").then(safeJson).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); });
   useEffect(() => { load(); }, []);
@@ -469,10 +468,7 @@ function Pedidos() {
   useEffect(() => { const onFocus = () => load(); window.addEventListener("focus", onFocus); return () => window.removeEventListener("focus", onFocus); }, []);
   return (
     <>
-    <div className="flex justify-between items-center mb-2">
-      <button onClick={() => setFEv(true)} title="Emitir una factura suelta cargando los ítems a mano (kit puntual, etc.)" className="px-3 py-1.5 rounded-lg bg-febo-azul text-white text-sm font-semibold">➕ Factura eventual</button>
-      <button onClick={load} className="text-sm text-febo-azul hover:underline">🔄 Actualizar</button>
-    </div>
+    <div className="flex justify-end mb-2"><button onClick={load} className="text-sm text-febo-azul hover:underline">🔄 Actualizar</button></div>
     <Tabla loading={loading} count={rows.length} unidad="pedidos"
       cols={["Origen", "Número", "Cliente", "Detalle", "Estado", "Avance", "Fecha", "Total", ""]}>
       {rows.map((p, i) => (
@@ -499,7 +495,6 @@ function Pedidos() {
       ))}
     </Tabla>
     {sel && <PedidoModal refId={sel} onClose={() => setSel(null)} onChanged={load} />}
-    {fEv && <FacturaEventualModal onClose={() => setFEv(false)} onDone={load} />}
     </>
   );
 }
@@ -1965,6 +1960,7 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
   const { openFicha } = useWindows();
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(0);
+  const [fEv, setFEv] = useState(false);
   const cargar = () => { setLoading(true); fetch("/api/ventas?tipo=" + tipo).then(safeJson).then((d) => { setRows(d.ok ? d.comprobantes : []); setLoading(false); }); };
   useEffect(() => { cargar(); }, [tipo]);
   const [exp, setExp] = useState<number | null>(null);
@@ -1991,8 +1987,15 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(0); }
   };
   return (
+    <>
+    {esFactura && (
+      <div className="flex justify-between items-center mb-2">
+        <button onClick={() => setFEv(true)} title="Emitir una factura suelta cargando los ítems a mano (kit puntual, etc.)" className="px-3 py-1.5 rounded-lg bg-febo-azul text-white text-sm font-semibold">➕ Nueva factura eventual</button>
+        <button onClick={cargar} className="text-sm text-febo-azul hover:underline">🔄 Actualizar</button>
+      </div>
+    )}
     <Tabla loading={loading} count={rows.length} unidad={titulo.toLowerCase()}
-      cols={["Número", "Cliente", "Estado", "Fecha", "Total", ""]} vacio={`Todavía no hay ${titulo.toLowerCase()} (se generan desde un pedido).`}>
+      cols={["Número", "Cliente", "Estado", "Fecha", "Total", ""]} vacio={esFactura ? "Todavía no hay facturas. Se generan desde un pedido, o con ➕ Nueva factura eventual." : `Todavía no hay ${titulo.toLowerCase()} (se generan desde un pedido).`}>
       {rows.map((c) => {
         const notas: any[] = Array.isArray(c.notas) ? c.notas : [];
         const nc = notas.find((n) => n.tipo === "nota_credito");
@@ -2049,6 +2052,8 @@ function Comprobantes({ tipo, titulo }: { tipo: string; titulo: string }) {
         );
       })}
     </Tabla>
+    {fEv && <FacturaEventualModal onClose={() => setFEv(false)} onDone={cargar} />}
+    </>
   );
 }
 
