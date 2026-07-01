@@ -461,6 +461,7 @@ function PasosPedido({ p }: { p: any }) {
 function Pedidos() {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<string | null>(null);
+  const [fEv, setFEv] = useState(false);
   const { openFicha } = useWindows();
   const load = () => fetch("/api/pedidos").then(safeJson).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); });
   useEffect(() => { load(); }, []);
@@ -468,7 +469,10 @@ function Pedidos() {
   useEffect(() => { const onFocus = () => load(); window.addEventListener("focus", onFocus); return () => window.removeEventListener("focus", onFocus); }, []);
   return (
     <>
-    <div className="flex justify-end mb-2"><button onClick={load} className="text-sm text-febo-azul hover:underline">🔄 Actualizar</button></div>
+    <div className="flex justify-between items-center mb-2">
+      <button onClick={() => setFEv(true)} title="Emitir una factura suelta cargando los ítems a mano (kit puntual, etc.)" className="px-3 py-1.5 rounded-lg bg-febo-azul text-white text-sm font-semibold">➕ Factura eventual</button>
+      <button onClick={load} className="text-sm text-febo-azul hover:underline">🔄 Actualizar</button>
+    </div>
     <Tabla loading={loading} count={rows.length} unidad="pedidos"
       cols={["Origen", "Número", "Cliente", "Detalle", "Estado", "Avance", "Fecha", "Total", ""]}>
       {rows.map((p, i) => (
@@ -495,6 +499,7 @@ function Pedidos() {
       ))}
     </Tabla>
     {sel && <PedidoModal refId={sel} onClose={() => setSel(null)} onChanged={load} />}
+    {fEv && <FacturaEventualModal onClose={() => setFEv(false)} onDone={load} />}
     </>
   );
 }
@@ -1698,6 +1703,82 @@ function RevisionFacturaModal({ data, onClose }: { data: any; onClose: () => voi
     </div>
   );
 }
+// ── FACTURA EVENTUAL / SUELTA (sin pedido): ítems cargados a mano, precio neto o final c/IVA ──
+function FacturaEventualModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [cliQ, setCliQ] = useState(""); const [cliOpts, setCliOpts] = useState<any[]>([]); const [cli, setCli] = useState<any>(null);
+  const [moneda, setMoneda] = useState("ARS"); const [tc, setTc] = useState("");
+  const [tals, setTals] = useState<any[]>([]); const [talId, setTalId] = useState<number>(0);
+  const [items, setItems] = useState<any[]>([{ descripcion: "", cantidad: 1, iva_pct: 21, precio: "", modo: "neto" }]);
+  const [prev, setPrev] = useState<any>(null); const [borrador, setBorrador] = useState<any>(null);
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState("");
+
+  useEffect(() => { fetch("/api/talonarios").then((r) => r.json()).then((d) => setTals((d.talonarios || d.rows || []).filter((t: any) => /^F/.test(t.tipo_codigo || "")))).catch(() => {}); }, []);
+  useEffect(() => { const q = cliQ.trim(); if (q.length < 2) { setCliOpts([]); return; } const t = setTimeout(() => { fetch("/api/clientes?q=" + encodeURIComponent(q) + "&limit=8").then((r) => r.json()).then((d) => setCliOpts(d.clientes || d.rows || [])).catch(() => {}); }, 250); return () => clearTimeout(t); }, [cliQ]);
+
+  const lineNeto = (it: any) => { const p = Number(it.precio) || 0; const c = Number(it.cantidad) || 1; const pct = Number(it.iva_pct) || 0; const unit = it.modo === "final" ? p / (1 + pct / 100) : p; return +(unit * c).toFixed(2); };
+  const byPct: Record<string, number> = {}; for (const it of items) { const s = lineNeto(it); if (s > 0) byPct[String(it.iva_pct)] = (byPct[String(it.iva_pct)] || 0) + s; }
+  const netoLocal = Object.values(byPct).reduce((a, b) => a + b, 0);
+  const ivaLocal = Object.entries(byPct).reduce((a, [p, b]) => a + b * (Number(p) / 100), 0);
+  const totalLocal = netoLocal + ivaLocal;
+  const fmtM = (n: number) => (moneda === "ARS" ? "$ " : "USD ") + Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const body = () => ({ receptor_cliente_id: cli?.id, talonario_id: talId || undefined, moneda, tc: moneda === "ARS" ? (Number(tc) || undefined) : undefined, items: items.map((it) => ({ descripcion: it.descripcion, cantidad: Number(it.cantidad) || 1, subtotal: lineNeto(it), iva_pct: Number(it.iva_pct) || 0 })) });
+  const post = async (accion: string, extra?: any) => { setBusy(true); const r = await fetch("/api/facturas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion, ...(extra || body()) }) }); const d = await r.json().catch(() => ({ ok: false, error: "error" })); setBusy(false); return d; };
+  const revisar = async () => { setMsg(""); const d = await post("revisar"); if (!d.ok) { setMsg("⚠️ " + d.error); setPrev(null); return; } setPrev(d); };
+  const emitir = async () => { if (!confirm("¿Emitir la factura eventual?")) return; setMsg(""); const d = await post("emitir"); if (!d.ok) { setMsg("⚠️ " + d.error); return; } if (d.borrador) { setBorrador(d); setMsg("📝 Borrador creado — autorizá a ARCA para el CAE."); } else { alert("✅ Factura emitida: " + d.factura_numero); onDone(); onClose(); } };
+  const autorizar = async () => { if (!borrador || !confirm("¿Autorizar y enviar a ARCA (emite el CAE)?")) return; setMsg(""); const d = await post("autorizar", { comprobante_id: borrador.comprobante_id }); if (!d.ok) { setMsg("⚠️ ARCA: " + (d.error || "") + (d.errores?.length ? " — " + d.errores.map((e: any) => e.msg).join("; ") : "")); return; } alert("✅ Factura autorizada: " + d.factura_numero + (d.cae ? " · CAE " + d.cae : "")); onDone(); onClose(); };
+
+  const setIt = (i: number, k: string, v: any) => setItems(items.map((x, j) => j === i ? { ...x, [k]: v } : x));
+  const inp = "border border-gray-300 rounded px-2 py-1 text-sm";
+  return (<div className="fixed inset-0 z-[130] bg-black/50 flex items-start justify-center p-4 overflow-y-auto" onClick={onClose}>
+    <div className="bg-white rounded-xl w-full max-w-2xl shadow-2xl my-6" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-febo-azul text-white rounded-t-xl px-5 py-3 flex items-center justify-between"><div className="font-bold">➕ Nueva factura eventual</div><button onClick={onClose} className="text-white/80 text-xl">✕</button></div>
+      <div className="p-4 space-y-3 text-sm">
+        <div>
+          <label className="block text-[11px] font-semibold text-gray-500 mb-0.5">Cliente receptor *</label>
+          {cli ? <div className="flex items-center gap-2"><span className="font-semibold">{cli.razon_social || cli.nombre}</span><span className="text-xs text-gray-500">{cli.condicion_fiscal || "sin cond. fiscal"}{cli.cuit ? " · " + cli.cuit : ""}</span><button onClick={() => { setCli(null); setPrev(null); }} className="text-xs text-red-500">cambiar</button></div>
+          : <div className="relative"><input value={cliQ} onChange={(e) => setCliQ(e.target.value)} placeholder="Buscar por nombre / CUIT…" className={inp + " w-full"} />
+              {cliOpts.length > 0 && <div className="absolute z-10 mt-1 w-full bg-white border rounded-lg shadow max-h-48 overflow-auto">{cliOpts.map((c: any) => <button key={c.id} onClick={() => { setCli(c); setCliQ(""); setCliOpts([]); }} className="block w-full text-left px-3 py-1.5 hover:bg-blue-50 text-sm">{c.razon_social || c.nombre} <span className="text-xs text-gray-400">{c.condicion_fiscal || "—"}{c.cuit ? " · " + c.cuit : ""}</span></button>)}</div>}
+            </div>}
+        </div>
+        <div className="flex flex-wrap gap-2 items-end">
+          <div><label className="block text-[11px] font-semibold text-gray-500 mb-0.5">Talonario</label><select value={talId} onChange={(e) => setTalId(Number(e.target.value))} className={inp}><option value={0}>Auto (por condición)</option>{tals.map((t: any) => <option key={t.id} value={t.id}>{t.tipo_nombre || t.tipo_codigo} · {String(t.sucursal || "1").replace(/\D/g, "").padStart(4, "0")}</option>)}</select></div>
+          <div><label className="block text-[11px] font-semibold text-gray-500 mb-0.5">Moneda</label><select value={moneda} onChange={(e) => setMoneda(e.target.value)} className={inp}><option value="ARS">Pesos ($)</option><option value="USD">USD</option></select></div>
+          {moneda === "ARS" && <div><label className="block text-[11px] font-semibold text-gray-500 mb-0.5">TC (opcional)</label><input value={tc} onChange={(e) => setTc(e.target.value)} type="number" placeholder="dólar" className={inp + " w-24"} /></div>}
+        </div>
+        <div>
+          <div className="flex items-center justify-between mb-1"><label className="text-[11px] font-semibold text-gray-500">Ítems</label><button onClick={() => setItems([...items, { descripcion: "", cantidad: 1, iva_pct: 21, precio: "", modo: "neto" }])} className="text-xs text-febo-azul font-semibold">＋ Agregar ítem</button></div>
+          <div className="space-y-1.5">
+            {items.map((it, i) => (<div key={i} className="grid grid-cols-12 gap-1 items-center">
+              <input value={it.descripcion} onChange={(e) => setIt(i, "descripcion", e.target.value)} placeholder="Descripción" className={inp + " col-span-4"} />
+              <input value={it.cantidad} onChange={(e) => setIt(i, "cantidad", e.target.value)} type="number" title="Cantidad" className={inp + " col-span-1 text-center"} />
+              <select value={it.iva_pct} onChange={(e) => setIt(i, "iva_pct", e.target.value)} className={inp + " col-span-2"} title="Alícuota IVA"><option value={21}>21%</option><option value={10.5}>10,5%</option><option value={0}>0% exento</option></select>
+              <input value={it.precio} onChange={(e) => setIt(i, "precio", e.target.value)} type="number" placeholder="precio" className={inp + " col-span-2 text-right"} />
+              <select value={it.modo} onChange={(e) => setIt(i, "modo", e.target.value)} className={inp + " col-span-2"} title="¿El precio es neto o final c/IVA?"><option value="neto">Neto s/IVA</option><option value="final">Final c/IVA</option></select>
+              <button onClick={() => setItems(items.length > 1 ? items.filter((_, j) => j !== i) : items)} className="col-span-1 text-red-400 hover:text-red-600 text-center">🗑</button>
+              <div className="col-span-12 text-[11px] text-gray-400 text-right -mt-1">neto línea: {fmtM(lineNeto(it))}</div>
+            </div>))}
+          </div>
+        </div>
+        <div className="bg-gray-50 rounded-lg p-2">
+          <div className="flex justify-between"><span className="text-gray-500">Neto</span><b>{fmtM(netoLocal)}</b></div>
+          <div className="flex justify-between"><span className="text-gray-500">IVA</span><b>{fmtM(ivaLocal)}</b></div>
+          <div className="flex justify-between text-base"><span className="font-semibold text-febo-azul">TOTAL</span><b className="text-febo-azul">{fmtM(totalLocal)}</b></div>
+          <div className="text-[11px] text-gray-400 mt-1">Preview en vivo. "🔍 Revisar" pide el desglose oficial del motor (dry-run) antes de emitir.</div>
+        </div>
+        {prev && <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2"><div className="font-semibold text-emerald-700 mb-0.5">🔍 Revisado · Factura {prev.letra}{prev.electronica ? " · electrónica (CAE)" : " · manual"}</div><div className="flex justify-between"><span>Neto</span><b>{fmtM(prev.montos.neto)}</b></div>{(prev.montos.iva || []).map((d: any, i: number) => <div key={i} className="flex justify-between text-gray-600"><span>IVA {d.pct}%</span><span>{fmtM(d.monto)}</span></div>)}<div className="flex justify-between"><span className="font-semibold">TOTAL</span><b>{fmtM(prev.montos.total)}</b></div></div>}
+        {msg && <div style={{ color: msg.startsWith("⚠️") ? "#dc2626" : "#0b3d6b" }}>{msg}</div>}
+      </div>
+      <div className="px-4 py-3 border-t flex justify-end gap-2">
+        <button onClick={onClose} className="px-4 py-2 rounded-lg border text-sm">Cerrar</button>
+        {!borrador && <button disabled={busy || !cli} onClick={revisar} className="px-4 py-2 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold disabled:opacity-40">🔍 Revisar</button>}
+        {!borrador && <button disabled={busy || !cli} onClick={emitir} className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-40">{busy ? "…" : "Emitir"}</button>}
+        {borrador && <button disabled={busy} onClick={autorizar} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40">{busy ? "…" : "✅ Autorizar ARCA (CAE)"}</button>}
+      </div>
+    </div>
+  </div>);
+}
+
 function Cell({ l, v }: { l: string; v: React.ReactNode }) {
   return <div><div className="text-[10px] uppercase text-gray-400">{l}</div><div className="text-gray-800">{v}</div></div>;
 }
