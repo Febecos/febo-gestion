@@ -4,12 +4,13 @@ import { useEffect, useState, useCallback } from "react";
 const EST: Record<string, [string, string]> = {
   pendiente: ["⏳ Pendiente", "#d97706"], enviado: ["📤 Enviado", "#2563eb"], confirmado: ["✅ Confirmado", "#0891b2"],
   pagado: ["💳 Pagado", "#7c3aed"], recibido_ok: ["✔ Recibido OK", "#16a34a"], recibido_diferencias: ["⚠️ Recibido c/dif.", "#ea580c"],
+  stock_propio: ["🏬 Stock propio", "#16a34a"], anulado: ["❌ Anulado", "#6b7280"],
 };
 const chip = (e: string) => { const [l, c] = EST[e] || [e, "#888"]; return <span style={{ background: c + "22", color: c }} className="rounded px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">{l}</span>; };
 // Semáforo de pasos del pedido a proveedor (acumulativo).
 const PASOS_PROV: [string, string][] = [["📤", "Enviado al proveedor"], ["✅", "Proveedor confirmó"], ["💳", "Pagado"], ["📦", "Recibido"]];
 const rankProv = (e: string) => (({ pendiente: 0, enviado: 1, confirmado: 2, pagado: 3, recibido_ok: 4, recibido_diferencias: 4 } as Record<string, number>)[e] ?? 0);
-const PasosProv = ({ e }: { e: string }) => e === "anulado" ? null : (
+const PasosProv = ({ e }: { e: string }) => (e === "anulado" || e === "stock_propio") ? null : (
   <span className="ml-2 inline-flex gap-0.5 align-middle">
     {PASOS_PROV.map(([ic, t], i) => <span key={i} title={t} className="text-xs" style={{ opacity: rankProv(e) >= i + 1 ? 1 : 0.22, filter: rankProv(e) >= i + 1 ? "none" : "grayscale(1)" }}>{ic}</span>)}
   </span>
@@ -242,14 +243,23 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
   const proformas: any[] = Array.isArray(p.proformas) ? p.proformas : [];
   const confirmadosSet = new Set(proformas.flatMap((pf: any) => (pf.items || []).map(String)));
   const pendientes = items.filter((it: any) => !confirmadosSet.has(String(it.codigo)));
+  const esSinProveedor = /sin proveedor/i.test(p.proveedor || "");
   const agregarProforma = async () => {
     const sel = pendientes.filter((it: any) => conf[it.codigo] !== false).map((it: any) => it.codigo);
     if (!sel.length) { alert("Marcá al menos un ítem para esta proforma."); return; }
-    if (!numProf.trim()) { alert("Ingresá el N° de proforma."); return; }
-    if (!montoSolic) { alert("Ingresá el monto de la proforma."); return; }
-    if (moneda === "ARS" && !Number(tc)) { alert("Ingresá el TC (cotización en $)."); return; }
-    const d = await post({ accion: "agregar_proforma", numero: numProf, moneda, monto: Number(montoSolic), tc: Number(tc) || 0, proforma, items: sel });
+    // "Sin proveedor" (stock propio): no exige N° ni monto → proforma interna.
+    if (!esSinProveedor) {
+      if (!numProf.trim()) { alert("Ingresá el N° de proforma."); return; }
+      if (!montoSolic) { alert("Ingresá el monto de la proforma."); return; }
+      if (moneda === "ARS" && !Number(tc)) { alert("Ingresá el TC (cotización en $)."); return; }
+    }
+    const d = await post({ accion: "agregar_proforma", numero: numProf.trim() || (esSinProveedor ? "INTERNA" : ""), moneda, monto: Number(montoSolic) || 0, tc: Number(tc) || 0, proforma, items: sel });
     if (d) { setNumProf(""); setMontoSolic(""); setTc(""); setProforma(null); setConf({}); }
+  };
+  const cubrirStockPropio = async () => {
+    if (!confirm("¿Cubrir este pedido con STOCK PROPIO?\n\nConfirma TODOS los ítems como proforma interna y CIERRA la operación (no se compra a ningún proveedor, no descuenta stock acá). Saltea Pago / Factura / Recepción.")) return;
+    const d = await post({ accion: "cubrir_stock_propio" });
+    if (d) { setSolapa("detalle"); }
   };
   const eliminarProforma = async (idx: number) => {
     if (!confirm("¿Eliminar esta proforma? Se recalculan los ítems confirmados y la cuenta corriente.")) return;
@@ -390,6 +400,14 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
           {solapa === "confirmar" && (
             <Paso n="②" t="Confirmación del proveedor — proformas por ítems" on={true}>
               <div className="space-y-3">
+                {/* Cubrir con STOCK PROPIO: cierra la operación sin comprar a un proveedor. */}
+                {p.estado !== "stock_propio" && (
+                  <div className={`rounded-lg border p-2.5 flex flex-wrap items-center gap-2 ${esSinProveedor ? "border-emerald-300 bg-emerald-50" : "border-gray-200 bg-gray-50"}`}>
+                    <span className="text-xs text-gray-600 flex-1 min-w-[180px]">{esSinProveedor ? "🏬 Pedido «Sin proveedor» → cubrilo con tu inventario propio." : "🏬 ¿Lo cubrís con stock propio? (sin comprarle a un proveedor)"}</span>
+                    <button disabled={busy} onClick={cubrirStockPropio} title="Confirma todos los ítems como proforma interna y cierra la operación como válida, sin comprar a un proveedor y sin descontar stock acá. Saltea Pago/Factura/Recepción." className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50">✅ Cubrir con stock propio</button>
+                  </div>
+                )}
+                {p.estado === "stock_propio" && <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-2.5 text-sm text-emerald-800 font-semibold">🏬 Cubierto con stock propio — operación cerrada (sin compra a proveedor).</div>}
                 {/* Proformas ya cargadas (read-only + eliminar para corregir) */}
                 {proformas.length > 0 && (
                   <div className="space-y-2">

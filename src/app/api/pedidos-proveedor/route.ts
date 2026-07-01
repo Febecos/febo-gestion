@@ -9,7 +9,7 @@ async function syncProveedorConfirmado(sql: any, fvNumero: string | null) {
   if (!fvNumero) return;
   const refs = String(fvNumero).split(/[,;]/).map((s) => s.trim().replace(/^FV-/i, "")).filter((r) => /^PED-/i.test(r));
   if (!refs.length) return;
-  const CONF = ["confirmado", "pagado", "recibido_ok", "recibido_diferencias"];
+  const CONF = ["confirmado", "pagado", "recibido_ok", "recibido_diferencias", "stock_propio"];
   const todas = (await sql`SELECT fv_numero, estado FROM pedidos_proveedores WHERE fv_numero IS NOT NULL AND COALESCE(estado,'') <> 'anulado'` as any[]);
   for (const ref of refs) {
     const mine = todas.filter((r) => String(r.fv_numero).split(/[,;]/).map((s: string) => s.trim().replace(/^FV-/i, "")).includes(ref));
@@ -178,7 +178,7 @@ export async function GET(req: NextRequest) {
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
 
-const ESTADOS = ["pendiente", "confirmado", "pagado", "recibido_ok", "recibido_diferencias", "enviado"];
+const ESTADOS = ["pendiente", "confirmado", "pagado", "recibido_ok", "recibido_diferencias", "enviado", "stock_propio", "anulado"];
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -291,6 +291,23 @@ export async function PATCH(req: NextRequest) {
     }
 
     // Agregar una PROFORMA (confirmación parcial): N° + PDF + monto + ítems. Varias por pedido.
+    // "Cubrir con stock propio": el pedido NO se le compra a nadie (ej. "Sin proveedor") → se cubre
+    // con inventario propio. Cierra la operación como válida (proforma INTERNA sobre TODOS los ítems),
+    // SIN número/monto, SIN cuenta corriente y SIN descontar stock (el descuento va por la venta/entrega,
+    // confirmado con Guille → evita doble descuento). Marca el pedido de cliente como proveedor-confirmado.
+    if (accion === "cubrir_stock_propio") {
+      const row = (await sql`SELECT fv_numero, items FROM pedidos_proveedores WHERE id=${id} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
+      const allItems = (row.items || []).map((it: any) => String(it.codigo));
+      const pfInterna = { numero: "INTERNA", interna: true, archivo: null, moneda: "USD", monto: null, monto_usd: null, tc: null, items: allItems, fecha: new Date().toISOString(), nota: "Cubierto con stock propio" };
+      const items_confirmados = allItems.map((c: string) => ({ codigo: c, confirmado: true }));
+      // Libera cualquier deuda de proforma previa (ej. proforma dummy) y cierra como stock propio.
+      await ensureCtaCte(sql); await delMovPrefijo(sql, `ppprof:${id}:`).catch(() => {});
+      await sql`UPDATE pedidos_proveedores SET estado='stock_propio', proformas=${JSON.stringify([pfInterna])}::jsonb, items_confirmados=${JSON.stringify(items_confirmados)}::jsonb WHERE id=${id}`;
+      await syncProveedorConfirmado(sql, row.fv_numero);
+      return NextResponse.json({ ok: true, estado: "stock_propio" });
+    }
+
     if (accion === "agregar_proforma") {
       await ensureCtaCte(sql);
       const row = (await sql`SELECT proveedor, gsa_numero, fv_numero, items, COALESCE(proformas,'[]'::jsonb) AS proformas FROM pedidos_proveedores WHERE id=${id} LIMIT 1` as any[])[0];
@@ -381,7 +398,10 @@ export async function PATCH(req: NextRequest) {
           aviso = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON" }));
         } catch (e: any) { aviso = { ok: false, error: e.message }; }
       }
-      await sql`UPDATE pedidos_proveedores SET estado='anulado' WHERE id=${id}`;
+      // Libera las proformas asociadas y borra su deuda en cuenta corriente (no le compramos a nadie).
+      await ensureCtaCte(sql);
+      await delMovPrefijo(sql, `ppprof:${id}:`).catch(() => {});
+      await sql`UPDATE pedidos_proveedores SET estado='anulado', proformas='[]'::jsonb, items_confirmados='[]'::jsonb WHERE id=${id}`;
       return NextResponse.json({ ok: true, aviso, avisado: yaSalio && !!emailAviso && !b.no_email });
     }
     // Cargar la factura del proveedor (PDF/imagen): la LEE con IA (leer_factura del selector)
