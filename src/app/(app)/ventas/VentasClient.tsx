@@ -1706,6 +1706,10 @@ function FacturaEventualModal({ onClose, onDone }: { onClose: () => void; onDone
   const [items, setItems] = useState<any[]>([{ descripcion: "", cantidad: 1, iva_pct: 21, precio: "", modo: "neto" }]);
   const [prev, setPrev] = useState<any>(null); const [borrador, setBorrador] = useState<any>(null);
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState("");
+  // Proceso visible (pasos animados) + errores ARCA inline, como la facturación normal.
+  const [proc, setProc] = useState<null | { pasos: string[]; fase: number; estado: "run" | "ok" | "error"; titulo: string }>(null);
+  const [arca, setArca] = useState<null | { caida: boolean; rechazo: boolean; detalle: { code: string; msg: string }[]; err: string }>(null);
+  const [okRes, setOkRes] = useState<any>(null);
 
   useEffect(() => { fetch("/api/talonarios").then((r) => r.json()).then((d) => setTals((d.talonarios || d.rows || []).filter((t: any) => /^F/.test(t.tipo_codigo || "")))).catch(() => {}); }, []);
   useEffect(() => { const q = cliQ.trim(); if (q.length < 2) { setCliOpts([]); return; } const t = setTimeout(() => { fetch("/api/clientes?q=" + encodeURIComponent(q) + "&limit=8").then((r) => r.json()).then((d) => setCliOpts(d.clientes || d.rows || [])).catch(() => {}); }, 250); return () => clearTimeout(t); }, [cliQ]);
@@ -1720,8 +1724,29 @@ function FacturaEventualModal({ onClose, onDone }: { onClose: () => void; onDone
   const body = () => ({ receptor_cliente_id: cli?.id, talonario_id: talId || undefined, moneda, tc: moneda === "ARS" ? (Number(tc) || undefined) : undefined, items: items.map((it) => ({ descripcion: it.descripcion, cantidad: Number(it.cantidad) || 1, subtotal: lineNeto(it), iva_pct: Number(it.iva_pct) || 0 })) });
   const post = async (accion: string, extra?: any) => { setBusy(true); const r = await fetch("/api/facturas", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion, ...(extra || body()) }) }); const d = await r.json().catch(() => ({ ok: false, error: "error" })); setBusy(false); return d; };
   const revisar = async () => { setMsg(""); const d = await post("revisar"); if (!d.ok) { setMsg("⚠️ " + d.error); setPrev(null); return; } setPrev(d); };
-  const emitir = async () => { if (!confirm("¿Emitir la factura eventual?")) return; setMsg(""); const d = await post("emitir"); if (!d.ok) { setMsg("⚠️ " + d.error); return; } if (d.borrador) { setBorrador(d); setMsg("📝 Borrador creado — autorizá a ARCA para el CAE."); } else { alert("✅ Factura emitida: " + d.factura_numero); onDone(); onClose(); } };
-  const autorizar = async () => { if (!borrador || !confirm("¿Autorizar y enviar a ARCA (emite el CAE)?")) return; setMsg(""); const d = await post("autorizar", { comprobante_id: borrador.comprobante_id }); if (!d.ok) { setMsg("⚠️ ARCA: " + (d.error || "") + (d.errores?.length ? " — " + d.errores.map((e: any) => e.msg).join("; ") : "")); return; } alert("✅ Factura autorizada: " + d.factura_numero + (d.cae ? " · CAE " + d.cae : "")); onDone(); onClose(); };
+  // Corre una acción mostrando los pasos animados mientras el POST está en vuelo.
+  const correr = async (pasos: string[], titulo: string, accion: string, extra?: any) => {
+    setMsg(""); setArca(null); setOkRes(null);
+    setProc({ pasos, fase: 0, estado: "run", titulo });
+    const tick = setInterval(() => setProc((p) => p ? { ...p, fase: Math.min(p.fase + 1, p.pasos.length - 1) } : p), 800);
+    const d = await post(accion, extra);
+    clearInterval(tick);
+    return d;
+  };
+  const emitir = async () => {
+    const d = await correr(["Preparando el comprobante", "Emitiendo la factura", "Registrando en cuenta corriente"], "Emitiendo factura", "emitir");
+    if (!d.ok) { setProc((p) => p ? { ...p, estado: "error" } : p); setArca({ caida: false, rechazo: false, detalle: [], err: d.error || "No se pudo emitir" }); return; }
+    if (d.borrador) { setBorrador(d); setProc(null); setMsg("📝 Borrador creado — dale a “Autorizar ARCA (CAE)” para emitir la electrónica."); return; }
+    setProc((p) => p ? { ...p, fase: p.pasos.length, estado: "ok" } : p); setOkRes(d);
+  };
+  const autorizar = async () => {
+    if (!borrador) return;
+    const d = await correr(["Preparando el comprobante", "Conectando con ARCA (WSAA)", "Solicitando el CAE a ARCA", "Registrando la factura"], "Autorización ARCA", "autorizar", { comprobante_id: borrador.comprobante_id });
+    if (!d.ok) { setProc((p) => p ? { ...p, estado: "error" } : p); setArca({ caida: !!d.arca_caida, rechazo: !!d.arca_rechazo, detalle: [...(d.errores || []), ...(d.observaciones || [])], err: d.error || "No se pudo autorizar" }); return; }
+    setProc((p) => p ? { ...p, fase: p.pasos.length, estado: "ok" } : p); setOkRes(d);
+  };
+  const reintentar = () => { if (borrador) autorizar(); else emitir(); };
+  const corriendo = proc?.estado === "run";
 
   const setIt = (i: number, k: string, v: any) => setItems(items.map((x, j) => j === i ? { ...x, [k]: v } : x));
   const inp = "border border-gray-300 rounded px-2 py-1 text-sm";
@@ -1763,12 +1788,41 @@ function FacturaEventualModal({ onClose, onDone }: { onClose: () => void; onDone
         </div>
         {prev && <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2"><div className="font-semibold text-emerald-700 mb-0.5">🔍 Revisado · Factura {prev.letra}{prev.electronica ? " · electrónica (CAE)" : " · manual"}</div><div className="flex justify-between"><span>Neto</span><b>{fmtM(prev.montos.neto)}</b></div>{(prev.montos.iva || []).map((d: any, i: number) => <div key={i} className="flex justify-between text-gray-600"><span>IVA {d.pct}%</span><span>{fmtM(d.monto)}</span></div>)}<div className="flex justify-between"><span className="font-semibold">TOTAL</span><b>{fmtM(prev.montos.total)}</b></div></div>}
         {msg && <div style={{ color: msg.startsWith("⚠️") ? "#dc2626" : "#0b3d6b" }}>{msg}</div>}
+        {/* PROCESO: pasos animados como la facturación normal */}
+        {proc && (
+          <div className="rounded-lg border border-gray-200 p-3 bg-gray-50/60">
+            <div className="font-semibold text-gray-700 mb-1.5">{proc.titulo}</div>
+            <ul className="space-y-1">
+              {proc.pasos.map((p, i) => {
+                const done = proc.estado === "ok" ? true : i < proc.fase;
+                const cur = proc.estado === "run" && i === proc.fase;
+                const failed = proc.estado === "error" && i === proc.fase;
+                return (<li key={i} className="flex items-center gap-2">
+                  <span className={`w-5 text-center ${done ? "text-emerald-600" : failed ? "text-red-600" : cur ? "text-blue-600" : "text-gray-300"}`}>{done ? "✓" : failed ? "✕" : cur ? "●" : "○"}</span>
+                  <span className={done ? "text-gray-700" : failed ? "text-red-700" : cur ? "text-blue-700 font-medium" : "text-gray-400"}>{p}{cur && "…"}</span>
+                </li>);
+              })}
+            </ul>
+          </div>
+        )}
+        {arca && arca.caida && <div className="rounded-lg bg-red-50 border border-red-300 p-3"><div className="font-bold text-red-700">⚠️ ARCA tiene un problema</div><div className="text-xs text-red-700 mt-1">ARCA no respondió (servicio caído o sin conexión). El borrador quedó guardado: <b>reintentá en unos minutos</b> sin perder nada.</div>{arca.err && <div className="text-[11px] text-red-500 mt-1 break-words">Detalle: {arca.err}</div>}</div>}
+        {arca && arca.rechazo && <div className="rounded-lg bg-rose-50 border border-rose-300 p-3"><div className="font-bold text-rose-700">❌ ARCA rechazó la factura</div><div className="text-xs text-rose-700 mt-1">Hay un <b>dato a corregir</b>. Códigos que devolvió ARCA:</div>{arca.detalle.length > 0 ? <ul className="mt-2 space-y-1">{arca.detalle.map((x, i) => <li key={i} className="text-xs bg-white border border-rose-200 rounded px-2 py-1">{x.code && <span className="font-mono font-semibold text-rose-700 mr-1">[{x.code}]</span>}<span className="text-gray-700">{x.msg}</span>{ARCA_HINTS[x.code] && <div className="text-[11px] text-gray-500 mt-0.5">💡 {ARCA_HINTS[x.code]}</div>}</li>)}</ul> : <div className="text-[11px] text-rose-500 mt-1 break-words">{arca.err}</div>}</div>}
+        {arca && !arca.caida && !arca.rechazo && <div className="rounded-lg bg-amber-50 border border-amber-300 p-3 text-amber-800"><div className="font-semibold">No se pudo emitir</div><div className="text-xs mt-1 break-words">{arca.err}</div></div>}
+        {okRes && <div className="rounded-lg bg-emerald-50 border border-emerald-300 p-3 text-emerald-800"><div className="font-bold">✅ Factura {okRes.cae ? "autorizada por ARCA" : "emitida"}</div><div className="text-sm mt-1"><b>{okRes.factura_numero}</b></div>{okRes.cae && <div className="text-xs">CAE: {okRes.cae}{okRes.cae_vto ? ` · Vto ${okRes.cae_vto}` : ""}</div>}{okRes.factura_token && <a href={`/p/${okRes.factura_token}?admin=1`} target="_blank" rel="noreferrer" className="inline-block mt-1 text-xs text-febo-azul underline">📄 Ver factura</a>}</div>}
       </div>
       <div className="px-4 py-3 border-t flex justify-end gap-2">
-        <button onClick={onClose} className="px-4 py-2 rounded-lg border text-sm">Cerrar</button>
-        {!borrador && <button disabled={busy || !cli} onClick={revisar} className="px-4 py-2 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold disabled:opacity-40">🔍 Revisar</button>}
-        {!borrador && <button disabled={busy || !cli} onClick={emitir} className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-40">{busy ? "…" : "Emitir"}</button>}
-        {borrador && <button disabled={busy} onClick={autorizar} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40">{busy ? "…" : "✅ Autorizar ARCA (CAE)"}</button>}
+        {okRes ? (
+          <button onClick={() => { onDone(); onClose(); }} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold">Listo</button>
+        ) : (<>
+          <button disabled={corriendo} onClick={onClose} className="px-4 py-2 rounded-lg border text-sm disabled:opacity-40">Cerrar</button>
+          {proc?.estado === "error"
+            ? <button onClick={reintentar} className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold">🔁 Reintentar</button>
+            : !borrador ? <>
+                <button disabled={busy || corriendo || !cli} onClick={revisar} className="px-4 py-2 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold disabled:opacity-40">🔍 Revisar</button>
+                <button disabled={busy || corriendo || !cli} onClick={emitir} className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-40">{corriendo ? "…" : "Emitir"}</button>
+              </>
+            : <button disabled={corriendo} onClick={autorizar} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40">{corriendo ? "…" : "✅ Autorizar ARCA (CAE)"}</button>}
+        </>)}
       </div>
     </div>
   </div>);
