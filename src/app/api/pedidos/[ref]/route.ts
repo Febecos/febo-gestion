@@ -9,6 +9,7 @@ import { desglosarFactura, normalizarTotales, splitPanelResto } from "@/lib/fact
 import { validarStock, descontarStock, restituirStock } from "@/lib/stock";
 import { getUser } from "@/lib/owner";
 import { emitEvento } from "@/lib/eventos";
+import { marcarCompro } from "@/lib/crm-compro";
 
 // Datos en vivo: no cachear (Next cachea GET sin request → datos viejos).
 export const dynamic = "force-dynamic";
@@ -513,6 +514,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
           payload: { monto: b.pago?.monto, moneda: b.pago?.moneda, medio: b.pago?.medio, monto_usd: b.pago?.monto_usd, fecha: b.pago?.fecha, ref_numero: b.pago?.ref_numero },
           idempotencyKey: `gestion:pago.recibido:${ref}:${String(b.pago?.fecha || "").slice(0,10)}:${b.pago?.monto}:${b.pago?.medio || ""}:${b.pago?.ref_numero || ""}`,
           clienteId: cid });
+        await marcarCompro(sql, cid);
       }
       return NextResponse.json({ ok: true });
     }
@@ -1343,6 +1345,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await emitEvento(sql, { tipo: "factura.emitida", entidad: "factura", entidadId: facturaNum,
         payload: { pedido_ref: ref, total_usd: totalUsd, moneda: facturaMoneda, electronica: false, proforma: true, comision_monto: comisionMonto, comision_pct: comisionPct, revendedor_id, receptor_cliente_id: receptorFinalId || null },
         idempotencyKey: `gestion:factura.emitida:${facturaNum}`, clienteId: cliente_id });
+      await marcarCompro(sql, cliente_id);
       await emitEstadoPedido(sql, ref, "facturado");
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: comp.token, comision_monto: comisionMonto, comision_pct: comisionPct });
     }
@@ -1403,6 +1406,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await emitEvento(sql, { tipo: "factura.emitida", entidad: "factura", entidadId: facturaNum,
         payload: { pedido_ref: ref, total_usd: totalUsd, moneda: meta.facturaMoneda || "USD", electronica: true, cae: res.cae || null, comision_monto: comisionMonto, comision_pct: comisionPct, revendedor_id, receptor_cliente_id: receptorFinalId || null },
         idempotencyKey: `gestion:factura.emitida:${facturaNum}`, clienteId: cliente_id });
+      await marcarCompro(sql, cliente_id);
       await emitEstadoPedido(sql, ref, "facturado");
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: cb.token, cae: res.cae, cae_vto: res.caeVto, comision_monto: comisionMonto, comision_pct: comisionPct });
     }

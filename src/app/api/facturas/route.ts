@@ -6,6 +6,7 @@ import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 import { tipoCbteAfip, docTipoReceptor, condicionIvaReceptorId } from "@/lib/afip-codigos";
 import { movCtaCte } from "@/lib/ctacte";
 import { emitEvento } from "@/lib/eventos";
+import { marcarCompro } from "@/lib/crm-compro";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -126,6 +127,7 @@ export async function POST(req: NextRequest) {
       await emitEvento(sql, { tipo: "factura.emitida", entidad: "factura", entidadId: facturaNum,
         payload: { eventual: true, total_usd: totalUsd, moneda: cb.moneda, electronica: true, cae: res.cae || null },
         idempotencyKey: `gestion:factura.emitida:${facturaNum}`, clienteId: cb.cliente_id });
+      await marcarCompro(sql, cb.cliente_id);
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: undefined, cae: res.cae, cae_vto: res.caeVto });
     }
 
@@ -185,6 +187,7 @@ export async function POST(req: NextRequest) {
       await emitEvento(sql, { tipo: "factura.emitida", entidad: "factura", entidadId: facturaNum,
         payload: { eventual: true, total_usd: totalUsd, moneda: P.facturaMoneda, electronica: false, proforma: true },
         idempotencyKey: `gestion:factura.emitida:${facturaNum}`, clienteId: P.cliente_id });
+      await marcarCompro(sql, P.cliente_id);
       return NextResponse.json({ ok: true, factura_numero: facturaNum, factura_token: comp.token });
     }
 

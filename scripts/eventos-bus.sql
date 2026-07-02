@@ -45,6 +45,13 @@ ALTER TABLE eventos ADD COLUMN IF NOT EXISTS cliente_id BIGINT;
 --        payload={pedido_ref, estado_nuevo, cliente_id, telefono, email},
 --        estado_nuevo ∈ {aprobado|pagado|facturado|despachado|enviado|cancelado},
 --        idempotency_key='gestion:pedido.estado_cambiado:<ref>:<estado>'.
+--   cliente.actualizado  ← GESTIÓN (D1, 02/07): CADA write de `clientes` (PATCH ficha, D1
+--        upsert, auto-marca "compró"). Consumen FEBO AI/FEBO-REV (read-through: refrescar su
+--        copia local del contacto sin recarga manual). entidad='cliente', entidad_id=<cliente_id>,
+--        payload={cliente_id, campo|accion}, idempotency_key='gestion:cliente.actualizado:<id>:<ts>'
+--        (NO deduplicable a 1 solo — cada write es un evento nuevo, ts = discriminante).
+--        Contrato de lectura: GET /api/clientes/:id en gestion.febecos.com (ya existe, público
+--        para consumidores server-side vía DATABASE_URL directa a la Neon central).
 -- ----------------------------------------------------------------------------
 
 CREATE TABLE IF NOT EXISTS eventos_consumo (

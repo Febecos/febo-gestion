@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { Pool } from "@neondatabase/serverless";
+import { emitEvento } from "@/lib/eventos";
 
 // Campos editables permitidos (whitelist, igual que el admin)
 const ALLOWED = new Set([
@@ -83,6 +84,13 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
           [`{${ENVIO_MAP[field]}}`, String(value ?? ""), id]);
       }
     } finally { await pool.end(); }
+    // Bus (D1): cada write de clientes emite cliente.actualizado — FEBO AI/FEBO-REV lo consumen
+    // para read-through (refrescar su copia local sin esperar recarga manual).
+    try {
+      const sql = getDb();
+      await emitEvento(sql, { tipo: "cliente.actualizado", entidad: "cliente", entidadId: String(id),
+        payload: { cliente_id: id, campo: field }, idempotencyKey: `gestion:cliente.actualizado:${id}:${Date.now()}`, clienteId: id });
+    } catch { /* no debe romper el guardado */ }
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });

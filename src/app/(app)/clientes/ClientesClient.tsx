@@ -11,19 +11,24 @@ type Cliente = {
   ultimo_contacto_at: string;
 };
 
+// TIPO = una sola dimensión (a qué categoría pertenece el contacto). "cliente_final" (Cliente
+// compró) queda por compat histórica — el flag de compra vive AHORA en tags (ortogonal, ver
+// TAGS.compro), no se agregan más estados combinados tipo "revendedor que compró".
 const ESTADOS = [
-  ["contacto", "📇 Contacto (no compró)"], ["cliente_final", "✅ Cliente (compró)"],
+  ["contacto", "📇 Contacto"], ["cliente_final", "✅ Cliente (compró) — heredado, usar 🛒 Compró"],
   ["revendedor_interesado", "Revendedor interesado"], ["revendedor_manual", "Revendedor manual"],
   ["revendedor", "Revendedor (autorizado)"], ["vendedor_interno", "🏢 Vendedor interno"], ["proveedor", "Proveedor"],
 ];
+// Tildes de identificación: ORTOGONALES al tipo y entre sí (un revendedor puede ser Pocero Y
+// haber Comprado). Extensible: agregar un atributo nuevo = una línea acá. Pedido Guille 02/07.
 const TAGS = [
-  ["pocero", "⛏️ Pocero"], ["instalador", "🔧 Instalador"], ["interesado_revender", "Interesado en revender"],
+  ["compro", "🛒 Compró"], ["pocero", "⛏️ Pocero"], ["instalador", "🔧 Instalador"], ["interesado_revender", "Interesado en revender"],
   ["prospecto_curso", "🎓 Prospecto curso"], ["alumno", "Alumno"],
 ];
 const COLORES: Record<string, string> = {
   contacto: "#64748b", cliente_final: "#2563eb", revendedor: "#7c3aed",
   revendedor_interesado: "#a78bfa", revendedor_manual: "#8b5cf6", vendedor_interno: "#0891b2",
-  proveedor: "#059669", pocero: "#0d9488", instalador: "#ea580c", prospecto_curso: "#db2777",
+  proveedor: "#059669", compro: "#16a34a", pocero: "#0d9488", instalador: "#ea580c", prospecto_curso: "#db2777",
 };
 const fmtMonto = (v: number) => (v ? "$ " + Math.round(v).toLocaleString("es-AR") : "—");
 const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "comision_propia_pct", "comision_revende_pct"] as const;
@@ -105,13 +110,14 @@ export default function ClientesClient({ openClienteId, openClienteTab }: { open
             {loading ? <tr><td colSpan={verMontos ? 10 : 8} className="text-center py-8 text-gray-400">Cargando…</td></tr>
             : rows.length === 0 ? <tr><td colSpan={verMontos ? 10 : 8} className="text-center py-8 text-gray-400">Sin resultados</td></tr>
             : rows.map((r) => {
-              const extra = (r.tags || []).filter((t) => t !== r.tipo && !(r.tipo === "cliente_final" && t === "cliente"));
+              const compro = (r.tags || []).includes("compro");
+              const extra = (r.tags || []).filter((t) => t !== r.tipo && t !== "compro" && !(r.tipo === "cliente_final" && t === "cliente"));
               return (
                 <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => setEdit(r)}>
                   <td className="px-4 py-2 font-semibold">{r.nombre || "—"}</td>
                   <td className="px-4 py-2 text-gray-600">{r.email || "—"}</td>
                   <td className="px-4 py-2 text-gray-600">{r.whatsapp || "—"}</td>
-                  <td className="px-4 py-2">{badge(r.tipo || "—")}{extra.length > 0 && <span className="ml-1 text-[10px] text-indigo-500 font-bold">+{extra.length}</span>}</td>
+                  <td className="px-4 py-2">{badge(r.tipo || "—")}{compro && <span className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "#16a34a22", color: "#16a34a" }} title="Compró (factura emitida o marcado manual)">🛒 Compró</span>}{extra.length > 0 && <span className="ml-1 text-[10px] text-indigo-500 font-bold">+{extra.length}</span>}</td>
                   <td className="px-4 py-2 text-gray-600">{r.provincia || "—"}</td>
                   <td className="px-4 py-2 text-center">{r.n_presup || 0}</td>
                   <td className="px-4 py-2 text-center font-semibold text-violet-700">{r.n_pedidos || 0}</td>

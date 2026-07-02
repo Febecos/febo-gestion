@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import jwt from "jsonwebtoken";
+import { emitEvento } from "@/lib/eventos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -127,6 +128,13 @@ export async function POST(req: NextRequest) {
         RETURNING id` as any[];
       id = ins[0].id;
     }
+
+    // Bus (D1): cada write emite cliente.actualizado — FEBO AI/FEBO-REV lo consumen para
+    // read-through (refrescar contacto en su inbox sin esperar recarga manual).
+    try {
+      await emitEvento(sql, { tipo: "cliente.actualizado", entidad: "cliente", entidadId: String(id),
+        payload: { cliente_id: id, accion }, idempotencyKey: `gestion:cliente.actualizado:${id}:${Date.now()}`, clienteId: id });
+    } catch { /* no debe romper el upsert */ }
 
     return NextResponse.json({ ok: true, cliente_id: id, accion });
   } catch (e: any) {
