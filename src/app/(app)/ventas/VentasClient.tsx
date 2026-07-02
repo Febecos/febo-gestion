@@ -56,6 +56,7 @@ const FV_LUGAR = ["Transporte indicado por el cliente. Flete a cargo del cliente
 
 const SECCIONES = [
   { k: "presupuestos", icon: "📝", label: "Presupuestos" },
+  { k: "kitsfv", icon: "🧩", label: "Kits FV" },
   { k: "pedidos", icon: "📦", label: "Pedidos" },
   { k: "facturas", icon: "🧾", label: "Facturas" },
   { k: "notas", icon: "↩️", label: "Notas C/D" },
@@ -86,6 +87,7 @@ export default function VentasClient() {
       </aside>
       <div className="flex-1 min-w-0">
         {sec === "presupuestos" && <Presupuestos />}
+        {sec === "kitsfv" && <KitsFV />}
         {sec === "pedidos" && <Pedidos />}
         {sec === "facturas" && <Comprobantes tipo="factura" titulo="Facturas" />}
         {sec === "notas" && <Comprobantes tipo="nota_credito,nota_debito" titulo="Notas de Crédito / Débito" />}
@@ -212,6 +214,17 @@ function Presupuestos() {
     if (!hash) { alert("⚠️ No se pudo abrir en modo interno (revisá FV_BRIDGE_SECRET)."); return; }
     open("presup-edit", { url: `https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, title: `☀️ ${numero}`, docTitle: `${cliente ? cliente + " - " : ""}${numero}` });
   }
+  // Guardar la composición de un presupuesto FV como KIT reutilizable (solo componentes+cantidades,
+  // sin precios — se repricea siempre al generar un presupuesto nuevo desde el kit).
+  async function guardarComoKit(r: Presup) {
+    const nombre = window.prompt("Nombre del kit (ej. \"Kit FV 5kW monofásico\"):", "");
+    if (!nombre || !nombre.trim()) return;
+    const categoria = window.prompt("Categoría (opcional, ej. \"5kW mono\"):", "") || "";
+    const descripcion = window.prompt("Descripción (opcional):", "") || "";
+    const d = await safeJson(await fetch("/api/fv-kits", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "crear_desde_presupuesto", numero: r.numero, nombre: nombre.trim(), categoria: categoria.trim() || null, descripcion: descripcion.trim() || null }) }));
+    if (d.ok) alert("✅ Kit guardado. Lo encontrás en Ventas → 🧩 Kits FV.");
+    else alert("⚠️ " + (d.error || "No se pudo guardar el kit"));
+  }
   const nombreCli = (r: Presup) => titleCase(r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ")) || "—";
   const selCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm";
   return (
@@ -269,6 +282,7 @@ function Presupuestos() {
                       {r.public_token && r.tipo !== "fv" && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}`, docTitle: `${r.cliente_display ? r.cliente_display + " - " : ""}${r.numero}` })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                       {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token, r.numero, r.cliente_display)} title="Editar/Operar FV (modo interno)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                     </>}
+                  {r.tipo === "fv" && <button onClick={() => guardarComoKit(r)} title="Guardar la composición de este presupuesto (componentes+cantidades) como KIT reutilizable — sin precios, se repricea al usarlo." className="text-gray-400 hover:text-emerald-600 mr-2">🧩</button>}
                   {r.public_token && <a href={linkPresup(r.tipo, r.public_token)} target="_blank" rel="noreferrer" title="Ver / Imprimir / PDF (público)" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                   {r.tipo === "roi" && <a href={`/api/roi-pdf?lead_id=${String(r.id).replace("roi-", "")}`} target="_blank" rel="noreferrer" title="Ver / Descargar PDF del análisis ROI" className="text-gray-400 hover:text-febo-azul mr-2">📄</a>}
                   {!["anulado", "pagado", "enviado"].includes((r.estado || "").toLowerCase()) && (
@@ -455,6 +469,79 @@ function PasosPedido({ p }: { p: any }) {
       ? <a key={i} href={`/p/${s.token}?admin=1`} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} title={s.t + " — ver"} style={style} className="hover:underline">{inner}</a>
       : node;
   })}</span>;
+}
+
+// ---------- KITS FV (plantillas reutilizables: componentes+cantidades, SIN precios) ----------
+// El kit se repricea SIEMPRE con el "Markup Kit Full" del admin FV al generar un presupuesto
+// nuevo (nunca toca un presupuesto existente — regla dura de no auto-actualizar).
+function KitsFV() {
+  const { open } = useWindows();
+  const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
+  const [verArchivados, setVerArchivados] = useState(false);
+  const [busy, setBusy] = useState<number | null>(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    const d = await safeJson(await fetch("/api/fv-kits"));
+    setRows(d.ok ? d.kits : []); setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const post = async (body: any) => { const d = await safeJson(await fetch("/api/fv-kits", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })); if (!d.ok) alert("⚠️ " + (d.error || "error")); return d; };
+
+  const renombrar = async (k: any) => {
+    const nombre = window.prompt("Nombre del kit:", k.nombre); if (nombre === null || !nombre.trim()) return;
+    const categoria = window.prompt("Categoría (opcional):", k.categoria || "") || "";
+    setBusy(k.id); await post({ accion: "renombrar", id: k.id, nombre: nombre.trim(), categoria: categoria.trim() || null, descripcion: k.descripcion }); setBusy(null); load();
+  };
+  const duplicar = async (k: any) => { setBusy(k.id); await post({ accion: "duplicar", id: k.id }); setBusy(null); load(); };
+  const archivar = async (k: any) => { setBusy(k.id); await post({ accion: "archivar", id: k.id, archivado: !k.archivado }); setBusy(null); load(); };
+
+  // Abre el cotizador FV como ventana interna (MDI), con el kit precargado en el carrito.
+  // SIEMPRE genera un presupuesto NUEVO (nunca edita uno existente) — repricea con el markup de kit.
+  const nuevoDesdeKit = async (k: any) => {
+    setBusy(k.id);
+    try {
+      const d = await safeJson(await fetch("/api/fv-session"));
+      if (!d.ok || !d.token) { alert("⚠️ No se pudo abrir el cotizador (revisá FV_BRIDGE_SECRET)."); return; }
+      open("presup-edit", { url: `https://fv.febecos.com/cotizar#admin_jwt=${d.token}&kit=${k.id}`, title: `🧩 Nuevo desde kit — ${k.nombre}` });
+    } finally { setBusy(null); }
+  };
+
+  const visibles = rows.filter((k) => verArchivados || !k.archivado);
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-sm text-gray-500">Plantillas reutilizables de kits FV (componentes+cantidades). El precio siempre se recalcula al generar un presupuesto nuevo.</span>
+        <label className="ml-auto flex items-center gap-1 text-xs text-gray-500"><input type="checkbox" checked={verArchivados} onChange={(e) => setVerArchivados(e.target.checked)} /> Ver archivados</label>
+        <button onClick={load} className="text-sm text-febo-azul hover:underline">🔄 Actualizar</button>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
+            <th className="text-left px-4 py-3">Nombre</th><th className="text-left px-4 py-3">Categoría</th><th className="text-left px-4 py-3">Descripción</th><th className="text-center px-4 py-3">Ítems</th><th></th>
+          </tr></thead>
+          <tbody>
+            {loading ? <tr><td colSpan={5} className="text-center py-8 text-gray-400">Cargando…</td></tr>
+            : visibles.length === 0 ? <tr><td colSpan={5} className="text-center py-8 text-gray-400">Sin kits todavía. Guardá uno desde Presupuestos (🧩) en un presupuesto FV.</td></tr>
+            : visibles.map((k) => (
+              <tr key={k.id} className={"border-t border-gray-100 hover:bg-gray-50" + (k.archivado ? " opacity-50" : "")}>
+                <td className="px-4 py-2 font-semibold">{k.nombre}{k.archivado && <span className="ml-1 text-[10px] text-gray-400 font-normal">(archivado)</span>}</td>
+                <td className="px-4 py-2 text-gray-600">{k.categoria || "—"}</td>
+                <td className="px-4 py-2 text-gray-500">{k.descripcion || "—"}</td>
+                <td className="px-4 py-2 text-center text-gray-600">{k.n_items}</td>
+                <td className="px-4 py-2 text-right whitespace-nowrap">
+                  {!k.archivado && <button disabled={busy === k.id} onClick={() => nuevoDesdeKit(k)} title="Nuevo presupuesto desde este kit (elegís cliente, precios recalculados)" className="px-2.5 py-1 rounded-lg bg-febo-azul text-white text-xs font-semibold disabled:opacity-40 mr-2">➕ Nuevo presupuesto</button>}
+                  <button disabled={busy === k.id} onClick={() => renombrar(k)} title="Renombrar / editar categoría" className="text-gray-400 hover:text-febo-azul mr-2 disabled:opacity-40">✏️</button>
+                  <button disabled={busy === k.id} onClick={() => duplicar(k)} title="Duplicar kit" className="text-gray-400 hover:text-febo-azul mr-2 disabled:opacity-40">📋</button>
+                  <button disabled={busy === k.id} onClick={() => archivar(k)} title={k.archivado ? "Reactivar" : "Archivar"} className="text-gray-400 hover:text-red-500 disabled:opacity-40">{k.archivado ? "♻️" : "🗄"}</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 // ---------- PEDIDOS (bombas + fv unificados) ----------
