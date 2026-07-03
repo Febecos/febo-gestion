@@ -1029,7 +1029,10 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             const leerComprobante = async (a: any) => {
               if (!a) a = archivos[archivos.length - 1];
               if (!a) { alert("Subí primero el comprobante (PDF o imagen)."); return; }
-              // 1) Lectura AUTOMÁTICA con visión de Claude (lee el contenido real del comprobante).
+              // 1) Lectura AUTOMÁTICA con visión de Gemini (lee el contenido real del comprobante).
+              //    Puede traer datos PARCIALES (ej. medio detectado pero monto null en una captura
+              //    recortada) — se mergean y, si falta el monto, se completa con el OCR local (2).
+              let aiUpd: any = null;
               try {
                 const ai = await safeJson(await fetch("/api/leer-pago", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: a.b64, tipo: a.tipo }) }));
                 if (ai?.ok && ai.data) {
@@ -1040,12 +1043,15 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   if (dd.banco) upd.banco = dd.banco;
                   if (dd.numero) upd.ref_numero = dd.numero;
                   if (dd.fecha) upd.fecha = dd.fecha;
-                  setVf(upd);
-                  return; // leído por IA, listo
+                  aiUpd = upd;
+                  if (dd.monto != null) { setVf(upd); return; } // IA trajo monto, listo
                 }
               } catch { /* sin key o error → cae al OCR local */ }
               // 2) Fallback: OCR/texto local. Se lee el CONTENIDO (no el nombre del archivo).
+              //    Si la IA (1) ya trajo medio/banco/numero/fecha pero no el monto, arrancamos
+              //    desde ese resultado parcial en vez de descartarlo.
               try {
+                const vf0 = aiUpd || vf;
                 let monto = 0; let texto = "";
                 if (/pdf/i.test(a.tipo || "")) {
                   const d = await safeJson(await fetch("/api/parse-proforma", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64: a.b64, tipo: a.tipo }) }));
@@ -1068,25 +1074,25 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   const vals = nums.map((s) => Number(s.replace(/[.\s]/g, "").replace(",", "."))).filter((n) => n > 0);
                   monto = vals.length ? Math.max(...vals) : 0; // el importe suele ser el mayor
                 }
-                const medio = detectarMedio(texto);
-                const upd: any = { ...vf, archivo_nombre: a.nombre || "" };
+                const medio = detectarMedio(texto) || vf0.medio;
+                const upd: any = { ...vf0, archivo_nombre: a.nombre || "" };
                 if (monto > 0) { upd.monto = String(monto); upd.moneda = enPesos ? "ars" : "usd"; }
                 if (medio) upd.medio = medio;
                 // Datos desde el CONTENIDO (no del nombre): N° de cheque/operación, banco y fecha de pago.
-                if (medio === "Cheque" && !vf.ref_numero) {
+                if (medio === "Cheque" && !vf0.ref_numero) {
                   // Apuntar a "N° de cheque" (conservando ceros), NO al importe.
                   const mch = texto.match(/n[°º]?\.?\s*de\s*cheque[\s:]*([0-9]{5,})/i) || texto.match(/cheque\s*n[°º]?\.?\s*([0-9]{5,})/i);
                   if (mch) upd.ref_numero = mch[1];
                 }
-                if (medio !== "Cheque" && !vf.ref_numero) { const mop = texto.match(/(?:n[°º]?\.?\s*de\s*)?operaci[oó]n[\s:#]*([0-9]{4,})|comprobante[\s:#]*([0-9]{4,})/i); if (mop) upd.ref_numero = mop[1] || mop[2]; }
-                if (!vf.banco) { const mb = texto.match(/banco\s+([a-záéíóúñ.\s]{3,30})/i); if (mb) upd.banco = mb[1].trim().replace(/\s+/g, " ").replace(/[.,]$/, ""); }
+                if (medio !== "Cheque" && !vf0.ref_numero) { const mop = texto.match(/(?:n[°º]?\.?\s*de\s*)?operaci[oó]n[\s:#]*([0-9]{4,})|comprobante[\s:#]*([0-9]{4,})/i); if (mop) upd.ref_numero = mop[1] || mop[2]; }
+                if (!vf0.banco) { const mb = texto.match(/banco\s+([a-záéíóúñ.\s]{3,30})/i); if (mb) upd.banco = mb[1].trim().replace(/\s+/g, " ").replace(/[.,]$/, ""); }
                 // Fecha de pago del comprobante (no la de carga). "Fecha de pago 23/06/2026".
-                if (!vf.fecha) {
+                if (!vf0.fecha) {
                   const mf = texto.match(/fecha\s*(?:de\s*pago|valor|acreditaci[oó]n)?[\s:]*([0-3]?\d)[\/.\-]([0-1]?\d)[\/.\-](\d{2,4})/i);
                   if (mf) { const yy = mf[3].length === 2 ? "20" + mf[3] : mf[3]; upd.fecha = `${yy}-${mf[2].padStart(2, "0")}-${mf[1].padStart(2, "0")}`; }
                 }
                 setVf(upd);
-                if (!(monto > 0)) alert("No pude leer el monto del contenido." + (medio ? ` (Medio detectado: ${medio}.)` : "") + " Cargalo a mano.");
+                if (!(monto > 0)) alert("No pude leer el monto del contenido." + (medio ? ` (Medio detectado: ${medio}.)` : "") + " Los demás datos que sí se pudieron leer (banco/N°/fecha) ya quedaron cargados. Completá el monto a mano.");
               } catch (e: any) { alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano."); }
             };
             const esRet = vf.medio === "Retención";
