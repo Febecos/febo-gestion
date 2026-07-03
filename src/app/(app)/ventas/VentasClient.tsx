@@ -1093,7 +1093,12 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                 }
                 setVf(upd);
                 if (!(monto > 0)) alert("No pude leer el monto del contenido." + (medio ? ` (Medio detectado: ${medio}.)` : "") + " Los demás datos que sí se pudieron leer (banco/N°/fecha) ya quedaron cargados. Completá el monto a mano.");
-              } catch (e: any) { alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano."); }
+              } catch (e: any) {
+                // El OCR local (tesseract/parse-proforma) puede tirar excepción (ej. PDF no renderizable) —
+                // igual hay que aplicar lo que la IA (1) ya haya leído, si no se pierde en silencio.
+                if (aiUpd) { setVf(aiUpd); alert("No pude leer el monto del contenido." + (aiUpd.medio ? ` (Medio detectado: ${aiUpd.medio}.)` : "") + " Los demás datos que sí se pudieron leer ya quedaron cargados. Completá el monto a mano."); }
+                else alert("No se pudo leer el comprobante: " + e.message + "\nCargá el monto a mano.");
+              }
             };
             const esRet = vf.medio === "Retención";
             const guardarPago = async () => {

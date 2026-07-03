@@ -72,32 +72,31 @@ export async function POST(req: NextRequest) {
     const mime = esPdf ? "application/pdf" : (String(tipo || "image/jpeg").replace(/;.*/, "") || "image/jpeg");
     const mimeType = MIME_OK.includes(mime) ? mime : "image/jpeg";
 
-    // 1er intento: prompt completo con formatos MP/transferencia. Si no logra monto, 2do intento
-    // con prompt más permisivo (arriesgar lectura aproximada) antes de rendirse — pedido de Guille:
-    // "que lea las imágenes, PDF o JPG" en vez de todo-o-nada.
-    let parsed: any = null;
-    let intentoError: string | null = null;
-    try { parsed = await llamarGemini(key, mimeType, data, PROMPT); }
-    catch (e: any) { intentoError = e.message; }
+    // Los 2 intentos (prompt normal + prompt permisivo) se disparan EN PARALELO, no en secuencia:
+    // encadenarlos duplicaba la latencia de 2 llamadas de visión a Gemini y superaba el límite real
+    // de la función en Vercel (el 502 reportado por Guille al reintentar) — en paralelo el total
+    // queda acotado por la más lenta de las dos, no por la suma.
+    const [r1, r2] = await Promise.allSettled([
+      llamarGemini(key, mimeType, data, PROMPT),
+      llamarGemini(key, mimeType, data, PROMPT_RETRY),
+    ]);
+    const parsed = r1.status === "fulfilled" ? r1.value : null;
+    const parsed2 = r2.status === "fulfilled" ? r2.value : null;
+    const intentoError = r1.status === "rejected" ? r1.reason?.message : null;
 
-    let out = normalizar(parsed);
-    if (out.monto == null) {
-      try {
-        const parsed2 = await llamarGemini(key, mimeType, data, PROMPT_RETRY);
-        const out2 = normalizar(parsed2);
-        // Combinar: preferir lo que trajo el 1er intento, completar huecos con el 2do.
-        out = {
-          medio: out.medio ?? out2.medio,
-          monto: out.monto ?? out2.monto,
-          moneda: out.monto != null ? out.moneda : out2.moneda,
-          banco: out.banco ?? out2.banco,
-          numero: out.numero ?? out2.numero,
-          fecha: out.fecha ?? out2.fecha,
-        };
-      } catch { /* 2do intento falló, seguimos con lo que haya del 1ro */ }
-    }
+    const out1 = normalizar(parsed);
+    const out2 = normalizar(parsed2);
+    // Combinar: preferir lo que trajo el prompt normal, completar huecos con el permisivo.
+    const out = {
+      medio: out1.medio ?? out2.medio,
+      monto: out1.monto ?? out2.monto,
+      moneda: out1.monto != null ? out1.moneda : out2.moneda,
+      banco: out1.banco ?? out2.banco,
+      numero: out1.numero ?? out2.numero,
+      fecha: out1.fecha ?? out2.fecha,
+    };
 
-    if (!parsed && out.monto == null && out.medio == null) {
+    if (!parsed && !parsed2 && out.monto == null && out.medio == null) {
       return NextResponse.json({ ok: false, error: intentoError || "no se pudo leer el comprobante" }, { status: 502 });
     }
     // ok:true aunque sea parcial (ej. medio detectado pero monto null) — el front completa a mano lo que falte.
