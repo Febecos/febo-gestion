@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 const REMITENTE = {
   nombre: "FEBECOS — Energía Solar",
+  cuit: "20-21730156-5",
   direccion: "Rojas 441",
   localidad: "C.A.B.A.",
   cp: "1405",
@@ -150,7 +151,8 @@ export default function EtiquetasPage({ params }: { params: { ref: string } }) {
             return (
             <div key={i} className="et-label">
               <div className="et-rem">
-                <b>REMITE:</b> {REMITENTE.nombre} · {REMITENTE.direccion}, {REMITENTE.localidad} ({REMITENTE.cp}) · Tel {REMITENTE.tel}
+                <b>REMITE:</b> {REMITENTE.nombre} · CUIT {REMITENTE.cuit}<br />
+                {REMITENTE.direccion}, {REMITENTE.localidad} ({REMITENTE.cp}) · Tel {REMITENTE.tel}
               </div>
               <div className="et-dest-lbl">Destinatario {master && <span style={{ color: "#0b3d6b" }}>· editá acá (se copia a todas)</span>}</div>
               {/* Nombre: mayúsculas, todo el ancho, autoajuste. */}
