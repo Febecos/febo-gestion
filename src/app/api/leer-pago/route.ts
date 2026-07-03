@@ -27,9 +27,13 @@ Mirá TODA la imagen con cuidado, incluso números parciales o tapados a medias,
 {"medio": uno de "Transferencia","Cheque","Efectivo","Depósito","Mercado Pago" o null, "monto": el número más grande/prominente que parezca un importe en pesos o dólares (aunque sea una aproximación de un dígito tapado), o null si REALMENTE no hay ningún número de importe visible, "moneda": "ARS" o "USD", "banco": string o null, "numero": string o null, "fecha": "YYYY-MM-DD" o null}
 Preferí arriesgar una lectura aproximada del monto antes que devolver null.`;
 
+// gemini-2.5-flash (subido desde 2.0-flash): visión más precisa para capturas recortadas/comprimidas
+// de WhatsApp — pedido explícito de Guille ("tiene que leer TODO", no solo el fallback parcial).
+const MODEL = "gemini-2.5-flash";
+
 async function llamarGemini(key: string, mimeType: string, data: string, prompt: string) {
   const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`,
     {
       method: "POST",
       headers: { "content-type": "application/json" },
