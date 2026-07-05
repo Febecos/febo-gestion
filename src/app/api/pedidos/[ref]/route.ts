@@ -407,7 +407,9 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         await sql`UPDATE pedidos_counter SET ultimo_numero = ${n - 1} WHERE clave='PED' AND ultimo_numero = ${n}`;
         modo = "borrado_reusable";
       } else {
-        await sql`UPDATE fv_pedidos SET estado='anulado', cancelado_at=now() WHERE numero=${ref}`;
+        // stock_validado=false SIEMPRE acá (ya se restituyó arriba si estaba en true) — si no se resetea,
+        // una transición posterior sobre este pedido "anulado" podría restituir el stock DE NUEVO (doble crédito).
+        await sql`UPDATE fv_pedidos SET estado='anulado', cancelado_at=now(), stock_validado=false WHERE numero=${ref}`;
       }
       if (presup) await sql`UPDATE presupuestos SET estado='emitido' WHERE numero=${presup} AND COALESCE(estado,'') IN ('confirmado','pedido','convertido')`;
       // Si vino de un PEDIDO ONLINE (tienda), liberar el link para que VUELVA a la bandeja "Pedidos online".
