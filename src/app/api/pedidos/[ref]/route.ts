@@ -230,6 +230,9 @@ export async function GET(_req: NextRequest, { params }: { params: { ref: string
         const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${presupNum} LIMIT 1` as any[];
         cliente_id = pr[0]?.cliente_id ?? null;
       }
+      // Pedidos ONLINE (catálogo, sin presupuesto): el cliente CRM ya se resolvió al confirmar
+      // (pedidos-online/route.ts) y quedó en payload.cliente_id — usarlo como fallback directo.
+      if (!cliente_id && p.payload?.cliente_id) cliente_id = Number(p.payload.cliente_id) || null;
       // Datos fiscales completos del cliente (para facturar según AFIP)
       let cliente: any = null;
       if (cliente_id) {
@@ -1047,6 +1050,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       // Receptor (revendedor por defecto, o cliente final suyo)
       let revendedor_id: number | null = null;
       if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; revendedor_id = pr[0]?.cliente_id ?? null; }
+      // Pedidos ONLINE (sin presupuesto): el cliente ya se resolvió al confirmar y quedó en payload.cliente_id.
+      if (!revendedor_id && pl.cliente_id) revendedor_id = Number(pl.cliente_id) || null;
       const receptorFinalId = Number(b.receptor_cliente_id) || 0;
       let cliente_id: number | null = revendedor_id;
       let receptorNombre: string | null = rev.nombre || null;
@@ -1159,6 +1164,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       // El presupuesto se cotiza al REVENDEDOR; ese es el revendedor de la operación.
       let revendedor_id: number | null = null;
       if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; revendedor_id = pr[0]?.cliente_id ?? null; }
+      // Pedidos ONLINE (sin presupuesto): el cliente ya se resolvió al confirmar y quedó en payload.cliente_id.
+      if (!revendedor_id && pl.cliente_id) revendedor_id = Number(pl.cliente_id) || null;
 
       // Receptor de la factura: por defecto el revendedor; o un cliente final suyo (b.receptor_cliente_id).
       const receptorFinalId = Number(b.receptor_cliente_id) || 0;

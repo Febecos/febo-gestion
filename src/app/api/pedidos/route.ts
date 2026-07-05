@@ -77,7 +77,9 @@ export async function GET(_req: NextRequest) {
         const totalReal = sumNI > 0 ? sumNI : (Number(tt.total) || 0);
         return {
           origen: "fv", ref: p.numero, numero: p.numero,
-          cliente_id: p.cliente_id ? Number(p.cliente_id) : null,
+          // Pedidos ONLINE (sin presupuesto, el JOIN de arriba no los resuelve): fallback directo
+          // a payload.cliente_id, seteado al confirmar en pedidos-online/route.ts.
+          cliente_id: p.cliente_id ? Number(p.cliente_id) : (pl.cliente_id ? Number(pl.cliente_id) : null),
           cliente: p.cliente_crm || pl.revendedor?.nombre || pl.cliente?.nombre || "—",
           detalle: (pl.items?.length ? `${pl.items.length} ítem(s)` : "FV"),
           total: totalReal, moneda: pl.totales?.moneda || "USD", tc: pl.totales?.tc || null,

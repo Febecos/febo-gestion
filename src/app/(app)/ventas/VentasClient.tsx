@@ -587,6 +587,68 @@ function Pedidos({ abrirRef }: { abrirRef?: string } = {}) {
   );
 }
 
+// Completar CUIT/condición fiscal/domicilio de un cliente sin salir del pedido — para hacer
+// FACTURABLES los pedidos online, que llegan del checkout sin esos datos (pedido de Guille).
+// Consulta ARCA por CUIT (mismo endpoint/patrón que ClientesClient) y persiste en la ficha del CRM.
+function CompletarFiscal({ clienteId, onSaved }: { clienteId: number; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [cuit, setCuit] = useState(""); const [arca, setArca] = useState("");
+  const [datos, setDatos] = useState<any>(null); // { razon_social, condicion_fiscal, domicilio, localidad, provincia, cod_postal }
+  const [saving, setSaving] = useState(false);
+
+  const buscarArca = async () => {
+    const c = cuit.replace(/\D/g, "");
+    if (c.length !== 11) { setArca("El CUIT debe tener 11 dígitos."); return; }
+    setArca("Buscando en ARCA…");
+    try {
+      const r = await fetch("/api/consultar-cuit?cuit=" + c); const d = await r.json();
+      if (!d.ok || d.valido === false) throw new Error(d.error || "CUIT sin datos");
+      const dom = d.domicilio || {};
+      setDatos({
+        razon_social: d.razonSocial || d.denominacion || "",
+        condicion_fiscal: d.condicionFiscal || "",
+        domicilio: dom.direccion || "", localidad: dom.localidad || "", provincia: dom.provincia || "", cod_postal: dom.codPostal || "",
+      });
+      setArca("✓ " + (d.razonSocial || d.denominacion || c));
+    } catch (e: any) { setArca("✕ " + e.message); setDatos(null); }
+  };
+
+  const guardar = async () => {
+    setSaving(true);
+    try {
+      const campos: Record<string, string> = { cuit: cuit.replace(/\D/g, ""), ...datos };
+      for (const [field, value] of Object.entries(campos)) {
+        if (!value) continue;
+        await fetch(`/api/clientes/${clienteId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ field, value }) });
+      }
+      setOpen(false); onSaved();
+    } catch (e: any) { alert("No se pudo guardar: " + e.message); }
+    setSaving(false);
+  };
+
+  if (!open) return <button onClick={() => setOpen(true)} className="mt-1 mx-2 text-[11px] bg-amber-50 text-amber-700 border border-amber-200 rounded px-2 py-1 hover:bg-amber-100">📝 Completar datos fiscales (para poder facturar)</button>;
+  return (
+    <div className="mt-1 mx-2 border border-amber-200 bg-amber-50 rounded-lg p-2.5 text-sm space-y-2">
+      <div className="flex items-center gap-2">
+        <input value={cuit} onChange={(e) => setCuit(e.target.value)} placeholder="CUIT/CUIL (11 dígitos)" className="border rounded px-2 py-1 text-sm flex-1" />
+        <button onClick={buscarArca} className="text-xs bg-febo-azul text-white rounded px-2 py-1 whitespace-nowrap">🔎 Buscar ARCA</button>
+      </div>
+      {arca && <div className="text-xs text-gray-600">{arca}</div>}
+      {datos && (
+        <div className="text-xs text-gray-700 bg-white rounded px-2 py-1.5 space-y-0.5">
+          {datos.razon_social && <div><b>Razón social:</b> {datos.razon_social}</div>}
+          {datos.condicion_fiscal && <div><b>Condición fiscal:</b> {datos.condicion_fiscal}</div>}
+          {(datos.domicilio || datos.localidad || datos.provincia) && <div><b>Domicilio:</b> {[datos.domicilio, datos.localidad, datos.provincia].filter(Boolean).join(", ")}</div>}
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <button disabled={saving || !datos} onClick={guardar} className="text-xs bg-emerald-600 disabled:opacity-40 text-white rounded px-2 py-1">{saving ? "Guardando…" : "Guardar en la ficha del cliente"}</button>
+        <button onClick={() => setOpen(false)} className="text-xs text-gray-400 hover:text-gray-700">Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
 // ---------- MODAL DE PEDIDO (detalle completo, estilo admin) ----------
 const PED_BADGE: Record<string, [string, string]> = {
   pendiente_confirmacion: ["⏳ Pendiente", "#fbbf24"], aprobado: ["✅ Aprobado", "#22c55e"],
@@ -864,6 +926,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               <Cell l="Nota del revendedor" v={pl.notas || "—"} />
             </div>
             {!cli.id && <div className="text-[11px] text-amber-600 mt-1 px-2">⚠️ Este pedido no está vinculado a un cliente del CRM (sin ficha). Los datos fiscales pueden faltar. <button onClick={() => alert('Vinculá el cliente desde el presupuesto/CRM para traer CUIT y condición fiscal.')} className="underline">¿por qué?</button></div>}
+            {cli.id && (!cuitCli || !condCli) && <CompletarFiscal clienteId={cli.id} onSaved={load} />}
           </div>
 
           {/* Items */}
