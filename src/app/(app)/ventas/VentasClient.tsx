@@ -332,15 +332,15 @@ function ConfirmarClienteModal({ data, onClose, onDone }: { data: { p: any; item
       const d = await safeJson(r);
       // Sin stock en el depósito → cartel para confirmar pedido SIN STOCK (pedir equipo al proveedor).
       if (!d.ok && d.sin_stock) {
-        const falt = (d.faltantes || []).map((f: any) => `• ${f.codigo}${f.marca ? " (" + f.marca + ")" : ""} — pedido ${f.pedido}, en stock ${f.stock}`).join("\n");
+        const falt = (d.faltantes || []).map((f: any) => `• ${f.codigo}${f.marca ? " (" + f.marca + ")" : ""} — pedido ${f.pedido}, en depósito ${f.stock}`).join("\n");
         setBusy(false);
-        if (confirm(`⚠️ SIN STOCK en el depósito para este pedido:\n\n${falt}\n\n¿Crear el pedido igual? Va a quedar marcado como "pedido SIN STOCK" y hay que PEDIR EL EQUIPO AL PROVEEDOR.`)) {
+        if (confirm(`⚠️ Stock a confirmar manualmente para este pedido (el depósito registrado da menos de lo pedido, puede haber stock real no cargado):\n\n${falt}\n\n¿Crear el pedido igual? Va a quedar marcado como "stock a confirmar" y hay que verificar/pedir el equipo al proveedor.`)) {
           return crear(true);
         }
         return;
       }
       if (!d.ok) throw new Error(d.error);
-      alert("📦 Pasado a pedido" + (d.pedido_numero ? ": " + d.pedido_numero : "") + (d.sin_stock ? "\n⚠️ SIN STOCK — pedir el equipo al proveedor." : "") + ".");
+      alert("📦 Pasado a pedido" + (d.pedido_numero ? ": " + d.pedido_numero : "") + (d.sin_stock ? "\n⚠️ Stock a confirmar manualmente — verificar/pedir el equipo al proveedor." : "") + ".");
       onDone();
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
   };
@@ -794,11 +794,11 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
       const _t = await r.text();
       const d = _t ? JSON.parse(_t) : { ok: false, error: `El servidor no respondió (HTTP ${r.status})${r.status === 504 ? " — timeout" : ""}. Reintentá.` };
       if (d.ok) { await load(); onChanged(); return; }
-      const falt = (d.faltantes || []).map((f: any) => `• ${f.codigo} — pedido ${f.pedido}, en stock ${f.stock}`).join("\n");
+      const falt = (d.faltantes || []).map((f: any) => `• ${f.codigo} — pedido ${f.pedido}, en depósito ${f.stock}`).join("\n");
       if (d.puede_override) {
-        if (confirm(`⚠️ Falta stock:\n\n${falt}\n\nSos Guillermo (owner). ¿Forzar la validación igual (override)?`)) { setBusy(false); return validarStockPed(true); }
+        if (confirm(`⚠️ Stock a confirmar manualmente (el depósito registrado da menos de lo pedido):\n\n${falt}\n\nSos Guillermo (owner). ¿Forzar la validación igual, tras confirmar a mano que el stock real alcanza?`)) { setBusy(false); return validarStockPed(true); }
       } else {
-        alert(`❌ No se puede validar el stock — falta:\n\n${falt}\n\nCargá stock (remito/ajuste) o pedile a Guillermo que haga el override.`);
+        alert(`⚠️ Stock a confirmar manualmente:\n\n${falt}\n\nVerificá a mano si hay stock real (puede no estar cargado), cargalo (remito/ajuste) o pedile a Guillermo que confirme y haga el override.`);
       }
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
   };

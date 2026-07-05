@@ -340,8 +340,9 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const { ok, faltantes } = await validarStock(sql, items);
       const u = await getUser(req);
       if (!ok && !(b.override && u?.es_owner)) {
-        // Falta stock y no hay override válido → NO continúa.
-        return NextResponse.json({ ok: false, error: "Falta stock para confirmar el pedido.", faltantes, puede_override: !!u?.es_owner }, { status: 409 });
+        // El depósito registrado da menos de lo pedido y no hay override válido → NO continúa.
+        // (0 en el sistema no siempre es 0 real — puede haber stock físico no cargado.)
+        return NextResponse.json({ ok: false, error: "Stock a confirmar manualmente para este pedido.", faltantes, puede_override: !!u?.es_owner }, { status: 409 });
       }
       // OK (o override de owner): descuenta el stock disponible y marca validado.
       await descontarStock(sql, items, ref, u?.email || null);

@@ -228,7 +228,7 @@ export async function POST(req: NextRequest) {
     } else {
       const chk = await validarStock(sql, items).catch(() => ({ ok: true, faltantes: [] as any[] }));
       if (!chk.ok) {
-        stockWarning = "Stock insuficiente para: " + chk.faltantes.map((f: any) => `${f.codigo} (pedido ${f.pedido}, hay ${f.stock})`).join(", ") + ". Se confirmó igual (el pedido ya está pagado) — revisar a mano.";
+        stockWarning = "Stock a confirmar manualmente para: " + chk.faltantes.map((f: any) => `${f.codigo} (pedido ${f.pedido}, en depósito ${f.stock})`).join(", ") + ". Se confirmó igual (el pedido ya está pagado) — verificar a mano si hay stock real.";
         stockOk = false;
       }
     }

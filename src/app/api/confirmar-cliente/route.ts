@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
       }
       // Forzar con falta de stock = solo el owner (Guillermo).
       if (sinStock && b.force_sin_stock && !usuario?.es_owner) {
-        return NextResponse.json({ ok: false, error: "Falta stock: solo el administrador puede forzar la confirmación.", faltantes: chk.faltantes, sin_stock: true }, { status: 409 });
+        return NextResponse.json({ ok: false, error: "Stock a confirmar manualmente: solo el administrador puede forzar la confirmación.", faltantes: chk.faltantes, sin_stock: true }, { status: 409 });
       }
     }
 
