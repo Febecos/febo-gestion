@@ -17,6 +17,7 @@ const EST: Record<string, [string, string]> = {
   pagado: ["💰 Pagado", "#16a34a"],
   revisar_pago: ["⚠️ Revisar pago", "#dc2626"],
 };
+const NAVE_TARJETA: Record<string, string> = { "NAVE-VISA": "Visa", "NAVE-MASTER": "Mastercard" };
 const fARS = (n: any) => "$ " + Math.round(Number(n) || 0).toLocaleString("es-AR");
 const fF = (v: any) => v ? new Date(v).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
 const chip = (map: Record<string, [string, string]>, k: string) => {
@@ -136,7 +137,14 @@ function DetalleModal({ p, onClose, confirmar, ignorar, busy }: { p: any; onClos
             <div>
               <div className="text-[11px] uppercase text-gray-400 font-semibold mb-1">Cliente</div>
               <div className="font-semibold">{row.cliente_nombre || row.revendedor_nombre || "—"}</div>
-              <div className="text-gray-600 text-xs">{row.cliente_email || row.revendedor_email || "—"}{row.whatsapp ? ` · ${row.whatsapp}` : ""}</div>
+              <div className="text-gray-600 text-xs">{row.cliente_email || row.revendedor_email || "—"}</div>
+              {row.whatsapp && (
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="font-semibold text-sm">📞 {row.whatsapp}</span>
+                  <a href={`tel:${row.whatsapp}`} className="text-xs text-febo-azul hover:underline">Llamar</a>
+                  <a href={`https://wa.me/${String(row.whatsapp).replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className="text-xs text-emerald-600 hover:underline">WhatsApp</a>
+                </div>
+              )}
               {cliente ? (
                 <div className="mt-1 text-xs text-gray-600 bg-gray-50 rounded px-2 py-1.5 space-y-0.5">
                   <div className="text-emerald-700 font-semibold text-[11px]">✓ Ya existe en el CRM (cliente #{cliente.id})</div>
@@ -165,7 +173,14 @@ function DetalleModal({ p, onClose, confirmar, ignorar, busy }: { p: any; onClos
             </div>
             <div>
               <div className="text-[11px] uppercase text-gray-400 font-semibold mb-1">Pago</div>
-              <div className="flex items-center gap-2">{chip(MET, row.metodo_pago)}{chip(EST, row.estado)}</div>
+              <div className="flex items-center gap-2">
+                {chip(MET, row.metodo_pago)}
+                {row.metodo_pago === "nave" && NAVE_TARJETA[row.notas_admin] && (
+                  <span className="rounded px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap bg-violet-100 text-violet-700">💳 {NAVE_TARJETA[row.notas_admin]}</span>
+                )}
+                {chip(EST, row.estado)}
+              </div>
+              {row.metodo_pago === "nave" && !NAVE_TARJETA[row.notas_admin] && <div className="text-xs text-amber-600 mt-1">⚠️ Sin tipo de tarjeta registrado — preguntar al cliente (Visa/Master) antes de generar el link NAVE.</div>}
               {row.mp_payment_id && <div className="text-xs text-gray-500 mt-1">N° operación MP: {row.mp_payment_id}</div>}
               {row.mp_checkout_url && <a href={row.mp_checkout_url} target="_blank" rel="noreferrer" className="text-xs text-febo-azul hover:underline">Ver checkout →</a>}
             </div>
