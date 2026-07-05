@@ -41,7 +41,11 @@ export default function PedidosOnlineClient() {
     setBusy(p.id);
     const r = await fetch("/api/pedidos-online", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id, accion: "confirmar" }) });
     const d = await r.json(); setBusy(null);
-    if (d.ok) { setToast(`✅ Pedido ${d.pedido_numero} creado en Gestión`); setTimeout(() => setToast(""), 4000); load(); return d; }
+    if (d.ok) {
+      setToast(`✅ Pedido ${d.pedido_numero} creado en Gestión`); setTimeout(() => setToast(""), 4000); load();
+      if (d.stock_warning) alert("⚠️ " + d.stock_warning);
+      return d;
+    }
     else { alert("⚠️ " + (d.error || "No se pudo confirmar")); return d; }
   };
   const ignorar = async (p: any) => {
@@ -49,6 +53,14 @@ export default function PedidosOnlineClient() {
     setBusy(p.id);
     await fetch("/api/pedidos-online", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id, accion: "ignorar" }) });
     setBusy(null); load();
+  };
+  const cancelar = async (p: any) => {
+    if (!confirm(`Cancelar el pedido online #${p.id} de ${p.cliente_nombre || "—"}?\n\nSe le avisa por mail al cliente que su pedido NO se validó/se canceló. Si ya se había descontado stock, se devuelve. Esta acción queda registrada (no es lo mismo que "ocultar").`)) return;
+    setBusy(p.id);
+    const r = await fetch("/api/pedidos-online", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id, accion: "cancelar" }) });
+    const d = await r.json(); setBusy(null);
+    if (d.ok) { setToast(`🚫 Pedido cancelado, mail enviado al cliente`); setTimeout(() => setToast(""), 4000); load(); }
+    else alert("⚠️ " + (d.error || "No se pudo cancelar"));
   };
 
   return (
@@ -86,6 +98,7 @@ export default function PedidosOnlineClient() {
                 <td className="px-3 py-1.5 text-center">{chip(EST, p.estado)}</td>
                 <td className="px-3 py-1.5 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
                   <button disabled={busy === p.id} onClick={() => confirmar(p)} title="Registra el cliente en el CRM y crea el pedido en Gestión (PED-####) para seguir la operación. No manda email." className="bg-febo-azul disabled:opacity-40 text-white rounded-lg px-2.5 py-1 text-xs font-semibold hover:bg-febo-azul/90">{busy === p.id ? "…" : "Confirmar"}</button>
+                  <button disabled={busy === p.id} onClick={() => cancelar(p)} title="Cancela el pedido y avisa al cliente por mail (estado real, auditable — no es lo mismo que ocultar)." className="ml-1 text-rose-600 hover:text-rose-800 text-xs font-semibold">cancelar</button>
                   <button disabled={busy === p.id} onClick={() => ignorar(p)} title="Oculta este pedido de la bandeja sin crear nada en Gestión." className="ml-1 text-gray-400 hover:text-gray-700 text-xs">ocultar</button>
                 </td>
               </tr>
@@ -94,13 +107,13 @@ export default function PedidosOnlineClient() {
         </table>
       </div>
       <div className="mt-2 text-[11px] text-gray-400">El cobro de MercadoPago/NAVE se confirma solo (webhook). La transferencia la confirma una persona. Tocá una fila para ver el detalle completo antes de confirmar.</div>
-      {detalle && <DetalleModal p={detalle} onClose={() => setDetalle(null)} confirmar={confirmar} ignorar={ignorar} busy={busy} />}
+      {detalle && <DetalleModal p={detalle} onClose={() => setDetalle(null)} confirmar={confirmar} ignorar={ignorar} cancelar={cancelar} busy={busy} />}
     </div>
   );
 }
 
 // ---------- MODAL DE DETALLE (ver todo antes de confirmar → facturar) ----------
-function DetalleModal({ p, onClose, confirmar, ignorar, busy }: { p: any; onClose: () => void; confirmar: (p: any) => Promise<any>; ignorar: (p: any) => void; busy: number | null }) {
+function DetalleModal({ p, onClose, confirmar, ignorar, cancelar, busy }: { p: any; onClose: () => void; confirmar: (p: any) => Promise<any>; ignorar: (p: any) => void; cancelar: (p: any) => void; busy: number | null }) {
   const { open } = useWindows();
   const [full, setFull] = useState<any | null>(null);
   const [cliente, setCliente] = useState<any | null>(null);
@@ -200,6 +213,7 @@ function DetalleModal({ p, onClose, confirmar, ignorar, busy }: { p: any; onClos
           ) : (
             <>
               <button disabled={busy === p.id} onClick={onConfirmar} className="bg-febo-azul disabled:opacity-40 text-white rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-febo-azul/90">{busy === p.id ? "…" : "Confirmar"}</button>
+              <button disabled={busy === p.id} onClick={() => { cancelar(p); onClose(); }} className="text-rose-600 hover:text-rose-800 text-xs font-semibold">cancelar</button>
               <button disabled={busy === p.id} onClick={() => { ignorar(p); onClose(); }} className="text-gray-400 hover:text-gray-700 text-xs">ocultar</button>
               <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700 text-xs">Cerrar</button>
             </>
