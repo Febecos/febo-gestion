@@ -80,7 +80,7 @@ export default function StockClient() {
         <select value={stockF} onChange={(e) => setStockF(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1 text-xs">
           <option value="">Stock: todos</option>
           <option value="con">Con stock local</option>
-          <option value="sin">Sin stock local</option>
+          <option value="sin">Stock a confirmar (0 en depósito)</option>
         </select>
         <label className="flex items-center gap-1 text-xs text-gray-600"><input type="checkbox" checked={soloBajo} onChange={(e) => setSoloBajo(e.target.checked)} /> Solo bajo mínimo</label>
         {(kit || fv || categoria || emisor || lista || stockF || soloBajo || q) && <button onClick={() => { setKit(false); setFv(false); setCategoria(""); setEmisor(""); setLista(""); setStockF(""); setSoloBajo(false); setQ(""); }} className="text-xs text-gray-400 hover:underline">limpiar</button>}

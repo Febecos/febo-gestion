@@ -66,7 +66,7 @@ export default function ProductosClient() {
                     p.a_confirmar
                       ? <span className="text-amber-500 text-[11px] font-semibold" title="Stock a confirmar">a confirmar</span>
                       : p.en_stock ? <span className="text-emerald-600" title={p.disponibilidad}>●</span>
-                      : <span className="text-gray-300" title={p.disponibilidad || "sin stock"}>○</span>
+                      : <span className="text-gray-300" title={p.disponibilidad || "Stock a confirmar"}>○</span>
                   }</td>
                   <td className="px-3 py-2 text-right text-gray-500 text-xs">{p.origen === "fv" ? fmtU(p.costo_usd) : "—"}</td>
                   <td className="px-3 py-2 text-right text-gray-500 text-xs">{p.costo_ars ? fmt(p.costo_ars) : "—"}</td>
@@ -92,7 +92,7 @@ function ProductoModal({ prod, cats, onClose, onSaved }: { prod: Prod | null; ca
   }));
   const [saving, setSaving] = useState(false);
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
-  const CAMPOS = ["codigo", "descripcion", "descripcion_alt", "categoria", "marca", "proveedor", "precio", "iva_pct", "stock"];
+  const CAMPOS = ["codigo", "descripcion", "descripcion_alt", "categoria", "marca", "proveedor", "precio", "iva_pct"];
 
   async function guardar() {
     if (!f.descripcion.trim()) { alert("Poné una descripción"); return; }
@@ -135,7 +135,7 @@ function ProductoModal({ prod, cats, onClose, onSaved }: { prod: Prod | null; ca
           <label className={lbl}>PROVEEDOR<input value={f.proveedor} onChange={(e) => set("proveedor", e.target.value)} className={inp} placeholder="ej: Mercado Libre - X" disabled={!propio} /></label>
           <label className={lbl}>PRECIO (ARS)<input type="number" value={f.precio} onChange={(e) => set("precio", e.target.value)} className={inp} disabled={!propio} /></label>
           <label className={lbl}>IVA %<select value={f.iva_pct} onChange={(e) => set("iva_pct", e.target.value)} className={inp} disabled={!propio}><option value="21">21%</option><option value="10.5">10,5%</option><option value="0">0%</option></select></label>
-          <label className={lbl}>STOCK<input type="number" value={f.stock} onChange={(e) => set("stock", e.target.value)} className={inp} disabled={!propio} /></label>
+          <label className={lbl}>STOCK <span className="font-normal text-gray-400">(solo visible — se modifica en Stock Local)</span><input type="number" value={f.stock} className={inp + " bg-gray-100 text-gray-500"} disabled readOnly /></label>
         </div>
         <div className="flex justify-between items-center mt-6">
           {!esNuevo && propio ? <button onClick={eliminar} className="bg-red-50 text-red-700 border border-red-200 rounded-lg px-4 py-2 text-sm font-semibold">🗑 Eliminar</button> : <span />}
