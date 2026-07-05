@@ -59,8 +59,11 @@ export default function PedidosOnlineClient() {
     setBusy(p.id);
     const r = await fetch("/api/pedidos-online", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id, accion: "cancelar" }) });
     const d = await r.json(); setBusy(null);
-    if (d.ok) { setToast(`🚫 Pedido cancelado, mail enviado al cliente`); setTimeout(() => setToast(""), 4000); load(); }
-    else alert("⚠️ " + (d.error || "No se pudo cancelar"));
+    if (d.ok) {
+      if (d.mail?.ok) { setToast(`🚫 Pedido cancelado, mail enviado al cliente`); setTimeout(() => setToast(""), 4000); }
+      else { setToast(`🚫 Pedido cancelado`); setTimeout(() => setToast(""), 4000); alert("⚠️ El pedido se canceló pero el mail NO se pudo enviar: " + (d.mail?.error || "error desconocido") + "\nAvisale al cliente por otro medio."); }
+      load();
+    } else alert("⚠️ " + (d.error || "No se pudo cancelar"));
   };
 
   return (

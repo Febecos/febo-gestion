@@ -119,8 +119,10 @@ export async function POST(req: NextRequest) {
       }
       const r = await sql`UPDATE pedidos SET gestion_pedido_id = 'CANCELADO', gestion_tomado_at = now() WHERE id::text = ${id} AND (gestion_tomado_at IS NULL OR gestion_pedido_id IS NULL) RETURNING id` as any[];
       if (!r.length && !ped.gestion_pedido_id) return NextResponse.json({ ok: false, error: "Este pedido ya fue tomado en Gestión." }, { status: 409 });
-      // Aviso al cliente (best-effort, no bloquea la cancelación si el mail falla).
+      // Aviso al cliente (best-effort, no bloquea la cancelación si el mail falla — pero SÍ reportamos
+      // el resultado en la respuesta, para no repetir el bug de "creí que mandaba y no mandaba nada").
       const emailCancel = (ped.revendedor_email || "").trim().toLowerCase();
+      let mailCancelado: any = null;
       if (emailCancel) {
         const html = `<div style="font-family:'Trebuchet MS',sans-serif;max-width:520px;margin:0 auto">
           <h2 style="color:#0b3d6b">Tu pedido no pudo validarse</h2>
@@ -129,13 +131,22 @@ export async function POST(req: NextRequest) {
           <p>Si ya realizaste el pago, no te preocupes: nadie te va a cobrar por este pedido, o si el cobro ya se hizo se te reintegra. Cualquier duda, respondé este mail o escribinos por WhatsApp.</p>
           <p>Disculpá las molestias.<br/>Equipo FEBECOS</p>
         </div>`;
-        await fetch("https://febecos.com/api/admin?action=mail_send_internal", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ to: emailCancel, subject: "Tu pedido no pudo validarse — FEBECOS", html }),
-          signal: AbortSignal.timeout(10000),
-        }).catch(() => {});
+        try {
+          const internal = process.env.INTERNAL_SERVICE_SECRET; const fvTok = process.env.FV_ADMIN_TOKEN;
+          const headers: Record<string, string> = { "Content-Type": "application/json" };
+          if (internal) headers["Authorization"] = "Bearer " + internal; else if (fvTok) headers["X-Admin-Token"] = fvTok;
+          const rm = await fetch("https://febecos.com/api/admin?action=mail_send_internal", {
+            method: "POST", headers,
+            body: JSON.stringify({ to: emailCancel, subject: "Tu pedido no pudo validarse — FEBECOS", html }),
+            signal: AbortSignal.timeout(10000),
+          });
+          mailCancelado = await rm.json().catch(() => ({ ok: false, error: "respuesta no-JSON del admin" }));
+          if (!rm.ok || !mailCancelado?.ok) mailCancelado = { ok: false, error: mailCancelado?.error || `HTTP ${rm.status}` };
+        } catch (e: any) { mailCancelado = { ok: false, error: e.message }; }
+      } else {
+        mailCancelado = { ok: false, error: "El pedido no tiene email de cliente cargado" };
       }
-      return NextResponse.json({ ok: true, cancelado: true });
+      return NextResponse.json({ ok: true, cancelado: true, mail: mailCancelado });
     }
 
     // Lock anti doble-toma (acordado con DEV Admin): reclamo el pedido con WHERE gestion_tomado_at IS NULL.
