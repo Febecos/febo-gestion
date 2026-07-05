@@ -29,7 +29,7 @@ function Body({ k, payload }: { k: WinKey; payload?: any }) {
   if (k === "proveedores") return <ProveedoresClient />;
   if (k === "compras") return <ComprasClient />;
   if (k === "transportistas") return <TransportistasClient />;
-  if (k === "ventas") return <VentasClient />;
+  if (k === "ventas") return <VentasClient abrirRef={payload?.abrirRef} />;
   if (k === "pedidos-online") return <PedidosOnlineClient />;
   if (k === "productos") return <ProductosClient />;
   if (k === "stock") return <StockClient />;

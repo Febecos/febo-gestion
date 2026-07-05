@@ -29,6 +29,20 @@ export async function GET(req: NextRequest) {
     await ensureCols(sql);
     const sp = req.nextUrl.searchParams;
 
+    if (sp.get("id")) {
+      // Detalle completo para el modal "Ver" — todas las columnas del pedido online +
+      // el cliente CRM si ya matchea por email/whatsapp (fuente única, sin copiar).
+      const id = String(sp.get("id")).trim();
+      const ped = (await sql`SELECT * FROM pedidos WHERE id::text = ${id} LIMIT 1` as any[])[0];
+      if (!ped) return NextResponse.json({ ok: false, error: "pedido no encontrado" }, { status: 404 });
+      const email = (ped.revendedor_email || "").trim().toLowerCase() || null;
+      const wa = digits(ped.whatsapp || ped.notas_cliente);
+      let cliente = null;
+      if (email) cliente = (await sql`SELECT id, nombre, email, whatsapp, cuit, condicion_fiscal, domicilio, localidad, provincia FROM clientes WHERE lower(email) = ${email} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1` as any[])[0] || null;
+      if (!cliente && wa) cliente = (await sql`SELECT id, nombre, email, whatsapp, cuit, condicion_fiscal, domicilio, localidad, provincia FROM clientes WHERE whatsapp = ${wa} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1` as any[])[0] || null;
+      return NextResponse.json({ ok: true, pedido: ped, cliente });
+    }
+
     if (sp.get("count")) {
       // `id` es UUID → no se puede usar como marca numérica. Watermark por created_at.
       const r = (await sql`

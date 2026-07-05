@@ -68,9 +68,9 @@ const SECCIONES = [
 ] as const;
 type Seccion = (typeof SECCIONES)[number]["k"];
 
-export default function VentasClient() {
+export default function VentasClient({ abrirRef }: { abrirRef?: string } = {}) {
   const { setTitle } = useWindows();
-  const [sec, setSec] = useState<Seccion>("presupuestos");
+  const [sec, setSec] = useState<Seccion>(abrirRef ? "pedidos" : "presupuestos");
   useEffect(() => {
     const lbl = SECCIONES.find((s) => s.k === sec)?.label || "Presupuestos";
     setTitle("ventas", `🧾 Ventas / ${lbl}`);
@@ -88,7 +88,7 @@ export default function VentasClient() {
       <div className="flex-1 min-w-0">
         {sec === "presupuestos" && <Presupuestos />}
         {sec === "kitsfv" && <KitsFV />}
-        {sec === "pedidos" && <Pedidos />}
+        {sec === "pedidos" && <Pedidos abrirRef={abrirRef} />}
         {sec === "facturas" && <Comprobantes tipo="factura" titulo="Facturas" />}
         {sec === "notas" && <Comprobantes tipo="nota_credito,nota_debito" titulo="Notas de Crédito / Débito" />}
         {sec === "recibos" && <Comprobantes tipo="recibo" titulo="Recibos" />}
@@ -545,12 +545,13 @@ function KitsFV() {
 }
 
 // ---------- PEDIDOS (bombas + fv unificados) ----------
-function Pedidos() {
+function Pedidos({ abrirRef }: { abrirRef?: string } = {}) {
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
-  const [sel, setSel] = useState<string | null>(null);
+  const [sel, setSel] = useState<string | null>(abrirRef || null);
   const { openFicha } = useWindows();
   const load = () => fetch("/api/pedidos").then(safeJson).then((d) => { setRows(d.ok ? d.pedidos : []); setLoading(false); });
   useEffect(() => { load(); }, []);
+  useEffect(() => { if (abrirRef) setSel(abrirRef); }, [abrirRef]);
   // Refrescar al volver a la ventana (ej. tras generar un pedido en el cotizador)
   useEffect(() => { const onFocus = () => load(); window.addEventListener("focus", onFocus); return () => window.removeEventListener("focus", onFocus); }, []);
   return (
