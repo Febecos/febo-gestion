@@ -506,7 +506,10 @@ function KitsFV() {
     try {
       const d = await safeJson(await fetch("/api/fv-session"));
       if (!d.ok || !d.token) { alert("⚠️ No se pudo abrir el cotizador (revisá FV_BRIDGE_SECRET)."); return; }
-      open("presup-edit", { url: `https://fv.febecos.com/cotizar#admin_jwt=${d.token}&kit=${k.id}`, title: `🧩 Nuevo desde kit — ${k.nombre}` });
+      // docTitle inicial = nombre del kit (mejor que el genérico "Editar presupuesto"); en cuanto se
+      // guarde el presupuesto adentro, fv-febecos avisa por postMessage y WindowManager lo actualiza
+      // al N°+cliente real (para que "Guardar como PDF" sugiera el nombre correcto).
+      open("presup-edit", { url: `https://fv.febecos.com/cotizar#admin_jwt=${d.token}&kit=${k.id}`, title: `🧩 Nuevo desde kit — ${k.nombre}`, docTitle: `Kit — ${k.nombre}` });
     } finally { setBusy(null); }
   };
 

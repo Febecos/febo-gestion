@@ -86,6 +86,22 @@ export default function WindowManager({ children }: { children: React.ReactNode 
     setWins((ws) => ws.map((w) => (w.key === k && w.title !== title ? { ...w, title } : w)));
   }, []);
 
+  // El cotizador FV (otro origen, fv.febecos.com) avisa por postMessage cuando GUARDA un
+  // presupuesto nuevo (ej. "Nuevo desde kit", que arranca sin número/cliente conocidos) — sin esto,
+  // el título de la pestaña/ventana "presup-edit" se queda en el genérico "Editar presupuesto" y
+  // el "Guardar como PDF" del navegador sugiere ese nombre en vez de "N° · Cliente · FEBECOS".
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== "https://fv.febecos.com" || e.data?.type !== "fv_presupuesto_guardado") return;
+      const { numero, cliente } = e.data;
+      if (!numero) return;
+      const docTitle = `${cliente ? cliente + " - " : ""}${numero}`;
+      setWins((ws) => ws.map((w) => (w.key === "presup-edit" ? { ...w, title: `☀️ ${numero}`, payload: { ...w.payload, docTitle } } : w)));
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
+
   const close = (id: number) => setWins((ws) => ws.filter((w) => w.id !== id));
   const setFlag = (id: number, f: "max" | "min") => setWins((ws) => ws.map((w) => (w.id === id ? { ...w, [f]: !w[f], ...(f === "min" && !w.min ? {} : {}) } : w)));
   const restore = (id: number) => { setWins((ws) => ws.map((w) => (w.id === id ? { ...w, min: false } : w))); focus(id); };
