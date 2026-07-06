@@ -474,11 +474,14 @@ function PasosPedido({ p }: { p: any }) {
 // ---------- KITS FV (plantillas reutilizables: componentes+cantidades, SIN precios) ----------
 // El kit se repricea SIEMPRE con el "Markup Kit Full" del admin FV al generar un presupuesto
 // nuevo (nunca toca un presupuesto existente — regla dura de no auto-actualizar).
+const fUSD = (n: number | null | undefined) => n == null ? "—" : "USD " + Number(n).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 function KitsFV() {
   const { open } = useWindows();
   const [rows, setRows] = useState<any[]>([]); const [loading, setLoading] = useState(true);
   const [verArchivados, setVerArchivados] = useState(false);
   const [busy, setBusy] = useState<number | null>(null);
+  const [editItemsFor, setEditItemsFor] = useState<any | null>(null);
   const load = useCallback(async () => {
     setLoading(true);
     const d = await safeJson(await fetch("/api/fv-kits"));
@@ -508,6 +511,7 @@ function KitsFV() {
   };
 
   const visibles = rows.filter((k) => verArchivados || !k.archivado);
+  const markupPct = rows[0]?.markup_kit_full_pct;
   return (
     <div>
       <div className="flex items-center gap-2 mb-3">
@@ -518,19 +522,23 @@ function KitsFV() {
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
-            <th className="text-left px-4 py-3">Nombre</th><th className="text-left px-4 py-3">Categoría</th><th className="text-left px-4 py-3">Descripción</th><th className="text-center px-4 py-3">Ítems</th><th></th>
+            <th className="text-left px-4 py-3">Nombre</th><th className="text-left px-4 py-3">Categoría</th><th className="text-left px-4 py-3">Descripción</th><th className="text-center px-4 py-3">Ítems</th><th className="text-right px-4 py-3" title="Estimado a hoy — recalcula al generar el presupuesto">Precio estimado</th><th></th>
           </tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={5} className="text-center py-8 text-gray-400">Cargando…</td></tr>
-            : visibles.length === 0 ? <tr><td colSpan={5} className="text-center py-8 text-gray-400">Sin kits todavía. Guardá uno desde Presupuestos (🧩) en un presupuesto FV.</td></tr>
+            {loading ? <tr><td colSpan={6} className="text-center py-8 text-gray-400">Cargando…</td></tr>
+            : visibles.length === 0 ? <tr><td colSpan={6} className="text-center py-8 text-gray-400">Sin kits todavía. Guardá uno desde Presupuestos (🧩) en un presupuesto FV.</td></tr>
             : visibles.map((k) => (
               <tr key={k.id} className={"border-t border-gray-100 hover:bg-gray-50" + (k.archivado ? " opacity-50" : "")}>
                 <td className="px-4 py-2 font-semibold">{k.nombre}{k.archivado && <span className="ml-1 text-[10px] text-gray-400 font-normal">(archivado)</span>}</td>
                 <td className="px-4 py-2 text-gray-600">{k.categoria || "—"}</td>
                 <td className="px-4 py-2 text-gray-500">{k.descripcion || "—"}</td>
                 <td className="px-4 py-2 text-center text-gray-600">{k.n_items}</td>
+                <td className="px-4 py-2 text-right font-semibold text-gray-700" title={k.estimado_usd == null ? "Falta algún componente en el catálogo vigente — no se puede estimar completo" : `Estimado a hoy con markup ${k.markup_kit_full_pct}% — reprecia al generar el presupuesto`}>
+                  {fUSD(k.estimado_usd)}{k.estimado_usd == null && <span className="ml-1 text-[10px] text-amber-500">⚠️</span>}
+                </td>
                 <td className="px-4 py-2 text-right whitespace-nowrap">
                   {!k.archivado && <button disabled={busy === k.id} onClick={() => nuevoDesdeKit(k)} title="Nuevo presupuesto desde este kit (elegís cliente, precios recalculados)" className="px-2.5 py-1 rounded-lg bg-febo-azul text-white text-xs font-semibold disabled:opacity-40 mr-2">➕ Nuevo presupuesto</button>}
+                  <button disabled={busy === k.id} onClick={() => setEditItemsFor(k)} title="Editar componentes y cantidades del kit" className="text-gray-400 hover:text-emerald-600 mr-2 disabled:opacity-40">🧩</button>
                   <button disabled={busy === k.id} onClick={() => renombrar(k)} title="Renombrar / editar categoría" className="text-gray-400 hover:text-febo-azul mr-2 disabled:opacity-40">✏️</button>
                   <button disabled={busy === k.id} onClick={() => duplicar(k)} title="Duplicar kit" className="text-gray-400 hover:text-febo-azul mr-2 disabled:opacity-40">📋</button>
                   <button disabled={busy === k.id} onClick={() => archivar(k)} title={k.archivado ? "Reactivar" : "Archivar"} className="text-gray-400 hover:text-red-500 disabled:opacity-40">{k.archivado ? "♻️" : "🗄"}</button>
@@ -539,6 +547,89 @@ function KitsFV() {
             ))}
           </tbody>
         </table>
+      </div>
+      {editItemsFor && <EditarItemsKitModal kit={editItemsFor} onClose={() => setEditItemsFor(null)} onSaved={() => { setEditItemsFor(null); load(); }} />}
+    </div>
+  );
+}
+
+// Editor de componentes+cantidades de un kit guardado — el kit SIGUE sin precio propio (regla
+// dura), esto solo edita la RECETA. Muestra el estimado a hoy en vivo mientras se edita.
+function EditarItemsKitModal({ kit, onClose, onSaved }: { kit: any; onClose: () => void; onSaved: () => void }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [markup, setMarkup] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [nuevo, setNuevo] = useState({ codigo: "", proveedor: "", descripcion: "", cantidad: "1" });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const d = await safeJson(await fetch(`/api/fv-kits?id=${kit.id}`));
+    if (d.ok) { setItems(d.kit.items || []); setMarkup(d.markup_kit_full_pct); }
+    setLoading(false);
+  }, [kit.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const setCant = (i: number, v: string) => setItems((s) => s.map((it, j) => j === i ? { ...it, cantidad: Math.max(1, Number(v) || 1) } : it));
+  const quitar = (i: number) => setItems((s) => s.filter((_, j) => j !== i));
+  const agregar = () => {
+    if (!nuevo.codigo.trim()) return;
+    setItems((s) => [...s, { codigo: nuevo.codigo.trim(), proveedor: nuevo.proveedor.trim() || null, descripcion: nuevo.descripcion.trim() || null, cantidad: Math.max(1, Number(nuevo.cantidad) || 1) }]);
+    setNuevo({ codigo: "", proveedor: "", descripcion: "", cantidad: "1" });
+  };
+  const guardar = async () => {
+    if (!items.length) { alert("El kit necesita al menos 1 ítem."); return; }
+    setSaving(true);
+    const d = await safeJson(await fetch("/api/fv-kits", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ accion: "editar_items", id: kit.id, items }) }));
+    setSaving(false);
+    if (d.ok) onSaved(); else alert("⚠️ " + (d.error || "No se pudo guardar"));
+  };
+
+  return (
+    <div className="fixed inset-0 z-[130] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-xl w-full max-w-[640px] max-h-[85vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-emerald-600 text-white rounded-t-xl px-5 py-3 flex items-center justify-between shrink-0">
+          <div className="font-bold">🧩 Editar componentes — {kit.nombre}</div>
+          <button onClick={onClose} className="text-white/80 hover:text-white text-xl leading-none">✕</button>
+        </div>
+        <div className="flex-1 overflow-auto p-5 text-sm">
+          {loading ? <div className="text-gray-400 text-center py-8">Cargando…</div> : (
+          <>
+            <div className="text-xs text-gray-400 mb-3">El kit sigue siendo solo receta (componentes+cantidades), sin precio propio — se repricea siempre al generar un presupuesto nuevo, con el markup Kit Full vigente ({markup}%).</div>
+            <table className="w-full text-sm mb-3">
+              <thead className="text-[10px] uppercase text-gray-400"><tr>
+                <th className="text-left py-1">Código</th><th className="text-left py-1">Proveedor</th><th className="text-left py-1">Descripción</th><th className="text-center py-1">Cant</th><th></th>
+              </tr></thead>
+              <tbody>
+                {items.map((it, i) => (
+                  <tr key={i} className="border-t border-gray-100">
+                    <td className="py-1.5 font-mono text-xs">{it.codigo}</td>
+                    <td className="py-1.5 text-gray-500 text-xs">{it.proveedor || "—"}</td>
+                    <td className="py-1.5 text-gray-600 text-xs">{it.descripcion || "—"}</td>
+                    <td className="py-1.5 text-center"><input type="number" min={1} value={it.cantidad} onChange={(e) => setCant(i, e.target.value)} className="w-16 border border-gray-300 rounded px-1.5 py-0.5 text-center" /></td>
+                    <td className="py-1.5 text-right"><button onClick={() => quitar(i)} className="text-gray-400 hover:text-red-500">✕</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="border-t border-gray-100 pt-3">
+              <div className="text-[11px] uppercase text-gray-400 font-semibold mb-1.5">Agregar componente</div>
+              <div className="flex gap-2 items-center flex-wrap">
+                <input value={nuevo.codigo} onChange={(e) => setNuevo((s) => ({ ...s, codigo: e.target.value }))} placeholder="Código" className="border border-gray-300 rounded px-2 py-1 text-sm w-32" />
+                <input value={nuevo.proveedor} onChange={(e) => setNuevo((s) => ({ ...s, proveedor: e.target.value }))} placeholder="Proveedor (opcional)" className="border border-gray-300 rounded px-2 py-1 text-sm w-32" />
+                <input value={nuevo.descripcion} onChange={(e) => setNuevo((s) => ({ ...s, descripcion: e.target.value }))} placeholder="Descripción (opcional)" className="border border-gray-300 rounded px-2 py-1 text-sm flex-1 min-w-[140px]" />
+                <input type="number" min={1} value={nuevo.cantidad} onChange={(e) => setNuevo((s) => ({ ...s, cantidad: e.target.value }))} className="border border-gray-300 rounded px-2 py-1 text-sm w-16 text-center" />
+                <button onClick={agregar} className="text-xs bg-febo-azul text-white rounded px-2.5 py-1">＋ Agregar</button>
+              </div>
+              <div className="text-[11px] text-gray-400 mt-1">Usá el mismo código que en el catálogo (revisá en Cotizar FV si no lo sabés de memoria) — si no matchea ninguno vigente, va a quedar "fantasma" al usar el kit.</div>
+            </div>
+          </>
+          )}
+        </div>
+        <div className="border-t border-gray-100 px-5 py-3 flex items-center gap-2 shrink-0">
+          <button disabled={saving || loading} onClick={guardar} className="bg-emerald-600 disabled:opacity-40 text-white rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-emerald-700">{saving ? "Guardando…" : "Guardar cambios"}</button>
+          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700 text-xs">Cancelar</button>
+        </div>
       </div>
     </div>
   );
