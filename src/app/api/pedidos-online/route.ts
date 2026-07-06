@@ -51,7 +51,10 @@ export async function GET(req: NextRequest) {
       const wa = digits(ped.whatsapp || ped.notas_cliente);
       let cliente = null;
       if (email) cliente = (await sql`SELECT id, nombre, email, whatsapp, cuit, condicion_fiscal, domicilio, localidad, provincia FROM clientes WHERE lower(email) = ${email} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1` as any[])[0] || null;
-      if (!cliente && wa) cliente = (await sql`SELECT id, nombre, email, whatsapp, cuit, condicion_fiscal, domicilio, localidad, provincia FROM clientes WHERE whatsapp = ${wa} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1` as any[])[0] || null;
+      if (!cliente && wa && wa.length >= 8) cliente = (await sql`SELECT id, nombre, email, whatsapp, cuit, condicion_fiscal, domicilio, localidad, provincia FROM clientes
+        WHERE (crm_eliminado IS NULL OR crm_eliminado = false)
+          AND length(regexp_replace(COALESCE(whatsapp,''),'\D','','g')) >= 8
+          AND right(regexp_replace(whatsapp,'\D','','g'), 10) = right(${wa}, 10) LIMIT 1` as any[])[0] || null;
       return NextResponse.json({ ok: true, pedido: ped, cliente });
     }
 
@@ -170,8 +173,11 @@ export async function POST(req: NextRequest) {
       const c = (await sql`SELECT id FROM clientes WHERE lower(email) = ${email} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1` as any[])[0];
       if (c) clienteId = c.id;
     }
-    if (!clienteId && wa) {
-      const c = (await sql`SELECT id FROM clientes WHERE whatsapp = ${wa} AND (crm_eliminado IS NULL OR crm_eliminado = false) LIMIT 1` as any[])[0];
+    if (!clienteId && wa && wa.length >= 8) {
+      // Últimos 10 dígitos (no exacto) — el mismo contacto entra con/sin prefijo 549 según el canal.
+      const c = (await sql`SELECT id FROM clientes WHERE (crm_eliminado IS NULL OR crm_eliminado = false)
+        AND length(regexp_replace(COALESCE(whatsapp,''),'\D','','g')) >= 8
+        AND right(regexp_replace(whatsapp,'\D','','g'), 10) = right(${wa}, 10) LIMIT 1` as any[])[0];
       if (c) clienteId = c.id;
     }
     if (!clienteId) {

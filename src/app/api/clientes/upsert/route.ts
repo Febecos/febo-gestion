@@ -65,7 +65,18 @@ export async function POST(req: NextRequest) {
     } else if (!forzar) {
       if (cuit) found = (await sql`SELECT id FROM clientes WHERE cuit=${cuit} AND (crm_eliminado IS NULL OR crm_eliminado=false) LIMIT 1` as any[])[0];
       if (!found && email) found = (await sql`SELECT id FROM clientes WHERE lower(email)=${email} AND (crm_eliminado IS NULL OR crm_eliminado=false) LIMIT 1` as any[])[0];
-      if (!found && wa) found = (await sql`SELECT id FROM clientes WHERE whatsapp=${wa} AND (crm_eliminado IS NULL OR crm_eliminado=false) LIMIT 1` as any[])[0];
+      // whatsapp: comparar por los ÚLTIMOS 10 DÍGITOS (no exacto) — el mismo contacto entra con y
+      // sin prefijo de país (549...) según el canal (febo-ai vs alta_rev vs whatsapp_import), y con
+      // comparación exacta el match fallaba, generando duplicados (caso Javier Reich, id 5136/5145).
+      if (!found && wa && wa.length >= 8) {
+        found = (await sql`
+          SELECT id FROM clientes
+          WHERE (crm_eliminado IS NULL OR crm_eliminado=false)
+            AND length(regexp_replace(COALESCE(whatsapp,''),'\D','','g')) >= 8
+            AND right(regexp_replace(whatsapp,'\D','','g'), 10) = right(${wa}, 10)
+          ORDER BY (cuit IS NOT NULL) DESC, id ASC
+          LIMIT 1` as any[])[0];
+      }
     }
 
     // Campos (null = no tocar en UPDATE). Arrays a mergear.
@@ -129,6 +140,34 @@ export async function POST(req: NextRequest) {
       id = ins[0].id;
     }
 
+    // AUTO-ARCA (opt-in, b.auto_arca=true): pedido de Guille — cuando se aprueba un revendedor con
+    // CUIT, validar contra ARCA y traer razón social/domicilio oficiales sin esperar al botón manual
+    // "Traer de ARCA". Aditivo (COALESCE, nunca pisa lo ya cargado). condicion_fiscal se intenta
+    // igual, pero la constancia A13 hoy la devuelve null (bloqueo conocido, ver DEV Admin) — no falla
+    // el upsert si ARCA no responde o no trae ese dato, solo completa lo que sí trae.
+    let arca: any = null;
+    if (b.auto_arca === true) {
+      const cuitParaArca = cuit || (await sql`SELECT cuit FROM clientes WHERE id=${id} LIMIT 1` as any[])[0]?.cuit;
+      if (cuitParaArca && String(cuitParaArca).replace(/\D/g, "").length === 11) {
+        try {
+          const rc = await fetch(`https://febecos.com/api/admin?action=consultar_cuit&cuit=${String(cuitParaArca).replace(/\D/g, "")}`, { signal: AbortSignal.timeout(12000) });
+          const dc = await rc.json();
+          arca = { consultado: true, ok: !!dc?.ok && dc?.valido !== false, condicion_fiscal: dc?.condicionFiscal || null, bloqueado_a13: !dc?.condicionFiscal };
+          if (arca.ok) {
+            await sql`UPDATE clientes SET
+              razon_social = COALESCE(NULLIF(razon_social,''), ${dc.razonSocial || dc.denominacion || null}),
+              domicilio = COALESCE(NULLIF(domicilio,''), ${dc.domicilio?.direccion || null}),
+              localidad = COALESCE(NULLIF(localidad,''), ${dc.domicilio?.localidad || null}),
+              provincia = COALESCE(NULLIF(provincia,''), ${dc.domicilio?.provincia || null}),
+              cod_postal = COALESCE(NULLIF(cod_postal,''), ${dc.domicilio?.codPostal || null}),
+              condicion_fiscal = COALESCE(NULLIF(condicion_fiscal,''), ${dc.condicionFiscal || null}),
+              updated_at = now()
+              WHERE id = ${id}`;
+          }
+        } catch (e: any) { arca = { consultado: true, ok: false, error: e.message }; }
+      }
+    }
+
     // Bus (D1): cada write emite cliente.actualizado — FEBO AI/FEBO-REV lo consumen para
     // read-through (refrescar contacto en su inbox sin esperar recarga manual).
     try {
@@ -136,7 +175,7 @@ export async function POST(req: NextRequest) {
         payload: { cliente_id: id, accion }, idempotencyKey: `gestion:cliente.actualizado:${id}:${Date.now()}`, clienteId: id });
     } catch { /* no debe romper el upsert */ }
 
-    return NextResponse.json({ ok: true, cliente_id: id, accion });
+    return NextResponse.json({ ok: true, cliente_id: id, accion, arca });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
