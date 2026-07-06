@@ -1055,7 +1055,15 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (pl.presupuesto_numero) { const pr = await sql`SELECT cliente_id FROM presupuestos WHERE numero=${pl.presupuesto_numero} LIMIT 1` as any[]; revendedor_id = pr[0]?.cliente_id ?? null; }
       // Pedidos ONLINE (sin presupuesto): el cliente ya se resolvió al confirmar y quedó en payload.cliente_id.
       if (!revendedor_id && pl.cliente_id) revendedor_id = Number(pl.cliente_id) || null;
-      const receptorFinalId = Number(b.receptor_cliente_id) || 0;
+      let receptorFinalId = Number(b.receptor_cliente_id) || 0;
+      // Auto-detección (pedido de Guille, caso Aibal/Daniel Rusch): si se cotizó DIRECTO a un cliente
+      // final que en el CRM ya pertenece a un revendedor (revendedor_padre_id), la comisión tiene que
+      // ir al revendedor real — no perderse porque no se pasó por su sesión de cotización. Solo si no
+      // se eligió un receptor a mano (b.receptor_cliente_id manda si vino explícito).
+      if (!receptorFinalId && revendedor_id) {
+        const rp = (await sql`SELECT revendedor_padre_id FROM clientes WHERE id=${revendedor_id} LIMIT 1` as any[])[0];
+        if (rp?.revendedor_padre_id) { receptorFinalId = revendedor_id; revendedor_id = rp.revendedor_padre_id; }
+      }
       let cliente_id: number | null = revendedor_id;
       let receptorNombre: string | null = rev.nombre || null;
       if (receptorFinalId) {
@@ -1171,7 +1179,13 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (!revendedor_id && pl.cliente_id) revendedor_id = Number(pl.cliente_id) || null;
 
       // Receptor de la factura: por defecto el revendedor; o un cliente final suyo (b.receptor_cliente_id).
-      const receptorFinalId = Number(b.receptor_cliente_id) || 0;
+      let receptorFinalId = Number(b.receptor_cliente_id) || 0;
+      // Auto-detección (mismo fix que en /facturar): cotizado directo a un cliente final que ya
+      // pertenece a un revendedor → la comisión va al revendedor real.
+      if (!receptorFinalId && revendedor_id) {
+        const rp = (await sql`SELECT revendedor_padre_id FROM clientes WHERE id=${revendedor_id} LIMIT 1` as any[])[0];
+        if (rp?.revendedor_padre_id) { receptorFinalId = revendedor_id; revendedor_id = rp.revendedor_padre_id; }
+      }
       let cliente_id: number | null = revendedor_id;
       let receptorNombre: string | null = rev.nombre || null;
       if (receptorFinalId) {
