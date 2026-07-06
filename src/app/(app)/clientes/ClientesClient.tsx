@@ -531,7 +531,6 @@ function ClientesFinales({ revendedorId }: { revendedorId: number }) {
   const [loading, setLoading] = useState(true);
   const [add, setAdd] = useState(false);
   const [edit, setEdit] = useState<any>(null);
-  const [contactosDe, setContactosDe] = useState<number | null>(null); // cliente final con "👥 Contactos" abierto
   const [f, setF] = useState<any>({});
   const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
   const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
@@ -623,6 +622,9 @@ function ClientesFinales({ revendedorId }: { revendedorId: number }) {
             <label className={lbl}>LOCALIDAD<input value={f.localidad || ""} onChange={(e) => set("localidad", e.target.value)} className={inp} /></label>
             <label className={lbl}>CÓDIGO POSTAL<input value={f.cod_postal || ""} onChange={(e) => set("cod_postal", e.target.value)} className={inp} /></label>
             <label className={lbl + " col-span-2"}>DOMICILIO<input value={f.domicilio || ""} onChange={(e) => set("domicilio", e.target.value)} className={inp} /></label>
+            {edit
+              ? <div className="col-span-2 border-t border-gray-100 pt-2 mt-1"><ContactosCliente clienteId={edit.id} compacto /></div>
+              : <div className="col-span-2 text-[11px] text-gray-400 mt-1">Guardá primero para poder cargar los contactos (gerente, administrativo, etc.) de esta empresa.</div>}
             <div className="col-span-2 flex justify-end gap-2 mt-1">
               <button onClick={cerrar} className="border border-gray-300 rounded-lg px-4 py-1.5 text-sm">Cancelar</button>
               <button onClick={guardar} disabled={saving} className="bg-febo-azul text-white rounded-lg px-5 py-1.5 text-sm font-semibold disabled:opacity-50">{saving ? "Guardando…" : edit ? "Guardar" : "Agregar"}</button>
@@ -632,17 +634,13 @@ function ClientesFinales({ revendedorId }: { revendedorId: number }) {
           : (
             <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
               {rows.map((r) => (
-                <div key={r.id}>
-                  <div className="flex items-center gap-2 px-3 py-1.5 text-sm">
-                    <div className="flex-1">
-                      <span className="font-semibold">{r.razon_social || r.nombre || "—"}</span>
-                      <span className="text-gray-400 text-xs ml-2">{[r.cuit, r.condicion_fiscal, r.localidad].filter(Boolean).join(" · ")}</span>
-                    </div>
-                    <button onClick={() => setContactosDe(contactosDe === r.id ? null : r.id)} className="text-gray-400 hover:text-febo-azul text-xs" title="Contactos de esta empresa">👥</button>
-                    <button onClick={() => abrirEdit(r)} className="text-gray-400 hover:text-febo-azul" title="Editar">✏️</button>
-                    <button onClick={() => eliminar(r)} className="text-gray-300 hover:text-red-500" title="Eliminar">🗑</button>
+                <div key={r.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                  <div className="flex-1">
+                    <span className="font-semibold">{r.razon_social || r.nombre || "—"}</span>
+                    <span className="text-gray-400 text-xs ml-2">{[r.cuit, r.condicion_fiscal, r.localidad].filter(Boolean).join(" · ")}</span>
                   </div>
-                  {contactosDe === r.id && <div className="px-3 pb-2"><ContactosCliente clienteId={r.id} compacto /></div>}
+                  <button onClick={() => abrirEdit(r)} className="text-gray-400 hover:text-febo-azul" title="Editar (incluye sus contactos)">✏️</button>
+                  <button onClick={() => eliminar(r)} className="text-gray-300 hover:text-red-500" title="Eliminar">🗑</button>
                 </div>
               ))}
             </div>
