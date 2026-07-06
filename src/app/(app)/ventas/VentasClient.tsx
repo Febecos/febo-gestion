@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback, Fragment } from "react";
-import { useWindows } from "../WindowManager";
+import { useWindows, nombrePdfPresupuesto } from "../WindowManager";
 import { letraFacturaPara } from "@/lib/talonarios";
 import { tipoPorCodigo } from "@/lib/talonarios-tipos";
 
@@ -212,7 +212,7 @@ function Presupuestos() {
   async function abrirFvInterno(token: string, numero: string, cliente?: string) {
     const hash = await tokenInterno();
     if (!hash) { alert("⚠️ No se pudo abrir en modo interno (revisá FV_BRIDGE_SECRET)."); return; }
-    open("presup-edit", { url: `https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, title: `☀️ ${numero}`, docTitle: `${cliente ? cliente + " - " : ""}${numero}` });
+    open("presup-edit", { url: `https://fv.febecos.com/ver-presupuesto?token=${token}${hash}`, title: `☀️ ${numero}`, docTitle: nombrePdfPresupuesto(numero, cliente) });
   }
   // Guardar la composición de un presupuesto FV como KIT reutilizable (solo componentes+cantidades,
   // sin precios — se repricea siempre al generar un presupuesto nuevo desde el kit).
@@ -279,7 +279,7 @@ function Presupuestos() {
                   {tienePedido(r)
                     ? <span title="Con pedido generado: no se edita" className="text-gray-300 mr-2">🔒</span>
                     : <>
-                      {r.public_token && r.tipo !== "fv" && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}`, docTitle: `${r.cliente_display ? r.cliente_display + " - " : ""}${r.numero}` })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
+                      {r.public_token && r.tipo !== "fv" && r.revendedor_token && <button onClick={() => open("presup-edit", { url: `${COTI}/p/${r.public_token}?rev=${r.revendedor_token}`, title: `✏️ ${r.numero}`, docTitle: nombrePdfPresupuesto(r.numero, r.cliente_display) })} title="Editar (interno, en gestión)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                       {r.public_token && r.tipo === "fv" && <button onClick={() => abrirFvInterno(r.public_token, r.numero, r.cliente_display)} title="Editar/Operar FV (modo interno)" className="text-gray-400 hover:text-febo-azul mr-2">✏️</button>}
                     </>}
                   {r.tipo === "fv" && <button onClick={() => guardarComoKit(r)} title="Guardar la composición de este presupuesto (componentes+cantidades) como KIT reutilizable — sin precios, se repricea al usarlo." className="text-gray-400 hover:text-emerald-600 mr-2">🧩</button>}

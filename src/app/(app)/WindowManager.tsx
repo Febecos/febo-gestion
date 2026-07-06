@@ -24,6 +24,14 @@ const TITULOS: Record<WinKey, string> = {
 const Ctx = createContext<{ open: (k: WinKey, payload?: any) => void; setTitle: (k: WinKey, title: string) => void; openFicha: (clienteId: number, tab?: "datos" | "operaciones") => void } | null>(null);
 export const useWindows = () => useContext(Ctx)!;
 
+// NORMA única de nombre de PDF de presupuesto (06/07, fijada por Guille): "{N°} - {cliente}" —
+// número primero, sin sufijos. Usado como docTitle de la ventana "presup-edit" (se convierte en el
+// nombre sugerido al "Guardar como PDF"). Ver NORMA-NOMBRE-PDF-PRESUPUESTO.md.
+export function nombrePdfPresupuesto(numero: string, cliente?: string | null): string {
+  const base = `${numero || ""}${cliente ? " - " + cliente : ""}`;
+  return base.replace(/[/\\:*?"<>|]/g, " ").replace(/\s{2,}/g, " ").trim();
+}
+
 function Body({ k, payload }: { k: WinKey; payload?: any }) {
   if (k === "clientes") return <ClientesClient openClienteId={payload?.clienteId} openClienteTab={payload?.tab} />;
   if (k === "proveedores") return <ProveedoresClient />;
@@ -95,7 +103,7 @@ export default function WindowManager({ children }: { children: React.ReactNode 
       if (e.origin !== "https://fv.febecos.com" || e.data?.type !== "fv_presupuesto_guardado") return;
       const { numero, cliente } = e.data;
       if (!numero) return;
-      const docTitle = `${cliente ? cliente + " - " : ""}${numero}`;
+      const docTitle = nombrePdfPresupuesto(numero, cliente);
       setWins((ws) => ws.map((w) => (w.key === "presup-edit" ? { ...w, title: `☀️ ${numero}`, payload: { ...w.payload, docTitle } } : w)));
     };
     window.addEventListener("message", onMsg);
