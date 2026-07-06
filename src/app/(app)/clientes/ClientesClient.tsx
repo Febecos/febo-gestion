@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 
 type Cliente = {
-  id: number; tipo: string; nombre: string; email: string; whatsapp: string;
+  id: number; tipo: string; nombre: string; apellido?: string; email: string; whatsapp: string;
   cuit: string; provincia: string; localidad: string; razon_social?: string;
   domicilio?: string; cod_postal?: string; condicion_fiscal?: string; notas?: string;
   tags: string[]; origenes: string[]; email_opt_out?: boolean; descuento_pct?: number; transporte?: string;
@@ -32,6 +32,18 @@ const COLORES: Record<string, string> = {
 };
 const fmtMonto = (v: number) => (v ? "$ " + Math.round(v).toLocaleString("es-AR") : "—");
 const CAMPOS = ["nombre", "razon_social", "email", "whatsapp", "cuit", "provincia", "localidad", "cod_postal", "domicilio", "condicion_fiscal", "notas", "comision_propia_pct", "comision_revende_pct"] as const;
+// Mapea la condición frente al IVA que devuelve ARCA (consultar_cuit) a los 4 valores internos del
+// select — hoy consultar_cuit casi siempre la trae null (bloqueo conocido de la constancia A13), pero
+// si ARCA la resuelve, que se autocomplete en vez de quedar en blanco.
+function mapCondicionArca(raw: any): string {
+  const c = String(raw || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+  if (!c) return "";
+  if (c.includes("monotrib")) return "monotributista";
+  if (c.includes("inscripto") && c.includes("responsable")) return "responsable_inscripto";
+  if (c.includes("exento")) return "exento";
+  if (c.includes("consumidor") || c.includes("final")) return "consumidor_final";
+  return "";
+}
 const esRevendedor = (t: string) => (t || "").startsWith("revendedor");
 
 export default function ClientesClient({ openClienteId, openClienteTab }: { openClienteId?: number; openClienteTab?: "datos" | "operaciones" | "envio" } = {}) {
@@ -114,7 +126,7 @@ export default function ClientesClient({ openClienteId, openClienteTab }: { open
               const extra = (r.tags || []).filter((t) => t !== r.tipo && t !== "compro" && !(r.tipo === "cliente_final" && t === "cliente"));
               return (
                 <tr key={r.id} className="border-t border-gray-100 hover:bg-gray-50 cursor-pointer" onClick={() => setEdit(r)}>
-                  <td className="px-4 py-2 font-semibold">{r.nombre || "—"}</td>
+                  <td className="px-4 py-2 font-semibold">{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</td>
                   <td className="px-4 py-2 text-gray-600">{r.email || "—"}</td>
                   <td className="px-4 py-2 text-gray-600">{r.whatsapp || "—"}</td>
                   <td className="px-4 py-2">{badge(r.tipo || "—")}{compro && <span className="ml-1 rounded px-1.5 py-0.5 text-[10px] font-bold" style={{ background: "#16a34a22", color: "#16a34a" }} title="Compró (factura emitida o marcado manual)">🛒 Compró</span>}{extra.length > 0 && <span className="ml-1 text-[10px] text-indigo-500 font-bold">+{extra.length}</span>}</td>
@@ -151,7 +163,9 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
   const esNuevo = !cliente;
   const [f, setF] = useState<any>(() => ({
     tipo: cliente?.tipo || "contacto",
-    nombre: [cliente?.nombre].filter(Boolean).join(" ") || "",
+    // NOMBRE Y APELLIDO combinados en un solo campo de edición (la ficha guarda ambos por separado,
+    // pero el form es 1 solo input) — si no, el apellido quedaba cargado en la base y nunca se veía.
+    nombre: [cliente?.nombre, (cliente as any)?.apellido].filter(Boolean).join(" ") || "",
     razon_social: cliente?.razon_social || "", email: cliente?.email || "", whatsapp: cliente?.whatsapp || "",
     cuit: cliente?.cuit || "", provincia: cliente?.provincia || "", localidad: cliente?.localidad || "",
     cod_postal: cliente?.cod_postal || "", domicilio: cliente?.domicilio || "", condicion_fiscal: cliente?.condicion_fiscal || "",
@@ -248,7 +262,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
       const dom = d.domicilio || {};
       const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" ");
       // La RAZÓN SOCIAL es el dato legal de AFIP: ARCA manda (pisa lo tipeado). El resto se completa si está vacío.
-      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: dom.direccion || p.domicilio || "", localidad: dom.localidad || p.localidad || "", provincia: dom.provincia || p.provincia || "", cod_postal: dom.codPostal || p.cod_postal || "" }));
+      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: dom.direccion || p.domicilio || "", localidad: dom.localidad || p.localidad || "", provincia: dom.provincia || p.provincia || "", cod_postal: dom.codPostal || p.cod_postal || "", condicion_fiscal: p.condicion_fiscal || mapCondicionArca(d.condicionFiscal) || "" }));
       setArca("✓ " + (nom || cuit));
     } catch (e: any) { setArca("✕ " + e.message); }
   }
@@ -278,6 +292,11 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
           const orig = (cliente as any)[k] || null;
           if (nuevoV !== orig) await patch(k, nuevoV);
         }
+        // "apellido" ya no se edita por separado (se combinó en el campo NOMBRE Y APELLIDO de
+        // arriba) — si la ficha todavía tenía algo ahí, limpiarlo para no duplicarlo la próxima vez
+        // que se abra (si no: "Daniel" + apellido "Mirallas" → nombre "Daniel Mirallas" → al re-abrir
+        // se volvería a concatenar el apellido viejo → "Daniel Mirallas Mirallas").
+        if ((cliente as any).apellido) await patch("apellido", null);
         const tagsOrig = JSON.stringify((cliente!.tags || []).slice().sort());
         if (JSON.stringify(tags.slice().sort()) !== tagsOrig) await patch("tags", tags);
         if (optOut !== !!cliente!.email_opt_out) await patch("email_opt_out", optOut);
@@ -531,7 +550,7 @@ function ClientesFinales({ revendedorId }: { revendedorId: number }) {
       const dom = d.domicilio || {};
       const nom = d.razonSocial || d.denominacion || [d.nombre, d.apellido].filter(Boolean).join(" ");
       // La RAZÓN SOCIAL es el dato legal de AFIP: ARCA manda (pisa lo tipeado). El resto se completa si está vacío.
-      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: dom.direccion || p.domicilio || "", localidad: dom.localidad || p.localidad || "", provincia: dom.provincia || p.provincia || "", cod_postal: dom.codPostal || p.cod_postal || "" }));
+      setF((p: any) => ({ ...p, razon_social: d.razonSocial || d.denominacion || p.razon_social || "", nombre: p.nombre || nom || "", domicilio: dom.direccion || p.domicilio || "", localidad: dom.localidad || p.localidad || "", provincia: dom.provincia || p.provincia || "", cod_postal: dom.codPostal || p.cod_postal || "", condicion_fiscal: p.condicion_fiscal || mapCondicionArca(d.condicionFiscal) || "" }));
       setArca("✓ " + (nom || cuit));
     } catch (e: any) { setArca("✕ " + e.message); }
   }
