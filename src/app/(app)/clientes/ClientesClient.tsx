@@ -320,7 +320,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
     if (d.ok) onSaved(); else alert("⚠️ " + (d.error || "No se pudo eliminar."));
   }
 
-  const [tab, setTab] = useState<"datos" | "operaciones" | "envio">(initialTab || "datos");
+  const [tab, setTab] = useState<"datos" | "fiscales" | "operaciones" | "envio">(initialTab || "datos");
   const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
   const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm";
   return (
@@ -330,7 +330,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
         <h2 className="text-lg font-bold mb-1">{esNuevo ? "＋ Nuevo cliente" : "✏️ " + (f.nombre || "Cliente")}</h2>
         {!esNuevo && (
           <div className="flex gap-1 mb-4 border-b border-gray-200 -mx-1">
-            {([["datos", "Datos"], ["envio", "🚚 Datos Envíos"], ["operaciones", "Operaciones / Cuenta"]] as const).map(([k, l]) => (
+            {([["datos", "Datos"], ["fiscales", "🧾 Fiscales"], ["envio", "🚚 Datos Envíos"], ["operaciones", "Operaciones / Cuenta"]] as const).map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)}
                 className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-400 hover:text-gray-600"}`}>{l}{k === "envio" && !esNuevo ? <span className={envioOk ? "text-emerald-500" : "text-amber-500"}> {envioOk ? "✅" : "⏳"}</span> : null}</button>
             ))}
@@ -338,6 +338,23 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
         )}
         {!esNuevo && tab === "operaciones" ? (
           <OperacionesTab clienteId={cliente!.id} />
+        ) : !esNuevo && tab === "fiscales" ? (
+          <div>
+            {esRevendedor(f.tipo) ? (
+              <div className="rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+                <div className="text-[12px] font-bold text-violet-700 mb-2">🤝 Revendedor — comisiones y clientes finales</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className={lbl}>COMISIÓN % — compra para sí
+                    <input type="number" value={f.comision_propia_pct} onChange={(e) => set("comision_propia_pct", e.target.value)} className={inp} placeholder="0" /></label>
+                  <label className={lbl}>COMISIÓN % — venta a su cliente
+                    <input type="number" value={f.comision_revende_pct} onChange={(e) => set("comision_revende_pct", e.target.value)} className={inp} placeholder="0" /></label>
+                </div>
+                <ClientesFinales revendedorId={cliente!.id} />
+              </div>
+            ) : (
+              <div className="text-[12px] text-gray-400 mb-3">Este contacto no es revendedor — la facturación a "clientes finales" solo aplica a revendedores. Cambiá el ESTADO en la pestaña Datos si corresponde.</div>
+            )}
+          </div>
         ) : !esNuevo && tab === "envio" ? (
           <div>
             <div className={`rounded-lg px-3 py-2 mb-3 text-[12px] font-semibold ${envioOk ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
@@ -403,19 +420,9 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
           {!esNuevo && <div className="col-span-2 text-[11px] text-gray-400">🚚 El transporte y los datos de envío están en la pestaña <b>Datos Envíos</b>.</div>}
           <label className={lbl + " col-span-2"}>NOTAS<textarea value={f.notas} onChange={(e) => set("notas", e.target.value)} rows={2} className={inp} /></label>
           {esRevendedor(f.tipo) && (
-            <div className="col-span-2 rounded-lg border border-violet-200 bg-violet-50/40 p-3 mt-1">
-              <div className="text-[12px] font-bold text-violet-700 mb-2">🤝 Revendedor — comisiones y clientes finales</div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className={lbl}>COMISIÓN % — compra para sí
-                  <input type="number" value={f.comision_propia_pct} onChange={(e) => set("comision_propia_pct", e.target.value)} className={inp} placeholder="0" /></label>
-                <label className={lbl}>COMISIÓN % — venta a su cliente
-                  <input type="number" value={f.comision_revende_pct} onChange={(e) => set("comision_revende_pct", e.target.value)} className={inp} placeholder="0" /></label>
-              </div>
-              {esNuevo
-                ? <div className="text-[11px] text-gray-500 mt-2">Guardá el revendedor para poder cargar sus clientes finales (a quienes se factura).</div>
-                : <ClientesFinales revendedorId={cliente!.id} />}
-            </div>
+            <div className="col-span-2 text-[11px] text-gray-400">🤝 Comisiones y clientes finales (a quienes se factura) están en la pestaña <b>🧾 Fiscales</b>.</div>
           )}
+          {!esNuevo && <div className="col-span-2"><ContactosCliente clienteId={cliente!.id} /></div>}
           <div className="col-span-2">
             <div className="text-[11px] font-semibold text-gray-600 mb-1.5">ETIQUETAS</div>
             <div className="flex flex-wrap gap-2">
@@ -524,6 +531,7 @@ function ClientesFinales({ revendedorId }: { revendedorId: number }) {
   const [loading, setLoading] = useState(true);
   const [add, setAdd] = useState(false);
   const [edit, setEdit] = useState<any>(null);
+  const [contactosDe, setContactosDe] = useState<number | null>(null); // cliente final con "👥 Contactos" abierto
   const [f, setF] = useState<any>({});
   const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
   const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
@@ -624,10 +632,111 @@ function ClientesFinales({ revendedorId }: { revendedorId: number }) {
           : (
             <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
               {rows.map((r) => (
+                <div key={r.id}>
+                  <div className="flex items-center gap-2 px-3 py-1.5 text-sm">
+                    <div className="flex-1">
+                      <span className="font-semibold">{r.razon_social || r.nombre || "—"}</span>
+                      <span className="text-gray-400 text-xs ml-2">{[r.cuit, r.condicion_fiscal, r.localidad].filter(Boolean).join(" · ")}</span>
+                    </div>
+                    <button onClick={() => setContactosDe(contactosDe === r.id ? null : r.id)} className="text-gray-400 hover:text-febo-azul text-xs" title="Contactos de esta empresa">👥</button>
+                    <button onClick={() => abrirEdit(r)} className="text-gray-400 hover:text-febo-azul" title="Editar">✏️</button>
+                    <button onClick={() => eliminar(r)} className="text-gray-300 hover:text-red-500" title="Eliminar">🗑</button>
+                  </div>
+                  {contactosDe === r.id && <div className="px-3 pb-2"><ContactosCliente clienteId={r.id} compacto /></div>}
+                </div>
+              ))}
+            </div>
+          )}
+    </div>
+  );
+}
+
+const CARGOS = ["administrativo", "gerente", "compras", "tecnico", "otro"] as const;
+const CARGO_LABEL: Record<string, string> = { administrativo: "Administrativo", gerente: "Gerente", compras: "Compras", tecnico: "Técnico", otro: "Otro" };
+
+// Contactos NOMBRADOS por empresa (N por cuenta, con cargo) — pedido de Guille: poder cargar
+// "Juan Pérez, administrativo" + "María Gómez, compras" en la MISMA cuenta. Aplica tanto al
+// cliente/revendedor principal (Datos) como a cada cliente final (dentro de Fiscales).
+function ContactosCliente({ clienteId, compacto }: { clienteId: number; compacto?: boolean }) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [add, setAdd] = useState(false);
+  const [edit, setEdit] = useState<any>(null);
+  const [f, setF] = useState<any>({});
+  const [saving, setSaving] = useState(false);
+  const lbl = "flex flex-col gap-1 text-[11px] font-semibold text-gray-600";
+  const inp = "border border-gray-300 rounded-lg px-2.5 py-1.5 text-sm";
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch(`/api/clientes/${clienteId}/contactos`).then((r) => r.json()).then((d) => { setRows(d.ok ? d.contactos : []); setLoading(false); }).catch(() => setLoading(false));
+  }, [clienteId]);
+  useEffect(() => { load(); }, [load]);
+
+  const abrirNuevo = () => { setF({ cargo: "administrativo" }); setEdit(null); setAdd(true); };
+  const abrirEdit = (r: any) => { setF({ ...r }); setAdd(false); setEdit(r); };
+  const cerrar = () => { setAdd(false); setEdit(null); setF({}); };
+  const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+
+  async function guardar() {
+    if (!(f.nombre || "").trim()) { alert("Cargá al menos el nombre."); return; }
+    setSaving(true);
+    try {
+      if (edit) {
+        const campos = ["nombre", "apellido", "email", "telefono", "cargo"];
+        for (const k of campos) {
+          const nv = (f[k] ?? "").toString().trim() || null;
+          if (nv !== ((edit[k] ?? null) || null)) {
+            const r = await fetch(`/api/clientes/${clienteId}/contactos/${edit.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ field: k, value: nv }) });
+            const d = await r.json(); if (!d.ok) throw new Error(d.error);
+          }
+        }
+      } else {
+        const r = await fetch(`/api/clientes/${clienteId}/contactos`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(f) });
+        const d = await r.json(); if (!d.ok) throw new Error(d.error);
+      }
+      cerrar(); load();
+    } catch (e: any) { alert("Error: " + e.message); } finally { setSaving(false); }
+  }
+
+  async function eliminar(r: any) {
+    if (!confirm(`¿Eliminar el contacto "${[r.nombre, r.apellido].filter(Boolean).join(" ")}"?`)) return;
+    const res = await fetch(`/api/clientes/${clienteId}/contactos/${r.id}`, { method: "DELETE" });
+    const d = await res.json();
+    if (d.ok) load(); else alert("⚠️ " + (d.error || "No se pudo eliminar."));
+  }
+
+  return (
+    <div className={compacto ? "mt-1" : "mt-3"}>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="text-[11px] font-semibold text-gray-600">👥 CONTACTOS DE LA EMPRESA</div>
+        {!add && !edit && <button onClick={abrirNuevo} className="text-[12px] font-semibold text-febo-azul">＋ Agregar</button>}
+      </div>
+      {loading ? <div className="text-[11px] text-gray-400 py-2">Cargando…</div>
+        : (add || edit) ? (
+          <div className="rounded-lg border border-gray-200 bg-white p-3 grid grid-cols-2 gap-2">
+            <label className={lbl}>NOMBRE<input value={f.nombre || ""} onChange={(e) => set("nombre", e.target.value)} className={inp} /></label>
+            <label className={lbl}>APELLIDO<input value={f.apellido || ""} onChange={(e) => set("apellido", e.target.value)} className={inp} /></label>
+            <label className={lbl}>EMAIL<input value={f.email || ""} onChange={(e) => set("email", e.target.value)} className={inp} /></label>
+            <label className={lbl}>TELÉFONO<input value={f.telefono || ""} onChange={(e) => set("telefono", e.target.value)} className={inp} /></label>
+            <label className={lbl + " col-span-2"}>CARGO<select value={f.cargo || ""} onChange={(e) => set("cargo", e.target.value)} className={inp}>
+              <option value="">— sin especificar —</option>
+              {CARGOS.map((c) => <option key={c} value={c}>{CARGO_LABEL[c]}</option>)}
+            </select></label>
+            <div className="col-span-2 flex justify-end gap-2 mt-1">
+              <button onClick={cerrar} className="border border-gray-300 rounded-lg px-4 py-1.5 text-sm">Cancelar</button>
+              <button onClick={guardar} disabled={saving} className="bg-febo-azul text-white rounded-lg px-5 py-1.5 text-sm font-semibold disabled:opacity-50">{saving ? "Guardando…" : edit ? "Guardar" : "Agregar"}</button>
+            </div>
+          </div>
+        ) : rows.length === 0 ? <div className="text-[11px] text-gray-400 py-1">Sin contactos cargados todavía.</div>
+          : (
+            <div className="rounded-lg border border-gray-200 bg-white divide-y divide-gray-100">
+              {rows.map((r) => (
                 <div key={r.id} className="flex items-center gap-2 px-3 py-1.5 text-sm">
                   <div className="flex-1">
-                    <span className="font-semibold">{r.razon_social || r.nombre || "—"}</span>
-                    <span className="text-gray-400 text-xs ml-2">{[r.cuit, r.condicion_fiscal, r.localidad].filter(Boolean).join(" · ")}</span>
+                    <span className="font-semibold">{[r.nombre, r.apellido].filter(Boolean).join(" ") || "—"}</span>
+                    {r.cargo && <span className="ml-2 text-[10px] font-semibold text-indigo-700 bg-indigo-50 rounded px-1.5 py-0.5">{CARGO_LABEL[r.cargo] || r.cargo}</span>}
+                    <span className="text-gray-400 text-xs ml-2">{[r.email, r.telefono].filter(Boolean).join(" · ")}</span>
                   </div>
                   <button onClick={() => abrirEdit(r)} className="text-gray-400 hover:text-febo-azul" title="Editar">✏️</button>
                   <button onClick={() => eliminar(r)} className="text-gray-300 hover:text-red-500" title="Eliminar">🗑</button>
