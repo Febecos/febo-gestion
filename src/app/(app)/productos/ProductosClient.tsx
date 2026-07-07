@@ -40,7 +40,20 @@ export default function ProductosClient() {
         </select>
         <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer"><input type="checkbox" checked={soloStock} onChange={(e) => setSoloStock(e.target.checked)} /> Solo en stock</label>
         <span className="text-sm text-gray-500">{rows.length} prod.{dolar ? ` · US$ = $${dolar}` : ""}</span>
-        <button onClick={() => setNuevo(true)} className="ml-auto bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">＋ Nuevo producto</button>
+        <button
+          onClick={() => {
+            // Lista de precios PARA REVENDEDORES con los filtros actuales (proveedor/categoría/stock).
+            // El PDF NO nombra al proveedor — el filtro solo acota qué productos entran.
+            const p = new URLSearchParams();
+            if (prov) p.set("proveedor", prov);
+            if (cat) p.set("categoria", cat);
+            if (soloStock) p.set("stock", "1");
+            window.open("/lista-precios?" + p.toString(), "_blank");
+          }}
+          className="ml-auto bg-febo-azul text-white rounded-lg px-3 py-2 text-sm font-semibold"
+          title="Genera un PDF de lista de precios para revendedores (precio reventa + precio a público). No muestra proveedor ni costo."
+        >📄 Lista de precios</button>
+        <button onClick={() => setNuevo(true)} className="bg-febo-verde text-white rounded-lg px-3 py-2 text-sm font-semibold">＋ Nuevo producto</button>
       </div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
         <table className="w-full text-sm">
