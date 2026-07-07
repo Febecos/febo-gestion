@@ -10,7 +10,13 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 type Row = { codigo: string; descripcion: string; categoria: string; precio_reventa: number; precio_publico: number };
 type Opt = { proveedor?: string; categoria?: string; n: number };
 
-const fmt = (v: number) => (v ? "$ " + Math.round(Number(v)).toLocaleString("es-AR") : "—");
+// Formato según moneda: USD con 2 decimales ("US$ 1.234,56"); ARS entero ("$ 1.234").
+const fmtMoneda = (v: number, moneda: string) => {
+  if (!v) return "—";
+  return moneda === "USD"
+    ? "US$ " + Number(v).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : "$ " + Math.round(Number(v)).toLocaleString("es-AR");
+};
 
 export default function ListaPreciosPage() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -22,6 +28,7 @@ export default function ListaPreciosPage() {
   const [prov, setProv] = useState("");
   const [cat, setCat] = useState("");
   const [soloStock, setSoloStock] = useState(false);
+  const [moneda, setMoneda] = useState<"USD" | "ARS">("USD"); // USD = la lista que va a revendedores
   const [provs, setProvs] = useState<Opt[]>([]);
   const [cats, setCats] = useState<Opt[]>([]);
 
@@ -32,6 +39,7 @@ export default function ListaPreciosPage() {
     setProv(sp.get("proveedor") || "");
     setCat(sp.get("categoria") || "");
     setSoloStock(sp.get("stock") === "1");
+    if (sp.get("moneda") === "ARS") setMoneda("ARS");
     fetch("/api/productos?limit=1").then((r) => r.json()).then((d) => {
       if (d.ok) { setProvs(d.proveedores || []); setCats(d.categorias || []); }
     }).catch(() => {});
@@ -43,12 +51,13 @@ export default function ListaPreciosPage() {
     if (prov) p.set("proveedor", prov);
     if (cat) p.set("categoria", cat);
     if (soloStock) p.set("stock", "1");
+    p.set("moneda", moneda);
     fetch("/api/lista-precios?" + p.toString())
       .then((r) => r.json())
       .then((d) => { if (d.ok) { setRows(d.productos); setMeta(d.meta); } else setErr(d.error || "Error"); })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
-  }, [prov, cat, soloStock]);
+  }, [prov, cat, soloStock, moneda]);
   useEffect(() => { const t = setTimeout(cargar, 200); return () => clearTimeout(t); }, [cargar]);
 
   // Agrupar por categoría (encabezado de sección en el PDF).
@@ -72,6 +81,8 @@ export default function ListaPreciosPage() {
         .lp-title h1 { margin:0; font-size:19px; color:#0b3d6b; font-weight:900; }
         .lp-title .sub { font-size:12px; color:#b45309; font-weight:700; text-transform:uppercase; letter-spacing:.5px; margin-top:2px; }
         .lp-title .meta { font-size:11px; color:#64748b; margin-top:4px; }
+        .lp-cond { margin-top:10px; background:#f1f5f9; border-left:3px solid #0b3d6b; border-radius:0 6px 6px 0; padding:8px 12px; font-size:11px; color:#334155; }
+        .lp-cond strong { color:#0b3d6b; }
         .lp-tabla { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
         .lp-tabla th { background:#0b3d6b; color:#fff; text-align:left; padding:6px 8px; font-size:10.5px; text-transform:uppercase; }
         .lp-tabla th.num, .lp-tabla td.num { text-align:right; white-space:nowrap; }
@@ -99,6 +110,10 @@ export default function ListaPreciosPage() {
           <option value="">Todos los rubros</option>
           {cats.map((c) => <option key={c.categoria} value={c.categoria}>{c.categoria} ({c.n})</option>)}
         </select>
+        <select className="lp-sel" value={moneda} onChange={(e) => setMoneda(e.target.value as "USD" | "ARS")} title="Moneda de la lista">
+          <option value="USD">En dólares (USD)</option>
+          <option value="ARS">En pesos (ARS)</option>
+        </select>
         <label className="lp-note" style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
           <input type="checkbox" checked={soloStock} onChange={(e) => setSoloStock(e.target.checked)} /> Solo en stock
         </label>
@@ -106,7 +121,7 @@ export default function ListaPreciosPage() {
           onClick={() => { document.title = `Lista de precios revendedores - ${fecha}`; window.print(); }}>
           🖨️ Imprimir / Guardar PDF
         </button>
-        <span className="lp-note">{loading ? "cargando…" : `${rows.length} productos`}{meta?.dolar ? ` · US$ = $${meta.dolar}` : ""}</span>
+        <span className="lp-note">{loading ? "cargando…" : `${rows.length} productos`}{(meta?.moneda === "ARS" && meta?.dolar) ? ` · US$ = $${meta.dolar}` : ""}</span>
       </div>
 
       <div className="lp-sheet">
@@ -115,8 +130,17 @@ export default function ListaPreciosPage() {
           <div className="lp-title">
             <h1>Lista de Precios</h1>
             <div className="sub">Exclusiva Revendedores</div>
-            <div className="meta">Fecha: {fecha} · Precios finales con IVA incluido</div>
+            <div className="meta">Fecha: {fecha} · {
+              (meta?.moneda || moneda) === "USD"
+                ? (meta?.con_iva ? "Precios en dólares (USD) · IVA incluido" : "Precios en dólares (USD) · + IVA")
+                : "Precios en pesos · IVA incluido"
+            }</div>
           </div>
+        </div>
+
+        {/* Condición comercial (siempre en términos USD, es la política de entrega). */}
+        <div className="lp-cond">
+          <strong>Pedido mínimo USD 1.200</strong> · Entrega SIN CARGO en CABA. Pedidos menores a USD 1.200: costo adicional de USD 35 (entrega/retiro en depósito CABA).
         </div>
 
         {err ? (
@@ -144,8 +168,8 @@ export default function ListaPreciosPage() {
                         <div>{p.descripcion}</div>
                         {p.codigo && <div className="lp-cod">{p.codigo}</div>}
                       </td>
-                      <td className="num"><strong>{fmt(p.precio_reventa)}</strong></td>
-                      <td className="num">{fmt(p.precio_publico)}</td>
+                      <td className="num"><strong>{fmtMoneda(p.precio_reventa, meta?.moneda || moneda)}</strong></td>
+                      <td className="num">{fmtMoneda(p.precio_publico, meta?.moneda || moneda)}</td>
                     </tr>
                   ))}
                 </Fragment>

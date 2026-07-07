@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
     const proveedor = (sp.get("proveedor") || "").trim();
     const categoria = (sp.get("categoria") || "").trim();
     const soloStock = sp.get("stock") === "1";
+    const moneda = sp.get("moneda") === "USD" ? "USD" : "ARS"; // USD = la lista para revendedores
 
     // dólar + markup público vigente desde fv_config (misma fuente que el cotizador)
     let dolar = 0, markupPublico = 74;
@@ -44,20 +45,30 @@ export async function GET(req: NextRequest) {
         AND (${soloStock ? "1" : ""} = '' OR (disponibilidad ILIKE '%stock%' AND disponibilidad NOT ILIKE '%sin stock%'))
       ORDER BY categoria, descripcion` as any[];
 
+    // ⚠️ IVA en USD (TO-CONFIRM): la lista USD para revendedores sale NETA (+ IVA aparte), consistente
+    // con la condición comercial "USD 1.200 + IVA". Si Guille pide IVA incluido en USD, poner true.
+    const USD_CON_IVA = false;
+    const conIva = moneda === "USD" ? USD_CON_IVA : true; // ARS siempre con IVA (precio final al público)
+
     const fRev = 1 + MARKUP_REVENTA_PCT / 100;
     const fPub = 1 + markupPublico / 100;
     const productos = rows
       // flete = costo puro (sin markup) → no es un producto de reventa, se excluye del listado.
       .filter((p) => !/flete/i.test(String(p.codigo || "") + " " + String(p.descripcion || "") + " " + String(p.categoria || "")))
       .map((p) => {
-        const iva = 1 + Number(p.iva_pct || 21) / 100;
+        const ivaMul = conIva ? 1 + Number(p.iva_pct || 21) / 100 : 1;
         const costo = Number(p.costo_usd);
+        // USD: costo_usd × markup (× IVA si USD_CON_IVA), 2 decimales — NO se multiplica por el dólar.
+        // ARS: × dólar y redondeo entero.
+        const px = (f: number) => moneda === "USD"
+          ? +(costo * f * ivaMul).toFixed(2)
+          : Math.round(costo * f * ivaMul * dolar);
         return {
           codigo: p.codigo || "",
           descripcion: p.descripcion || "",
           categoria: p.categoria || "VARIOS",
-          precio_reventa: Math.round(costo * fRev * iva * dolar),
-          precio_publico: Math.round(costo * fPub * iva * dolar),
+          precio_reventa: px(fRev),
+          precio_publico: px(fPub),
         };
       });
 
@@ -65,7 +76,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       productos,
       total: productos.length,
-      meta: { dolar, markup_reventa_pct: MARKUP_REVENTA_PCT, markup_publico_pct: markupPublico },
+      meta: { dolar, moneda, con_iva: conIva, markup_reventa_pct: MARKUP_REVENTA_PCT, markup_publico_pct: markupPublico },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
