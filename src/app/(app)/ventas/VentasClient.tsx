@@ -1020,7 +1020,13 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
               <Cell l="Nota del revendedor" v={pl.notas || "—"} />
             </div>
             {!cli.id && <div className="text-[11px] text-amber-600 mt-1 px-2">⚠️ Este pedido no está vinculado a un cliente del CRM (sin ficha). Los datos fiscales pueden faltar. <button onClick={() => alert('Vinculá el cliente desde el presupuesto/CRM para traer CUIT y condición fiscal.')} className="underline">¿por qué?</button></div>}
-            {cli.id && (!cuitCli || !condCli) && <CompletarFiscal clienteId={cli.id} onSaved={load} />}
+            {/* clienteId = el receptor EFECTIVO (finalSel si se eligió facturar a un cliente final del
+                revendedor, si no cli) — NUNCA cli.id a secas: si el condCli/cuitCli mostrado viene de
+                finalSel (porque se eligió facturar a ese cliente final) pero se guardaba en cli.id
+                (el REVENDEDOR padre), CompletarFiscal pisaba la identidad fiscal del padre con los
+                datos ARCA del cliente final. Bug real, 07/07: Blasco (revendedor, id 4570) quedó con
+                nombre/cuit de "Sol Del Este S.A." (cliente final, id 5153) tras usar este flujo. */}
+            {(finalSel?.id ?? cli.id) && (!cuitCli || !condCli) && <CompletarFiscal clienteId={finalSel?.id ?? cli.id} onSaved={load} />}
           </div>
 
           {/* Items */}
