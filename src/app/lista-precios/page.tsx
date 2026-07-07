@@ -192,9 +192,17 @@ export default function ListaPreciosPage() {
 
         {/* Niveles por volumen: SOLO indicación de los montos donde mejora el precio (sin % ni markup —
             pedido de Guille 07/07: "poné el precio y una indicación que al superar esos montos tiene
-            mejor precio"). Los umbrales salen de los niveles configurados (hasta_usd). */}
+            mejor precio"). BLINDAJE: solo se listan los umbrales donde el precio REALMENTE mejora
+            (descuento estrictamente mayor que el máximo alcanzado). Así un error de config de niveles
+            —ej. un nivel con markup MAYOR que el anterior, que daría peor precio a mayor volumen— no
+            se muestra como punto de mejora. */}
         {(() => {
-          const umbrales = niveles.map((n) => n.hasta_usd).filter((x): x is number => x != null);
+          const umbrales: number[] = [];
+          let maxDesc = 0;
+          for (const n of niveles) {
+            if (n.desde_usd > 0 && n.descuento_pct > maxDesc + 0.01) umbrales.push(n.desde_usd);
+            if (n.descuento_pct > maxDesc) maxDesc = n.descuento_pct;
+          }
           if (loading || err || umbrales.length === 0) return null;
           return (
             <div className="lp-vol">
