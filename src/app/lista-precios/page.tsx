@@ -132,10 +132,11 @@ export default function ListaPreciosPage() {
           onClick={() => { document.title = `Lista de precios revendedores - ${fecha}`; window.print(); }}>
           🖨️ Imprimir / Guardar PDF
         </button>
-        <button type="button" className="lp-sel" style={{ cursor: "pointer" }} title="Link público (solo precios sugeridos a público, USD, sin proveedores) para compartir con clientes/revendedores"
+        <button type="button" className="lp-sel" style={{ cursor: "pointer" }} title="Link público del VISOR (dominio propio visor.febecos.com — no revela gestión) para compartir. Solo precios sugeridos a público, USD, sin proveedores ni reventa."
           onClick={() => {
-            const url = window.location.origin + "/visor-precios";
-            navigator.clipboard?.writeText(url).then(() => alert("Link público copiado:\n" + url + "\n\nMuestra solo precios sugeridos a público (USD), sin proveedores ni precio de reventa.")).catch(() => window.open(url, "_blank"));
+            // Dominio propio del visor (no gestión) — aporte de seguridad. Configurable por env.
+            const url = (process.env.NEXT_PUBLIC_VISOR_URL || "https://visor.febecos.com") + "/";
+            navigator.clipboard?.writeText(url).then(() => alert("Link público para compartir:\n" + url + "\n\nMuestra solo precios sugeridos a público (USD), sin proveedores ni precio de reventa. No revela el dominio de gestión.")).catch(() => window.open(url, "_blank"));
           }}>🔗 Link público</button>
         <span className="lp-note">{loading ? "cargando…" : `${rows.length} productos`}{(meta?.moneda === "ARS" && meta?.dolar) ? ` · US$ = $${meta.dolar}` : ""}</span>
       </div>

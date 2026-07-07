@@ -9,6 +9,23 @@ const PUBLIC = ["/login", "/api/auth/login", "/api/auth/verify", "/p/", "/api/pu
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // ── DOMINIO VISOR (visor.febecos.com) ──────────────────────────────────────────────
+  // Se usa un dominio propio para el visor público de precios: así nadie descubre el dominio
+  // real de gestión (aporte de seguridad, pedido de Guille 07/07). En ese host SOLO existe el
+  // visor de precios + su API pública; TODO lo demás devuelve 404 (no se revela que es gestión,
+  // no hay login ni rutas del ERP). La raíz "/" del visor sirve directamente el visor.
+  // (Requiere aliasear visor.febecos.com → este proyecto en Vercel; hasta que se aliasee, este
+  //  bloque no se activa porque ningún request llega con ese host.)
+  const host = (req.headers.get("host") || "").toLowerCase();
+  if (host.startsWith("visor.")) {
+    if (pathname === "/" || pathname === "/visor-precios") {
+      return NextResponse.rewrite(new URL("/visor-precios", req.url));
+    }
+    if (pathname.startsWith("/api/public/")) return NextResponse.next();
+    return new NextResponse("No encontrado", { status: 404 });
+  }
+
   if (PUBLIC.some((p) => pathname.startsWith(p))) return NextResponse.next();
 
   const token = req.cookies.get("fg_token")?.value;
