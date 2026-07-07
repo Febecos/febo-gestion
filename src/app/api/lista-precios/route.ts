@@ -17,6 +17,13 @@ import { getDb } from "@/lib/db";
 //  Moneda ARS: × dólar, con IVA incluido, redondeo entero.
 const MARKUP_REVENTA_PCT_FALLBACK = 40; // si no hay niveles por volumen configurados.
 
+// Markup PÚBLICO por categoría (override del markup_cf global). Regla de Guille 07/07: los
+// termotanques (Innovasol) van al 60% público, NO al 74% global. Extensible por categoría.
+// (TERMOTANQUES SOLARES es exclusiva de Innovasol, así que este override es efectivamente por proveedor.)
+const MARKUP_PUBLICO_POR_CATEGORIA: Record<string, number> = {
+  "TERMOTANQUES SOLARES": 60,
+};
+
 export async function GET(req: NextRequest) {
   try {
     const sql = getDb();
@@ -60,7 +67,6 @@ export async function GET(req: NextRequest) {
     const conIva = moneda === "USD" ? USD_CON_IVA : true; // ARS siempre con IVA (precio final)
 
     const fRev = 1 + markupBase / 100;
-    const fPub = 1 + markupPublico / 100;
     const productos = rows
       // flete = costo puro (sin markup) → no es un producto de reventa, se excluye del listado.
       .filter((p) => !/flete/i.test(String(p.codigo || "") + " " + String(p.descripcion || "") + " " + String(p.categoria || "")))
@@ -68,6 +74,9 @@ export async function GET(req: NextRequest) {
         const ivaPct = Number(p.iva_pct || 21);
         const ivaMul = conIva ? 1 + ivaPct / 100 : 1;
         const costo = Number(p.costo_usd);
+        // Markup público según categoría (override) o el global markup_cf.
+        const cat = p.categoria || "VARIOS";
+        const fPub = 1 + (MARKUP_PUBLICO_POR_CATEGORIA[cat] ?? markupPublico) / 100;
         // USD: costo × markup (× IVA si USD_CON_IVA), 2 decimales — NO × dólar. ARS: × dólar, entero.
         const px = (f: number) => moneda === "USD"
           ? +(costo * f * ivaMul).toFixed(2)
@@ -75,7 +84,7 @@ export async function GET(req: NextRequest) {
         return {
           codigo: p.codigo || "",
           descripcion: p.descripcion || "",
-          categoria: p.categoria || "VARIOS",
+          categoria: cat,
           iva_pct: ivaPct,
           precio_reventa: px(fRev),
           precio_publico: px(fPub),

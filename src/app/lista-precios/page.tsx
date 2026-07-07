@@ -90,12 +90,9 @@ export default function ListaPreciosPage() {
         .lp-cond { margin-top:10px; background:#f1f5f9; border-left:3px solid #0b3d6b; border-radius:0 6px 6px 0; padding:8px 12px; font-size:11px; color:#334155; }
         .lp-cond strong { color:#0b3d6b; }
         .lp-vol { margin-top:18px; }
-        .lp-vol-tit { font-size:12px; font-weight:800; color:#0b3d6b; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
-        .lp-vol-tabla { width:60%; min-width:340px; border-collapse:collapse; font-size:12px; }
-        .lp-vol-tabla th { background:#0b3d6b; color:#fff; text-align:left; padding:6px 10px; font-size:10.5px; text-transform:uppercase; }
-        .lp-vol-tabla th.num, .lp-vol-tabla td.num { text-align:right; }
-        .lp-vol-tabla td { padding:5px 10px; border-bottom:1px solid #eef2f6; }
-        .lp-vol-nota { font-size:10px; color:#94a3b8; margin-top:5px; }
+        .lp-vol-tit { font-size:12px; font-weight:800; color:#0b3d6b; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+        .lp-vol-txt { font-size:12px; color:#334155; background:#ecfdf5; border-left:3px solid #10b981; border-radius:0 6px 6px 0; padding:8px 12px; }
+        .lp-vol-txt strong { color:#065f46; }
         .lp-tabla { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
         .lp-tabla th { background:#0b3d6b; color:#fff; text-align:left; padding:6px 8px; font-size:10.5px; text-transform:uppercase; }
         .lp-tabla th.num, .lp-tabla td.num { text-align:right; white-space:nowrap; }
@@ -193,30 +190,28 @@ export default function ListaPreciosPage() {
           </table>
         )}
 
-        {/* Niveles por volumen de compra: mejor precio a mayor monto NETO del pedido. Se expone como
-            % de descuento sobre el precio de lista (no revela markup ni costo). Pedido de Guille 07/07. */}
-        {!loading && !err && niveles.length > 0 && (
-          <div className="lp-vol">
-            <div className="lp-vol-tit">Descuentos por volumen de compra (sobre el total neto del pedido, en USD)</div>
-            <table className="lp-vol-tabla">
-              <thead><tr><th>Volumen de compra (neto)</th><th className="num">Precio</th></tr></thead>
-              <tbody>
-                {niveles.map((n, i) => {
-                  const rango = n.hasta_usd == null
-                    ? `Más de ${fmtUsd0(n.desde_usd)}`
-                    : n.desde_usd === 0
-                      ? `Hasta ${fmtUsd0(n.hasta_usd)}`
-                      : `${fmtUsd0(n.desde_usd)} a ${fmtUsd0(n.hasta_usd)}`;
-                  return (
-                    <tr key={i}>
-                      <td>{rango}</td>
-                      <td className="num">{n.descuento_pct <= 0 ? "Precio de lista" : <strong style={{ color: "#065f46" }}>−{n.descuento_pct.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%</strong>}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <div className="lp-vol-nota">El descuento aplica al total del pedido según el monto neto alcanzado. Consultá tu precio final por volumen.</div>
+        {/* Niveles por volumen: SOLO indicación de los montos donde mejora el precio (sin % ni markup —
+            pedido de Guille 07/07: "poné el precio y una indicación que al superar esos montos tiene
+            mejor precio"). Los umbrales salen de los niveles configurados (hasta_usd). */}
+        {(() => {
+          const umbrales = niveles.map((n) => n.hasta_usd).filter((x): x is number => x != null);
+          if (loading || err || umbrales.length === 0) return null;
+          return (
+            <div className="lp-vol">
+              <div className="lp-vol-tit">📈 Mejor precio por volumen de compra</div>
+              <div className="lp-vol-txt">
+                A mayor volumen de compra, mejor precio. El precio mejora al superar los{" "}
+                <strong>{umbrales.map((u) => fmtUsd0(u)).join(" · ")}</strong> (neto) de compra.
+                Consultanos tu precio por volumen.
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Aclaración de accesorios: solo cuando la lista incluye termotanques (los AC-* van con el equipo). */}
+        {!loading && !err && catKeys.includes("TERMOTANQUES SOLARES") && (
+          <div className="lp-vol-txt" style={{ marginTop: 10, background: "#fff7ed", borderLeftColor: "#f59e0b" }}>
+            Los accesorios se venden junto con el equipo (termotanque).
           </div>
         )}
 
