@@ -52,6 +52,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     const { field, value } = await req.json();
     if (!id || !field) return NextResponse.json({ ok: false, error: "id y field requeridos" }, { status: 400 });
     if (!ALLOWED.has(field)) return NextResponse.json({ ok: false, error: `campo '${field}' no permitido` }, { status: 403 });
+    // INVARIANTE dura (norma de Guille, 07/07): un revendedor que compra SIGUE siendo revendedor
+    // (con tag/estado "Compró"), NUNCA pasa a cliente_final. Bloquea acá cualquier intento de
+    // downgrade — sea por un bug de resolución de id (como el de CompletarFiscal recién arreglado)
+    // o por cualquier otro flujo futuro que ataque este mismo endpoint.
+    if (field === "tipo" && value !== "revendedor") {
+      const sqlChk = getDb();
+      const cur = await sqlChk`SELECT tipo FROM clientes WHERE id = ${id} LIMIT 1`;
+      if (cur[0]?.tipo === "revendedor") {
+        return NextResponse.json({ ok: false, error: "Un revendedor no puede pasar a cliente_final (invariante de negocio) — si compró, usá el tag/estado 'Compró' en vez de cambiar el tipo." }, { status: 409 });
+      }
+    }
     // columna validada por la whitelist ALLOWED → seguro interpolarla. Pool tiene
     // .query() con parámetros (la función http de neon no).
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
