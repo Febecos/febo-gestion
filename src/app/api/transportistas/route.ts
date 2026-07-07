@@ -14,12 +14,25 @@ function svcHeaders(json = false): Record<string, string> {
   return h;
 }
 
+// GET es idempotente → tolera reintento. El fetch server-to-server gestión→febecos.com falla/
+// timeoutea intermitentemente (cold start del selector); sin esto el panel Transportistas
+// quedaba en "0 / Sin transportistas" de forma intermitente aunque el maestro tiene 121 filas
+// (reportado 07/07 — verificado que la data y el endpoint están OK, el problema era acá).
+async function fetchConReintento(url: string, opts: RequestInit, intentos = 3) {
+  let ultimoError: any;
+  for (let i = 0; i < intentos; i++) {
+    try { return await fetch(url, { ...opts, signal: AbortSignal.timeout(8000) }); }
+    catch (e) { ultimoError = e; }
+  }
+  throw ultimoError;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const qs = req.nextUrl.search || "";
-    const r = await fetch(SELECTOR + qs, { headers: svcHeaders() });
+    const r = await fetchConReintento(SELECTOR + qs, { headers: svcHeaders() });
     return NextResponse.json(await r.json(), { status: r.status });
-  } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 502 }); }
+  } catch (e: any) { return NextResponse.json({ ok: false, error: "No se pudo consultar el maestro de transportistas: " + e.message }, { status: 502 }); }
 }
 export async function POST(req: NextRequest) {
   try {

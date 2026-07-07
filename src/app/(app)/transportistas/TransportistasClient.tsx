@@ -23,6 +23,7 @@ const COLS: { k: string; label: string; def: boolean }[] = [
 export default function TransportistasClient() {
   const [rows, setRows] = useState<Carrier[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorCarga, setErrorCarga] = useState(false);
   const [q, setQ] = useState("");
   const [estado, setEstado] = useState<"activos" | "inactivos" | "todos">("activos");
   const [zonaF, setZonaF] = useState("");
@@ -33,8 +34,12 @@ export default function TransportistasClient() {
   const [nuevo, setNuevo] = useState(false);
 
   const load = useCallback(() => {
-    setLoading(true);
-    fetch("/api/transportistas?soloActivos=false").then((r) => r.json()).then((d) => setRows(d.ok ? d.rows : [])).finally(() => setLoading(false));
+    setLoading(true); setErrorCarga(false);
+    fetch("/api/transportistas?soloActivos=false")
+      .then((r) => r.json())
+      .then((d) => { if (d.ok) setRows(d.rows); else { setRows([]); setErrorCarga(true); } })
+      .catch(() => { setRows([]); setErrorCarga(true); })
+      .finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -147,7 +152,13 @@ export default function TransportistasClient() {
                   </tr>
                 );
               })}
-              {!visibles.length && <tr><td colSpan={12} className="text-center py-10 text-gray-400">Sin transportistas.{zonaF ? " Ninguno cubre esa zona." : " Cargá el primero con “Agregar transportista”."}</td></tr>}
+              {!visibles.length && errorCarga && (
+                <tr><td colSpan={12} className="text-center py-10">
+                  <div className="text-red-500 mb-2">⚠️ No se pudo cargar el listado (falló la consulta al maestro de transportistas).</div>
+                  <button onClick={load} className="bg-febo-azul text-white rounded-lg px-4 py-1.5 text-sm">↻ Reintentar</button>
+                </td></tr>
+              )}
+              {!visibles.length && !errorCarga && <tr><td colSpan={12} className="text-center py-10 text-gray-400">Sin transportistas.{zonaF ? " Ninguno cubre esa zona." : " Cargá el primero con “Agregar transportista”."}</td></tr>}
             </tbody>
           </table>
         </div>
