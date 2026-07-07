@@ -134,8 +134,9 @@ export default function ListaPreciosPage() {
         </button>
         <button type="button" className="lp-sel" style={{ cursor: "pointer" }} title="Link público del VISOR (dominio propio visor.febecos.com — no revela gestión) para compartir. Solo precios sugeridos a público, USD, sin proveedores ni reventa."
           onClick={() => {
-            // Dominio propio del visor (no gestión) — aporte de seguridad. Configurable por env.
-            const url = (process.env.NEXT_PUBLIC_VISOR_URL || "https://visor.febecos.com") + "/";
+            // Dominio propio del visor (no gestión) — aporte de seguridad. La raíz del visor se reserva
+            // para otros usos; el listado vive en la subcarpeta /lista-precios-revendedores.
+            const url = (process.env.NEXT_PUBLIC_VISOR_URL || "https://visor.febecos.com") + "/lista-precios-revendedores";
             navigator.clipboard?.writeText(url).then(() => alert("Link público para compartir:\n" + url + "\n\nMuestra solo precios sugeridos a público (USD), sin proveedores ni precio de reventa. No revela el dominio de gestión.")).catch(() => window.open(url, "_blank"));
           }}>🔗 Link público</button>
         <span className="lp-note">{loading ? "cargando…" : `${rows.length} productos`}{(meta?.moneda === "ARS" && meta?.dolar) ? ` · US$ = $${meta.dolar}` : ""}</span>

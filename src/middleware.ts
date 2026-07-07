@@ -5,7 +5,7 @@ import { jwtVerify } from "jose";
 // con ADMIN_JWT_SECRET — el mismo del admin del selector (login compartido).
 // /p/[token] y /api/public/* son públicos: el token aleatorio del comprobante ES
 // la credencial (sin token no se accede). El resto exige sesión.
-const PUBLIC = ["/login", "/api/auth/login", "/api/auth/verify", "/p/", "/api/public/", "/envio/", "/visor-precios"];
+const PUBLIC = ["/login", "/api/auth/login", "/api/auth/verify", "/p/", "/api/public/", "/envio/", "/lista-precios-revendedores"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -17,12 +17,12 @@ export async function middleware(req: NextRequest) {
   // no hay login ni rutas del ERP). La raíz "/" del visor sirve directamente el visor.
   // (Requiere aliasear visor.febecos.com → este proyecto en Vercel; hasta que se aliasee, este
   //  bloque no se activa porque ningún request llega con ese host.)
+  // La RAÍZ del dominio visor NO muestra nada (se reserva para otros usos, pedido de Guille 07/07):
+  // el visor de precios vive SOLO en la subcarpeta /lista-precios-revendedores (activable aparte).
+  // En ese host: se sirve esa ruta + su API pública; TODO lo demás (incluida la raíz) → 404.
   const host = (req.headers.get("host") || "").toLowerCase();
   if (host.startsWith("visor.")) {
-    if (pathname === "/" || pathname === "/visor-precios") {
-      return NextResponse.rewrite(new URL("/visor-precios", req.url));
-    }
-    if (pathname.startsWith("/api/public/")) return NextResponse.next();
+    if (pathname === "/lista-precios-revendedores" || pathname.startsWith("/api/public/")) return NextResponse.next();
     return new NextResponse("No encontrado", { status: 404 });
   }
 
