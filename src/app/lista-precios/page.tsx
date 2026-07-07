@@ -226,7 +226,7 @@ export default function ListaPreciosPage() {
         {/* Aclaración de accesorios: solo cuando la lista incluye termotanques (los AC-* van con el equipo). */}
         {!loading && !err && catKeys.includes("TERMOTANQUES SOLARES") && (
           <div className="lp-vol-txt" style={{ marginTop: 10, background: "#fff7ed", borderLeftColor: "#f59e0b" }}>
-            Los accesorios se venden <strong>únicamente</strong> junto con el equipo (termotanque).
+            Los accesorios (código <strong>AC-</strong>) se venden <strong>exclusivamente</strong> junto con un termotanque, no por separado.
           </div>
         )}
 

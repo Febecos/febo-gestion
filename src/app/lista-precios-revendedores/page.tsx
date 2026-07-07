@@ -123,6 +123,12 @@ export default function VisorPreciosPage() {
           ))
         )}
 
+        {!loading && !err && catKeys.includes("TERMOTANQUES SOLARES") && (
+          <div className="vp-cond" style={{ background: "#fff7ed", borderLeftColor: "#f59e0b", marginTop: 12, marginBottom: 0 }}>
+            Los accesorios (código <strong>AC-</strong>) se venden <strong>exclusivamente</strong> junto con un termotanque, no por separado.
+          </div>
+        )}
+
         <div className="vp-note">
           {loading ? "" : `${filtrados.length} productos`} · Precios sugeridos a público, en USD sin IVA (se adiciona IVA según cada producto).<br />
           FEBECOS · bombas solares y energía fotovoltaica · febecos.com
