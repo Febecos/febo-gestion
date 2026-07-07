@@ -63,6 +63,10 @@ export default function VisorPreciosPage() {
         .vp-item .iva { font-size:11px; color:#64748b; white-space:nowrap; }
         .vp-item .px { font-size:15px; font-weight:800; color:#0b3d6b; white-space:nowrap; }
         .vp-note { font-size:11px; color:#64748b; margin-top:14px; text-align:center; line-height:1.6; }
+        .vp-cond { background:#f1f5f9; border-left:3px solid #0b3d6b; border-radius:0 8px 8px 0; padding:10px 14px; font-size:12.5px; color:#334155; margin-bottom:10px; }
+        .vp-cond strong { color:#0b3d6b; }
+        .vp-vol { background:#ecfdf5; border-left:3px solid #10b981; border-radius:0 8px 8px 0; padding:10px 14px; font-size:12.5px; color:#334155; margin-bottom:12px; }
+        .vp-vol strong { color:#065f46; }
       `}</style>
 
       <div className="vp-head">
@@ -76,6 +80,13 @@ export default function VisorPreciosPage() {
       </div>
 
       <div className="vp-wrap">
+        {/* Condiciones comerciales (mismas que el PDF) + nota de mejor precio por volumen, arriba de todo. */}
+        <div className="vp-cond">
+          <strong>Pedido mínimo USD 1.200</strong> · Entrega SIN CARGO en CABA. Pedidos menores a USD 1.200: costo adicional de USD 35 (entrega/retiro en depósito CABA).
+        </div>
+        <div className="vp-vol">
+          <strong>📈 A mayor volumen de compra, mejor precio.</strong> Consultanos tu precio por volumen al pedir tu cotización.
+        </div>
         <input className="vp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscá tu producto (ej. cable, batería, bomba, panel)…" />
         {cats.length > 0 && (
           <div className="vp-chips">
