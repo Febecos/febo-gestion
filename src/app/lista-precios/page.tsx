@@ -1,12 +1,14 @@
 "use client";
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 
 // Lista de precios EXCLUSIVA REVENDEDORES → PDF (imprimir/guardar). Pedido de Guille 07/07.
-// ⚠️ NUNCA muestra proveedor ni costo (privacidad comercial). Los filtros llegan por query
-// (?proveedor=&categoria=&stock=1) desde el botón en Productos — se usan solo para acotar el
-// listado, no se nombran en el documento.
+// Acceso: botón top-level en la barra de gestión (autoservicio) + botón dentro de Productos.
+// ⚠️ NUNCA muestra proveedor ni costo (privacidad comercial). Los filtros (proveedor/categoría/
+// stock) llegan por query (desde Productos) o se eligen acá mismo (acceso directo); se usan solo
+// para acotar el listado, nunca se nombran en el documento.
 
 type Row = { codigo: string; descripcion: string; categoria: string; precio_reventa: number; precio_publico: number };
+type Opt = { proveedor?: string; categoria?: string; n: number };
 
 const fmt = (v: number) => (v ? "$ " + Math.round(Number(v)).toLocaleString("es-AR") : "—");
 
@@ -16,31 +18,52 @@ export default function ListaPreciosPage() {
   const [err, setErr] = useState("");
   const [meta, setMeta] = useState<any>(null);
   const [fecha, setFecha] = useState("");
+  // filtros (inicializados desde la query si vino de Productos)
+  const [prov, setProv] = useState("");
+  const [cat, setCat] = useState("");
+  const [soloStock, setSoloStock] = useState(false);
+  const [provs, setProvs] = useState<Opt[]>([]);
+  const [cats, setCats] = useState<Opt[]>([]);
 
+  // Opciones de filtro + init desde query, una sola vez.
   useEffect(() => {
     setFecha(new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }));
-    const qs = window.location.search || "";
-    fetch("/api/lista-precios" + qs)
+    const sp = new URLSearchParams(window.location.search);
+    setProv(sp.get("proveedor") || "");
+    setCat(sp.get("categoria") || "");
+    setSoloStock(sp.get("stock") === "1");
+    fetch("/api/productos?limit=1").then((r) => r.json()).then((d) => {
+      if (d.ok) { setProvs(d.proveedores || []); setCats(d.categorias || []); }
+    }).catch(() => {});
+  }, []);
+
+  const cargar = useCallback(() => {
+    setLoading(true); setErr("");
+    const p = new URLSearchParams();
+    if (prov) p.set("proveedor", prov);
+    if (cat) p.set("categoria", cat);
+    if (soloStock) p.set("stock", "1");
+    fetch("/api/lista-precios?" + p.toString())
       .then((r) => r.json())
       .then((d) => { if (d.ok) { setRows(d.productos); setMeta(d.meta); } else setErr(d.error || "Error"); })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [prov, cat, soloStock]);
+  useEffect(() => { const t = setTimeout(cargar, 200); return () => clearTimeout(t); }, [cargar]);
 
   // Agrupar por categoría (encabezado de sección en el PDF).
   const porCat: Record<string, Row[]> = {};
   for (const r of rows) (porCat[r.categoria] = porCat[r.categoria] || []).push(r);
-  const cats = Object.keys(porCat);
-
-  if (loading) return <div style={{ padding: 40, fontFamily: "system-ui", color: "#666" }}>Cargando lista…</div>;
-  if (err) return <div style={{ padding: 40, fontFamily: "system-ui", color: "#c00" }}>⚠️ {err}</div>;
+  const catKeys = Object.keys(porCat);
 
   return (
     <div className="lp-root">
       <style>{`
         .lp-root { background:#eef1f5; min-height:100vh; padding:16px; font-family:Arial,Helvetica,sans-serif; }
-        .lp-toolbar { max-width:800px; margin:0 auto 14px; display:flex; gap:12px; align-items:center; }
+        .lp-toolbar { max-width:800px; margin:0 auto 14px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
         .lp-print { background:#0b3d6b; color:#fff; border:0; border-radius:8px; padding:10px 20px; font-weight:700; font-size:14px; cursor:pointer; }
+        .lp-print:disabled { opacity:.4; cursor:default; }
+        .lp-sel { border:1px solid #cbd5e1; border-radius:8px; padding:8px 10px; font-size:13px; background:#fff; }
         .lp-note { font-size:12px; color:#64748b; }
         .lp-sheet { max-width:800px; margin:0 auto; background:#fff; padding:26px 30px; box-shadow:0 2px 12px rgba(0,0,0,.1); border-radius:8px; }
         .lp-head { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:3px solid #0b3d6b; padding-bottom:12px; margin-bottom:6px; }
@@ -68,8 +91,22 @@ export default function ListaPreciosPage() {
       `}</style>
 
       <div className="lp-toolbar">
-        <button className="lp-print" onClick={() => { document.title = `Lista de precios revendedores - ${fecha}`; window.print(); }}>🖨️ Imprimir / Guardar PDF</button>
-        <span className="lp-note">{rows.length} productos · precios en pesos con IVA{meta?.dolar ? ` · US$ = $${meta.dolar}` : ""}</span>
+        <select className="lp-sel" value={prov} onChange={(e) => setProv(e.target.value)}>
+          <option value="">Todas las listas</option>
+          {provs.map((p) => <option key={p.proveedor} value={p.proveedor}>{p.proveedor} ({p.n})</option>)}
+        </select>
+        <select className="lp-sel" value={cat} onChange={(e) => setCat(e.target.value)}>
+          <option value="">Todos los rubros</option>
+          {cats.map((c) => <option key={c.categoria} value={c.categoria}>{c.categoria} ({c.n})</option>)}
+        </select>
+        <label className="lp-note" style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+          <input type="checkbox" checked={soloStock} onChange={(e) => setSoloStock(e.target.checked)} /> Solo en stock
+        </label>
+        <button className="lp-print" disabled={loading || !rows.length}
+          onClick={() => { document.title = `Lista de precios revendedores - ${fecha}`; window.print(); }}>
+          🖨️ Imprimir / Guardar PDF
+        </button>
+        <span className="lp-note">{loading ? "cargando…" : `${rows.length} productos`}{meta?.dolar ? ` · US$ = $${meta.dolar}` : ""}</span>
       </div>
 
       <div className="lp-sheet">
@@ -82,7 +119,11 @@ export default function ListaPreciosPage() {
           </div>
         </div>
 
-        {rows.length === 0 ? (
+        {err ? (
+          <div style={{ padding: 30, textAlign: "center", color: "#c00" }}>⚠️ {err}</div>
+        ) : loading ? (
+          <div style={{ padding: 30, textAlign: "center", color: "#94a3b8" }}>Cargando lista…</div>
+        ) : rows.length === 0 ? (
           <div style={{ padding: 30, textAlign: "center", color: "#94a3b8" }}>No hay productos para los filtros elegidos.</div>
         ) : (
           <table className="lp-tabla">
@@ -94,11 +135,11 @@ export default function ListaPreciosPage() {
               </tr>
             </thead>
             <tbody>
-              {cats.map((cat) => (
-                <Fragment key={cat}>
-                  <tr className="lp-cat"><td colSpan={3}>{cat}</td></tr>
-                  {porCat[cat].map((p, i) => (
-                    <tr key={cat + "-" + i}>
+              {catKeys.map((c) => (
+                <Fragment key={c}>
+                  <tr className="lp-cat"><td colSpan={3}>{c}</td></tr>
+                  {porCat[c].map((p, i) => (
+                    <tr key={c + "-" + i}>
                       <td>
                         <div>{p.descripcion}</div>
                         {p.codigo && <div className="lp-cod">{p.codigo}</div>}

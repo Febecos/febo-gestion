@@ -127,6 +127,13 @@ export default function TopNav() {
             <span className="text-[8px]">pronto</span>
           </div>
         ))}
+        {/* Autoservicio: generar listas de precios para revendedores cuando Guille quiera (al lado
+            de Reportes). Abre el generador standalone /lista-precios (elige lista/rubro + PDF). */}
+        <button onClick={() => window.open("/lista-precios", "_blank")} title="Generar listas de precios para revendedores (elegís lista/rubro y sale el PDF)."
+          className="flex flex-col items-center justify-center min-w-[80px] px-2 py-2 rounded-lg text-gray-600 hover:bg-febo-azul/10 hover:text-febo-azul transition">
+          <span className="text-2xl">📄</span>
+          <span className="text-[11px] mt-0.5 font-semibold whitespace-nowrap">Listas de precios</span>
+        </button>
         {esOwner && (
           <button onClick={() => open("config")} title="Solo administrador"
             className="flex flex-col items-center justify-center min-w-[80px] px-2 py-2 rounded-lg text-gray-600 hover:bg-febo-azul/10 hover:text-febo-azul transition ml-auto">
