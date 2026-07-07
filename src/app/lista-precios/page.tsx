@@ -161,6 +161,13 @@ export default function ListaPreciosPage() {
           <strong>Pedido mínimo USD 1.200</strong> · Entrega SIN CARGO en CABA. Pedidos menores a USD 1.200: costo adicional de USD 35 (entrega/retiro en depósito CABA).
         </div>
 
+        {/* Aclaración accesorios AC- ARRIBA también (pedido de Guille) — cuando hay termotanques. */}
+        {!loading && !err && catKeys.includes("TERMOTANQUES SOLARES") && (
+          <div className="lp-vol-txt" style={{ marginTop: 8, background: "#fff7ed", borderLeftColor: "#f59e0b" }}>
+            Los accesorios (código <strong>AC-</strong>) se venden <strong>exclusivamente</strong> junto con un termotanque, no por separado.
+          </div>
+        )}
+
         {/* Niveles por volumen: indicación de los montos donde mejora el precio (sin % ni markup —
             pedido de Guille 07/07). VA ARRIBA, antes de la tabla (pedido de Guille: "al principio").
             BLINDAJE: solo se listan los umbrales donde el precio REALMENTE mejora (descuento

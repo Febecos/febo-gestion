@@ -87,6 +87,11 @@ export default function VisorPreciosPage() {
         <div className="vp-vol">
           <strong>📈 A mayor volumen de compra, mejor precio.</strong> Consultanos tu precio por volumen al pedir tu cotización.
         </div>
+        {!loading && !err && catKeys.includes("TERMOTANQUES SOLARES") && (
+          <div className="vp-cond" style={{ background: "#fff7ed", borderLeftColor: "#f59e0b" }}>
+            Los accesorios (código <strong>AC-</strong>) se venden <strong>exclusivamente</strong> junto con un termotanque, no por separado.
+          </div>
+        )}
         <input className="vp-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscá tu producto (ej. cable, batería, bomba, panel)…" />
         {cats.length > 0 && (
           <div className="vp-chips">
