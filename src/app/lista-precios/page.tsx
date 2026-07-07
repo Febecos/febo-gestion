@@ -32,7 +32,7 @@ export default function ListaPreciosPage() {
   const [fecha, setFecha] = useState("");
   // filtros (inicializados desde la query si vino de Productos)
   const [prov, setProv] = useState("");
-  const [cat, setCat] = useState("");
+  const [selCats, setSelCats] = useState<string[]>([]); // multi-rubro
   const [soloStock, setSoloStock] = useState(false);
   const [moneda, setMoneda] = useState<"USD" | "ARS">("USD"); // USD = la lista que va a revendedores
   const [provs, setProvs] = useState<Opt[]>([]);
@@ -43,7 +43,11 @@ export default function ListaPreciosPage() {
     setFecha(new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric" }));
     const sp = new URLSearchParams(window.location.search);
     setProv(sp.get("proveedor") || "");
-    setCat(sp.get("categoria") || "");
+    const catsIni = [
+      ...(sp.get("categorias") || "").split(",").map((s) => s.trim()).filter(Boolean),
+      ...(sp.get("categoria") ? [String(sp.get("categoria")).trim()] : []),
+    ];
+    if (catsIni.length) setSelCats(catsIni);
     setSoloStock(sp.get("stock") === "1");
     if (sp.get("moneda") === "ARS") setMoneda("ARS");
     fetch("/api/productos?limit=1").then((r) => r.json()).then((d) => {
@@ -55,7 +59,7 @@ export default function ListaPreciosPage() {
     setLoading(true); setErr("");
     const p = new URLSearchParams();
     if (prov) p.set("proveedor", prov);
-    if (cat) p.set("categoria", cat);
+    if (selCats.length) p.set("categorias", selCats.join(","));
     if (soloStock) p.set("stock", "1");
     p.set("moneda", moneda);
     fetch("/api/lista-precios?" + p.toString())
@@ -63,7 +67,7 @@ export default function ListaPreciosPage() {
       .then((d) => { if (d.ok) { setRows(d.productos); setNiveles(d.niveles_volumen || []); setMeta(d.meta); } else setErr(d.error || "Error"); })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
-  }, [prov, cat, soloStock, moneda]);
+  }, [prov, selCats, soloStock, moneda]);
   useEffect(() => { const t = setTimeout(cargar, 200); return () => clearTimeout(t); }, [cargar]);
 
   // Agrupar por categoría (encabezado de sección en el PDF).
@@ -116,10 +120,7 @@ export default function ListaPreciosPage() {
           <option value="">Todas las listas</option>
           {provs.map((p) => <option key={p.proveedor} value={p.proveedor}>{p.proveedor} ({p.n})</option>)}
         </select>
-        <select className="lp-sel" value={cat} onChange={(e) => setCat(e.target.value)}>
-          <option value="">Todos los rubros</option>
-          {cats.map((c) => <option key={c.categoria} value={c.categoria}>{c.categoria} ({c.n})</option>)}
-        </select>
+        <MultiRubro cats={cats} sel={selCats} setSel={setSelCats} />
         <select className="lp-sel" value={moneda} onChange={(e) => setMoneda(e.target.value as "USD" | "ARS")} title="Moneda de la lista">
           <option value="USD">En dólares (USD)</option>
           <option value="ARS">En pesos (ARS)</option>
@@ -131,6 +132,11 @@ export default function ListaPreciosPage() {
           onClick={() => { document.title = `Lista de precios revendedores - ${fecha}`; window.print(); }}>
           🖨️ Imprimir / Guardar PDF
         </button>
+        <button type="button" className="lp-sel" style={{ cursor: "pointer" }} title="Link público (solo precios sugeridos a público, USD, sin proveedores) para compartir con clientes/revendedores"
+          onClick={() => {
+            const url = window.location.origin + "/visor-precios";
+            navigator.clipboard?.writeText(url).then(() => alert("Link público copiado:\n" + url + "\n\nMuestra solo precios sugeridos a público (USD), sin proveedores ni precio de reventa.")).catch(() => window.open(url, "_blank"));
+          }}>🔗 Link público</button>
         <span className="lp-note">{loading ? "cargando…" : `${rows.length} productos`}{(meta?.moneda === "ARS" && meta?.dolar) ? ` · US$ = $${meta.dolar}` : ""}</span>
       </div>
 
@@ -191,7 +197,7 @@ export default function ListaPreciosPage() {
                 <th>Producto</th>
                 <th className="num">IVA</th>
                 <th className="num">Precio Reventa</th>
-                <th className="num">Precio a Público</th>
+                <th className="num">Precio sugerido a público</th>
               </tr>
             </thead>
             <tbody>
@@ -226,6 +232,46 @@ export default function ListaPreciosPage() {
           FEBECOS · Precios sujetos a modificación sin previo aviso y a disponibilidad de stock. Válido a la fecha indicada.
         </div>
       </div>
+    </div>
+  );
+}
+
+// Selector de rubros MULTIPLE con buscador (pedido de Guille: "busco 'cables' y elijo CABLE +
+// CABLE SOLAR + CABLES; o bombas → BOMBAS DE CALOR + ELECTRICAS + SOLARES"). Botón que abre un
+// panel con búsqueda + checkboxes. Se puede usar tanto en la lista interna como en el visor público.
+function MultiRubro({ cats, sel, setSel }: { cats: { categoria?: string; n: number }[]; sel: string[]; setSel: (v: string[]) => void }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const filtrados = cats.filter((c) => norm(c.categoria || "").includes(norm(q)));
+  const toggle = (c: string) => setSel(sel.includes(c) ? sel.filter((x) => x !== c) : [...sel, c]);
+  const label = sel.length === 0 ? "Todos los rubros" : sel.length === 1 ? sel[0] : `${sel.length} rubros`;
+  return (
+    <div style={{ position: "relative" }} className="no-print">
+      <button type="button" className="lp-sel" onClick={() => setOpen((o) => !o)} style={{ cursor: "pointer", minWidth: 160, textAlign: "left" }}>
+        {label} <span style={{ float: "right", color: "#94a3b8" }}>▾</span>
+      </button>
+      {open && (
+        <>
+          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 41, background: "#fff", border: "1px solid #cbd5e1", borderRadius: 8, boxShadow: "0 8px 24px rgba(0,0,0,.15)", width: 300, maxHeight: 340, display: "flex", flexDirection: "column", padding: 8 }}>
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar rubro (ej. cable, bomba)…" style={{ border: "1px solid #cbd5e1", borderRadius: 6, padding: "6px 8px", fontSize: 12, marginBottom: 6 }} />
+            <div style={{ display: "flex", gap: 8, marginBottom: 6, fontSize: 11 }}>
+              <button type="button" onClick={() => setSel(Array.from(new Set([...sel, ...filtrados.map((c) => c.categoria || "")])))} style={{ color: "#0b3d6b", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Elegir todos los del filtro</button>
+              {sel.length > 0 && <button type="button" onClick={() => setSel([])} style={{ color: "#dc2626", background: "none", border: "none", cursor: "pointer", padding: 0 }}>Limpiar</button>}
+            </div>
+            <div style={{ overflowY: "auto" }}>
+              {filtrados.length === 0 ? <div style={{ fontSize: 12, color: "#94a3b8", padding: 6 }}>Sin rubros</div> : filtrados.map((c) => (
+                <label key={c.categoria} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, padding: "4px 6px", cursor: "pointer", borderRadius: 5, background: sel.includes(c.categoria || "") ? "#eff6ff" : "transparent" }}>
+                  <input type="checkbox" checked={sel.includes(c.categoria || "")} onChange={() => toggle(c.categoria || "")} />
+                  <span style={{ flex: 1 }}>{c.categoria}</span>
+                  <span style={{ color: "#94a3b8" }}>{c.n}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
