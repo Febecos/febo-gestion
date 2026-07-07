@@ -153,6 +153,31 @@ export default function ListaPreciosPage() {
           <strong>Pedido mínimo USD 1.200</strong> · Entrega SIN CARGO en CABA. Pedidos menores a USD 1.200: costo adicional de USD 35 (entrega/retiro en depósito CABA).
         </div>
 
+        {/* Niveles por volumen: indicación de los montos donde mejora el precio (sin % ni markup —
+            pedido de Guille 07/07). VA ARRIBA, antes de la tabla (pedido de Guille: "al principio").
+            BLINDAJE: solo se listan los umbrales donde el precio REALMENTE mejora (descuento
+            estrictamente mayor que el máximo alcanzado) → un error de config de niveles no se
+            muestra como punto de mejora. */}
+        {(() => {
+          const umbrales: number[] = [];
+          let maxDesc = 0;
+          for (const n of niveles) {
+            if (n.desde_usd > 0 && n.descuento_pct > maxDesc + 0.01) umbrales.push(n.desde_usd);
+            if (n.descuento_pct > maxDesc) maxDesc = n.descuento_pct;
+          }
+          if (loading || err || umbrales.length === 0) return null;
+          return (
+            <div className="lp-vol" style={{ marginTop: 10, marginBottom: 4 }}>
+              <div className="lp-vol-tit">📈 Mejor precio por volumen de compra</div>
+              <div className="lp-vol-txt">
+                A mayor volumen de compra, mejor precio. El precio mejora al superar los{" "}
+                <strong>{umbrales.map((u) => fmtUsd0(u)).join(" · ")}</strong> (neto) de compra.
+                Consultanos tu precio por volumen.
+              </div>
+            </div>
+          );
+        })()}
+
         {err ? (
           <div style={{ padding: 30, textAlign: "center", color: "#c00" }}>⚠️ {err}</div>
         ) : loading ? (
@@ -189,32 +214,6 @@ export default function ListaPreciosPage() {
             </tbody>
           </table>
         )}
-
-        {/* Niveles por volumen: SOLO indicación de los montos donde mejora el precio (sin % ni markup —
-            pedido de Guille 07/07: "poné el precio y una indicación que al superar esos montos tiene
-            mejor precio"). BLINDAJE: solo se listan los umbrales donde el precio REALMENTE mejora
-            (descuento estrictamente mayor que el máximo alcanzado). Así un error de config de niveles
-            —ej. un nivel con markup MAYOR que el anterior, que daría peor precio a mayor volumen— no
-            se muestra como punto de mejora. */}
-        {(() => {
-          const umbrales: number[] = [];
-          let maxDesc = 0;
-          for (const n of niveles) {
-            if (n.desde_usd > 0 && n.descuento_pct > maxDesc + 0.01) umbrales.push(n.desde_usd);
-            if (n.descuento_pct > maxDesc) maxDesc = n.descuento_pct;
-          }
-          if (loading || err || umbrales.length === 0) return null;
-          return (
-            <div className="lp-vol">
-              <div className="lp-vol-tit">📈 Mejor precio por volumen de compra</div>
-              <div className="lp-vol-txt">
-                A mayor volumen de compra, mejor precio. El precio mejora al superar los{" "}
-                <strong>{umbrales.map((u) => fmtUsd0(u)).join(" · ")}</strong> (neto) de compra.
-                Consultanos tu precio por volumen.
-              </div>
-            </div>
-          );
-        })()}
 
         {/* Aclaración de accesorios: solo cuando la lista incluye termotanques (los AC-* van con el equipo). */}
         {!loading && !err && catKeys.includes("TERMOTANQUES SOLARES") && (
