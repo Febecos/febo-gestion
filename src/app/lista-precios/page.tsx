@@ -7,8 +7,13 @@ import { Fragment, useCallback, useEffect, useState } from "react";
 // stock) llegan por query (desde Productos) o se eligen acá mismo (acceso directo); se usan solo
 // para acotar el listado, nunca se nombran en el documento.
 
-type Row = { codigo: string; descripcion: string; categoria: string; precio_reventa: number; precio_publico: number };
+type Row = { codigo: string; descripcion: string; categoria: string; iva_pct: number; precio_reventa: number; precio_publico: number };
 type Opt = { proveedor?: string; categoria?: string; n: number };
+type Nivel = { desde_usd: number; hasta_usd: number | null; descuento_pct: number };
+
+// IVA por producto ("21%" / "10,5%").
+const fmtIva = (v: number) => (Number(v) || 21).toLocaleString("es-AR", { maximumFractionDigits: 1 }) + "%";
+const fmtUsd0 = (v: number) => "US$ " + Math.round(Number(v)).toLocaleString("es-AR");
 
 // Formato según moneda: USD con 2 decimales ("US$ 1.234,56"); ARS entero ("$ 1.234").
 const fmtMoneda = (v: number, moneda: string) => {
@@ -20,6 +25,7 @@ const fmtMoneda = (v: number, moneda: string) => {
 
 export default function ListaPreciosPage() {
   const [rows, setRows] = useState<Row[]>([]);
+  const [niveles, setNiveles] = useState<Nivel[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [meta, setMeta] = useState<any>(null);
@@ -54,7 +60,7 @@ export default function ListaPreciosPage() {
     p.set("moneda", moneda);
     fetch("/api/lista-precios?" + p.toString())
       .then((r) => r.json())
-      .then((d) => { if (d.ok) { setRows(d.productos); setMeta(d.meta); } else setErr(d.error || "Error"); })
+      .then((d) => { if (d.ok) { setRows(d.productos); setNiveles(d.niveles_volumen || []); setMeta(d.meta); } else setErr(d.error || "Error"); })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
   }, [prov, cat, soloStock, moneda]);
@@ -83,6 +89,13 @@ export default function ListaPreciosPage() {
         .lp-title .meta { font-size:11px; color:#64748b; margin-top:4px; }
         .lp-cond { margin-top:10px; background:#f1f5f9; border-left:3px solid #0b3d6b; border-radius:0 6px 6px 0; padding:8px 12px; font-size:11px; color:#334155; }
         .lp-cond strong { color:#0b3d6b; }
+        .lp-vol { margin-top:18px; }
+        .lp-vol-tit { font-size:12px; font-weight:800; color:#0b3d6b; text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; }
+        .lp-vol-tabla { width:60%; min-width:340px; border-collapse:collapse; font-size:12px; }
+        .lp-vol-tabla th { background:#0b3d6b; color:#fff; text-align:left; padding:6px 10px; font-size:10.5px; text-transform:uppercase; }
+        .lp-vol-tabla th.num, .lp-vol-tabla td.num { text-align:right; }
+        .lp-vol-tabla td { padding:5px 10px; border-bottom:1px solid #eef2f6; }
+        .lp-vol-nota { font-size:10px; color:#94a3b8; margin-top:5px; }
         .lp-tabla { width:100%; border-collapse:collapse; font-size:12px; margin-top:8px; }
         .lp-tabla th { background:#0b3d6b; color:#fff; text-align:left; padding:6px 8px; font-size:10.5px; text-transform:uppercase; }
         .lp-tabla th.num, .lp-tabla td.num { text-align:right; white-space:nowrap; }
@@ -132,7 +145,7 @@ export default function ListaPreciosPage() {
             <div className="sub">Exclusiva Revendedores</div>
             <div className="meta">Fecha: {fecha} · {
               (meta?.moneda || moneda) === "USD"
-                ? (meta?.con_iva ? "Precios en dólares (USD) · IVA incluido" : "Precios en dólares (USD) · + IVA")
+                ? (meta?.con_iva ? "Precios en dólares (USD) · IVA incluido" : "Precios en dólares (USD) netos · + IVA de cada producto (ver columna)")
                 : "Precios en pesos · IVA incluido"
             }</div>
           </div>
@@ -154,6 +167,7 @@ export default function ListaPreciosPage() {
             <thead>
               <tr>
                 <th>Producto</th>
+                <th className="num">IVA</th>
                 <th className="num">Precio Reventa</th>
                 <th className="num">Precio a Público</th>
               </tr>
@@ -161,13 +175,14 @@ export default function ListaPreciosPage() {
             <tbody>
               {catKeys.map((c) => (
                 <Fragment key={c}>
-                  <tr className="lp-cat"><td colSpan={3}>{c}</td></tr>
+                  <tr className="lp-cat"><td colSpan={4}>{c}</td></tr>
                   {porCat[c].map((p, i) => (
                     <tr key={c + "-" + i}>
                       <td>
                         <div>{p.descripcion}</div>
                         {p.codigo && <div className="lp-cod">{p.codigo}</div>}
                       </td>
+                      <td className="num" style={{ color: "#64748b" }}>{fmtIva(p.iva_pct)}</td>
                       <td className="num"><strong>{fmtMoneda(p.precio_reventa, meta?.moneda || moneda)}</strong></td>
                       <td className="num">{fmtMoneda(p.precio_publico, meta?.moneda || moneda)}</td>
                     </tr>
@@ -176,6 +191,33 @@ export default function ListaPreciosPage() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* Niveles por volumen de compra: mejor precio a mayor monto NETO del pedido. Se expone como
+            % de descuento sobre el precio de lista (no revela markup ni costo). Pedido de Guille 07/07. */}
+        {!loading && !err && niveles.length > 0 && (
+          <div className="lp-vol">
+            <div className="lp-vol-tit">Descuentos por volumen de compra (sobre el total neto del pedido, en USD)</div>
+            <table className="lp-vol-tabla">
+              <thead><tr><th>Volumen de compra (neto)</th><th className="num">Precio</th></tr></thead>
+              <tbody>
+                {niveles.map((n, i) => {
+                  const rango = n.hasta_usd == null
+                    ? `Más de ${fmtUsd0(n.desde_usd)}`
+                    : n.desde_usd === 0
+                      ? `Hasta ${fmtUsd0(n.hasta_usd)}`
+                      : `${fmtUsd0(n.desde_usd)} a ${fmtUsd0(n.hasta_usd)}`;
+                  return (
+                    <tr key={i}>
+                      <td>{rango}</td>
+                      <td className="num">{n.descuento_pct <= 0 ? "Precio de lista" : <strong style={{ color: "#065f46" }}>−{n.descuento_pct.toLocaleString("es-AR", { maximumFractionDigits: 1 })}%</strong>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="lp-vol-nota">El descuento aplica al total del pedido según el monto neto alcanzado. Consultá tu precio final por volumen.</div>
+          </div>
         )}
 
         <div className="lp-foot">
