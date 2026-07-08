@@ -13,6 +13,14 @@ type Nivel = { desde_usd: number; hasta_usd: number | null; descuento_pct: numbe
 const usd = (v: number) => (v ? "US$ " + Number(v).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—");
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
+// Tracking anónimo de demanda (fire-and-forget; no rompe la página si falla). Sin PII.
+function track(tipo: string, dato?: string) {
+  try {
+    const body = JSON.stringify({ tipo, dato: dato || "", movil: typeof window !== "undefined" && window.matchMedia("(max-width:700px)").matches });
+    fetch("/api/public/track", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
+  } catch { /* noop */ }
+}
+
 export default function VisorPreciosPage() {
   const [prods, setProds] = useState<Prod[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
@@ -25,12 +33,21 @@ export default function VisorPreciosPage() {
   const toggleTip = (k: string) => setTipKey((cur) => (cur === k ? null : k));
 
   useEffect(() => {
+    track("visita"); // una visita por carga de página
     fetch("/api/public/lista-precios")
       .then((r) => r.json())
       .then((d) => { if (d.ok) { setProds(d.productos); setCats(d.categorias || []); setNiveles(d.niveles_volumen || []); } else setErr(d.error || "Error"); })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
   }, []);
+
+  // Búsqueda: registrar el término (debounce 1s, solo con ≥3 letras) — señal de demanda.
+  useEffect(() => {
+    const v = q.trim();
+    if (v.length < 3) return;
+    const t = setTimeout(() => track("busqueda", v), 1000);
+    return () => clearTimeout(t);
+  }, [q]);
 
   const filtrados = useMemo(() => {
     const nq = norm(q.trim());
@@ -43,7 +60,7 @@ export default function VisorPreciosPage() {
   const porCat: Record<string, Prod[]> = {};
   for (const p of filtrados) (porCat[p.categoria] = porCat[p.categoria] || []).push(p);
   const catKeys = Object.keys(porCat);
-  const toggleCat = (c: string) => setSelCats((s) => (s.includes(c) ? s.filter((x) => x !== c) : [...s, c]));
+  const toggleCat = (c: string) => setSelCats((s) => { if (!s.includes(c)) track("rubro", c); return s.includes(c) ? s.filter((x) => x !== c) : [...s, c]; });
 
   return (
     <div className="vp-root">
@@ -149,7 +166,7 @@ export default function VisorPreciosPage() {
                         <div className="desc-1">{p.descripcion}</div>
                         {p.codigo && <div className="cod">{p.codigo}</div>}
                       </div>
-                      <span className="vp-q" onClick={(e) => { e.stopPropagation(); toggleTip(key); }} title="Ver descripción completa">?</span>
+                      <span className="vp-q" onClick={(e) => { e.stopPropagation(); if (tipKey !== key) track("detalle", p.codigo || p.descripcion.slice(0, 60)); toggleTip(key); }} title="Ver descripción completa">?</span>
                       <div className="iva">IVA {(Number(p.iva_pct) || 21).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%</div>
                       <div className="px">{usd(p.precio_reventa)}</div>
                     </div>
