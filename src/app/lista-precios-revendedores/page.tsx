@@ -19,6 +19,8 @@ export default function VisorPreciosPage() {
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
   const [selCats, setSelCats] = useState<string[]>([]);
+  const [expandido, setExpandido] = useState<Set<string>>(new Set()); // renglones abiertos (tap en celu)
+  const toggleExp = (k: string) => setExpandido((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; });
 
   useEffect(() => {
     fetch("/api/public/lista-precios")
@@ -57,9 +59,13 @@ export default function VisorPreciosPage() {
         .vp-chip.on { background:#0b3d6b; color:#fff; border-color:#0b3d6b; }
         .vp-card { background:#fff; border-radius:12px; box-shadow:0 1px 4px rgba(0,0,0,.06); overflow:hidden; margin-top:12px; }
         .vp-cat { background:#f1f5f9; color:#0b3d6b; font-weight:800; font-size:12px; text-transform:uppercase; letter-spacing:.5px; padding:8px 14px; }
-        .vp-item { display:flex; align-items:center; gap:12px; padding:10px 14px; border-top:1px solid #f1f5f9; }
-        .vp-item .desc { flex:1; font-size:14px; }
-        .vp-item .cod { font-size:11px; color:#94a3b8; font-family:monospace; }
+        .vp-item { display:flex; align-items:center; gap:12px; padding:10px 14px; border-top:1px solid #f1f5f9; cursor:pointer; }
+        .vp-item:hover { background:#f8fafc; }
+        .vp-item .desc { flex:1; min-width:0; font-size:14px; }   /* min-width:0 permite truncar en flex */
+        /* Un renglón por defecto (lista compacta); .desc-full al expandir (tap en celu). */
+        .vp-item .desc-1 { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .vp-item .desc-full { white-space:normal; }
+        .vp-item .cod { font-size:11px; color:#94a3b8; font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .vp-item .iva { font-size:11px; color:#64748b; white-space:nowrap; }
         .vp-item .px { font-size:15px; font-weight:800; color:#0b3d6b; white-space:nowrap; }
         .vp-note { font-size:11px; color:#64748b; margin-top:14px; text-align:center; line-height:1.6; }
@@ -114,16 +120,21 @@ export default function VisorPreciosPage() {
           catKeys.map((c) => (
             <div className="vp-card" key={c}>
               <div className="vp-cat">{c}</div>
-              {porCat[c].map((p, i) => (
-                <div className="vp-item" key={c + "-" + i}>
-                  <div className="desc">
-                    {p.descripcion}
-                    {p.codigo && <div className="cod">{p.codigo}</div>}
+              {porCat[c].map((p, i) => {
+                const key = c + "-" + i;
+                const abierto = expandido.has(key);
+                // Un renglón (truncado); tap/click lo expande (celu) y title muestra todo al pasar el mouse.
+                return (
+                  <div className="vp-item" key={key} onClick={() => toggleExp(key)} title={p.descripcion}>
+                    <div className="desc">
+                      <div className={abierto ? "desc-full" : "desc-1"}>{p.descripcion}</div>
+                      {p.codigo && <div className="cod">{p.codigo}</div>}
+                    </div>
+                    <div className="iva">IVA {(Number(p.iva_pct) || 21).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%</div>
+                    <div className="px">{usd(p.precio_publico)}</div>
                   </div>
-                  <div className="iva">IVA {(Number(p.iva_pct) || 21).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%</div>
-                  <div className="px">{usd(p.precio_publico)}</div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ))
         )}
@@ -135,7 +146,8 @@ export default function VisorPreciosPage() {
         )}
 
         <div className="vp-note">
-          {loading ? "" : `${filtrados.length} productos`} · Precios sugeridos a público, en USD sin IVA (se adiciona IVA según cada producto).<br />
+          {loading ? "" : `${filtrados.length} productos`} · Tocá un producto (o pasá el mouse) para ver la descripción completa.<br />
+          Precios sugeridos a público, en USD sin IVA (se adiciona IVA según cada producto).<br />
           FEBECOS · bombas solares y energía fotovoltaica · febecos.com
         </div>
       </div>
