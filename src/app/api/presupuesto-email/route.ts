@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     if (!secret) return NextResponse.json({ ok: false, error: "FV_BRIDGE_SECRET no configurado en gestión" }, { status: 500 });
     const r = await fetch("https://fv.febecos.com/api/enviar-presupuesto-link", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + secret },
-      body: JSON.stringify({ email: b.email, nombre: b.nombre || "", numero: b.numero || "", link: b.link, tipo: b.tipo || "rev", mensaje: b.mensaje || "", preview: !!b.preview, pdf_b64: b.pdf_b64 || null, pdf_nombre: b.pdf_nombre || null }),
+      body: JSON.stringify({ email: b.email, nombre: b.nombre || "", numero: b.numero || "", link: b.link, tipo: b.tipo || "rev", mensaje: b.mensaje || "", preview: !!b.preview, pdf_b64: b.pdf_b64 || null, pdf_nombre: b.pdf_nombre || null, adjuntos: Array.isArray(b.adjuntos) ? b.adjuntos : [] }),
     });
     const d = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON de fv" }));
     return NextResponse.json(d, { status: r.ok ? 200 : r.status });

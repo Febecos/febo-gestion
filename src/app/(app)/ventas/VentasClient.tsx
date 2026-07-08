@@ -420,9 +420,26 @@ function EnviarMailRev({ p, onClose }: { p: any; onClose: () => void }) {
   // El destino arranca con el mail del cliente (CRM). Cambiar el buzón de salida NO pisa el destino.
   const [email, setEmail] = useState(mailCliente || mailRev || "");
   const [mensaje, setMensaje] = useState("");
-  const [pdf, setPdf] = useState<{ nombre: string; b64: string } | null>(null); // adjunto manual
+  const [pdf, setPdf] = useState<{ nombre: string; b64: string } | null>(null); // adjunto manual (PDF principal, inline)
+  const [adjuntos, setAdjuntos] = useState<{ filename: string; url: string }[]>([]); // datasheets/fichas (por URL → sin 413)
+  const [subiendo, setSubiendo] = useState(false);
   const [busy, setBusy] = useState(false);
   const tomarPdf = (f?: File) => { if (!f) { setPdf(null); return; } const r = new FileReader(); r.onload = () => setPdf({ nombre: f.name, b64: String(r.result).split(",")[1] }); r.readAsDataURL(f); };
+  // Cada datasheet se sube en su PROPIO request (chico) → devuelve una URL que Resend usa como adjunto.
+  // Así se pueden adjuntar varios sin meter todo en base64 en un solo body (evita el 413 de Vercel).
+  const subirAdjuntos = async (files?: FileList | null) => {
+    if (!files || !files.length) return;
+    setSubiendo(true);
+    try {
+      for (const f of Array.from(files)) {
+        const b64: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(",")[1]); r.onerror = rej; r.readAsDataURL(f); });
+        const r = await fetch("/api/adjunto-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, content_type: f.type || null, data_b64: b64 }) });
+        const d = await safeJson(r);
+        if (d.ok && d.url) setAdjuntos((prev) => [...prev, { filename: f.name, url: d.url }]);
+        else alert("No se pudo subir " + f.name + ": " + (d.error || "error"));
+      }
+    } finally { setSubiendo(false); }
+  };
   // Link PÚBLICO puro: nunca con ?rev=TOKEN (expone el token / abre modo edición).
   const link = linkPresup(p.tipo, p.public_token);
   const nombre = titleCase(p.cliente_display || p.cliente_razon_social || [p.cliente_nombre, p.cliente_apellido].filter(Boolean).join(" ") || p.revendedor_nombre || "");
@@ -430,7 +447,7 @@ function EnviarMailRev({ p, onClose }: { p: any; onClose: () => void }) {
     if (!email.includes("@")) { alert("Ingresá un email válido."); return; }
     setBusy(true);
     try {
-      const r = await fetch("/api/presupuesto-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numero: p.numero, email: email.trim(), link, tipo: dest, nombre, mensaje, pdf_b64: pdf?.b64 || null, pdf_nombre: pdf?.nombre || null }) });
+      const r = await fetch("/api/presupuesto-email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ numero: p.numero, email: email.trim(), link, tipo: dest, nombre, mensaje, pdf_b64: pdf?.b64 || null, pdf_nombre: pdf?.nombre || null, adjuntos: adjuntos.map((a) => ({ filename: a.filename, path: a.url })) }) });
       const d = await safeJson(r); if (!d.ok) throw new Error(d.error);
       alert("✅ Email enviado a " + email.trim()); onClose();
     } catch (e: any) { alert("Error: " + e.message); } finally { setBusy(false); }
@@ -456,6 +473,16 @@ function EnviarMailRev({ p, onClose }: { p: any; onClose: () => void }) {
             <input type="file" accept="application/pdf" onChange={(e) => tomarPdf(e.target.files?.[0])} className="w-full text-xs" />
             {pdf && <div className="text-[11px] text-emerald-600 mt-0.5">✓ {pdf.nombre}</div>}
             <div className="text-[10px] text-gray-400 mt-0.5">Por ahora el PDF se adjunta a mano (bajalo desde "Ver presupuesto"). La generación automática queda pendiente.</div></div>
+          <div><label className="block text-[10px] uppercase text-gray-400 font-semibold mb-0.5">Datasheets / fichas (opcional, varios)</label>
+            <input type="file" multiple onChange={(e) => { subirAdjuntos(e.target.files); e.target.value = ""; }} disabled={subiendo} className="w-full text-xs" />
+            {subiendo && <div className="text-[11px] text-gray-500 mt-0.5">⏳ Subiendo…</div>}
+            {adjuntos.map((a, i) => (
+              <div key={i} className="text-[11px] text-emerald-600 mt-0.5 flex items-center gap-1">
+                ✓ {a.filename}
+                <button type="button" onClick={() => setAdjuntos((prev) => prev.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500" title="Quitar">✕</button>
+              </div>
+            ))}
+            <div className="text-[10px] text-gray-400 mt-0.5">Cada archivo se sube por separado y se adjunta por link — podés mandar varios sin límite de tamaño del email.</div></div>
           <div className="text-[11px] text-gray-400">El email inicial viene del CRM. Sale con el link al presupuesto y la(s) firma(s) según el destinatario.</div>
           <div><label className="block text-[10px] uppercase text-gray-400 font-semibold mb-0.5">Mensaje (opcional)</label>
             <textarea value={mensaje} onChange={(e) => setMensaje(e.target.value)} rows={3} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm resize-y" placeholder="Mensaje para el cliente…" /></div>
