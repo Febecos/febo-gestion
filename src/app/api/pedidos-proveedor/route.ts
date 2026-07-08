@@ -73,6 +73,12 @@ async function ensure(sql: any) {
 // Resuelve los contactos del proveedor (CRM) por nombre de empresa.
 // Devuelve { to, cc } → comercial al "Para" (campo original); admin + logística + email general al CC.
 const normPP = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, "");
+// Normalización CANÓNICA de nombre de proveedor para AGRUPAR (unificar pedidos): saca sufijos
+// societarios finales (S.A./S.R.L./SAS/SA/SRL) + acentos/espacios/puntuación → "Multisolar" y
+// "MULTISOLAR S. A." caen en la misma clave. (Fix 07/07: el unificar agrupaba por string exacto.)
+const normProvCanon = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+  .replace(/\s*(s\.?\s*a\.?\s*s\.?|s\.?\s*r\.?\s*l\.?|s\.?\s*a\.?|sas|srl|sa)\s*$/, "")
+  .replace(/[^a-z0-9]/g, "");
 const esEmail = (s: any) => typeof s === "string" && /\S+@\S+\.\S+/.test(s.trim());
 async function resolverContactos(sql: any, proveedorNombre: string, fallbackTo?: string) {
   let prov: any = null;
@@ -130,10 +136,11 @@ export async function GET(req: NextRequest) {
       SELECT id, proveedor, fv_numero, items, total_costo_usd, email_destinatario, gsa_numero, estado,
              COALESCE(origen,'fv') AS origen, numero_remito, total_recibido_usd, pagado_fecha, created_at
       FROM pedidos_proveedores
-      WHERE (${prov} = '' OR proveedor = ${prov})
-        AND (${estado} = '' OR estado = ${estado})
+      WHERE (${estado} = '' OR estado = ${estado})
         AND (${q} = '' OR lower(coalesce(proveedor,'')||' '||coalesce(fv_numero,'')||' '||coalesce(gsa_numero::text,'')) LIKE ${like})
       ORDER BY id DESC LIMIT 400`;
+    // Filtro de proveedor por nombre NORMALIZADO (agrupa variantes: "Multisolar" == "MULTISOLAR S. A.").
+    const rowsF = prov ? (rows as any[]).filter((r) => normProvCanon(r.proveedor) === normProvCanon(prov)) : (rows as any[]);
     // ── ¿El proveedor respondió el pedido? (cruce con la bandeja de entrada de correo) ──
     try {
       const inbox = (await sql`SELECT lower(from_addr) AS from_addr, subject, date, seen FROM mail_messages WHERE folder='INBOX' AND date > now() - interval '180 days'` as any[]);
@@ -174,7 +181,7 @@ export async function GET(req: NextRequest) {
         r.para_stock = !f || /^(STOCK|TEST|COMPRA)/i.test(f);
       }
     } catch { /* si falla la resolución, la lista igual se muestra */ }
-    return NextResponse.json({ ok: true, pedidos: rows });
+    return NextResponse.json({ ok: true, pedidos: rowsF });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
 
