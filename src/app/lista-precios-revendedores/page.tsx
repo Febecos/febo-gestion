@@ -65,7 +65,7 @@ export default function VisorPreciosPage() {
         .vp-item .cod { font-size:11px; color:#94a3b8; font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         /* "?" indicador → muestra la descripcion completa (hover en compu / tap en celu). */
         .vp-q { position:relative; flex:0 0 auto; width:20px; height:20px; border-radius:50%; background:#0b3d6b; color:#fff; font-size:12px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; user-select:none; }
-        .vp-tip { display:none; position:absolute; bottom:135%; right:-6px; width:min(300px,72vw); background:#0b3d6b; color:#fff; padding:9px 11px; border-radius:8px; font-size:12.5px; font-weight:400; line-height:1.45; text-align:left; white-space:normal; box-shadow:0 8px 24px rgba(0,0,0,.28); z-index:30; }
+        .vp-tip { display:none; position:absolute; bottom:calc(100% + 10px); right:-6px; width:min(300px,72vw); background:#0b3d6b; color:#fff; padding:9px 11px; border-radius:8px; font-size:12.5px; font-weight:400; line-height:1.45; text-align:left; white-space:normal; box-shadow:0 8px 24px rgba(0,0,0,.28); z-index:30; }
         .vp-tip::after { content:""; position:absolute; top:100%; right:12px; border:6px solid transparent; border-top-color:#0b3d6b; }  /* flechita hacia el "?" */
         .vp-q:hover .vp-tip, .vp-tip.open { display:block; }
         .vp-item .iva { font-size:11px; color:#64748b; white-space:nowrap; }
