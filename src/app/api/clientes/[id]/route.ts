@@ -53,10 +53,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (!id || !field) return NextResponse.json({ ok: false, error: "id y field requeridos" }, { status: 400 });
     if (!ALLOWED.has(field)) return NextResponse.json({ ok: false, error: `campo '${field}' no permitido` }, { status: 403 });
     // INVARIANTE dura (norma de Guille, 07/07): un revendedor que compra SIGUE siendo revendedor
-    // (con tag/estado "Compró"), NUNCA pasa a cliente_final. Bloquea acá cualquier intento de
-    // downgrade — sea por un bug de resolución de id (como el de CompletarFiscal recién arreglado)
-    // o por cualquier otro flujo futuro que ataque este mismo endpoint.
-    if (field === "tipo" && value !== "revendedor") {
+    // (con tag/estado "Compró"), NUNCA pasa a CLIENTE_FINAL. Bloquea SOLO ese downgrade (revendedor→
+    // cliente_final) — las demás reclasificaciones (revendedor→proveedor/contacto/etc.) son legítimas
+    // y se permiten (fix 07/07: antes bloqueaba cualquier cambio saliendo de revendedor).
+    if (field === "tipo" && value === "cliente_final") {
       const sqlChk = getDb();
       const cur = await sqlChk`SELECT tipo FROM clientes WHERE id = ${id} LIMIT 1`;
       if (cur[0]?.tipo === "revendedor") {
