@@ -14,7 +14,8 @@ const usd = (v: number) => (v ? "US$ " + Number(v).toLocaleString("es-AR", { min
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 // Tracking anónimo de demanda (fire-and-forget; no rompe la página si falla). Sin PII.
-// rev = token del revendedor si el link vino con ?rev=TOKEN (atribución; base del gateo por token).
+// rev = visor_ref del revendedor (id NO sensible, no el token de sesión) si el link vino con
+// ?rev=<visor_ref> — atribución + base del gateo por token en fase 2.
 function track(tipo: string, dato?: string) {
   try {
     const rev = new URLSearchParams(window.location.search).get("rev") || "";
