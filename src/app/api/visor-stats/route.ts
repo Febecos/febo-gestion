@@ -28,11 +28,21 @@ export async function GET(req: NextRequest) {
     const porDia = await sql`SELECT to_char(date_trunc('day', creado), 'YYYY-MM-DD') dia, count(*)::int n
       FROM visor_eventos WHERE tipo='visita' AND creado > now() - ${desde}::interval
       GROUP BY 1 ORDER BY 1` as any[];
+    // Origen de la visita (host del referer): de dónde llega la gente.
+    const topOrigenes = await sql`SELECT COALESCE(dato,'directo') dato, count(*)::int n FROM visor_eventos
+      WHERE tipo='visita' AND creado > now() - ${desde}::interval
+      GROUP BY COALESCE(dato,'directo') ORDER BY n DESC LIMIT 15` as any[];
+    // Por revendedor (si el link vino con ?rev=TOKEN) → resuelve el nombre desde clientes.
+    const porRevendedor = await sql`SELECT e.rev, c.nombre, count(*)::int n
+      FROM visor_eventos e LEFT JOIN clientes c ON c.revendedor_token = e.rev
+      WHERE e.rev IS NOT NULL AND e.creado > now() - ${desde}::interval
+      GROUP BY e.rev, c.nombre ORDER BY n DESC LIMIT 25` as any[];
 
     return NextResponse.json({
       ok: true, dias,
       visitas: visitas?.n || 0, movil: visitas?.movil || 0, dias_con_visitas: visitas?.dias_con_visitas || 0,
-      top_busquedas: topBusquedas, top_rubros: topRubros, top_productos: topProductos, visitas_por_dia: porDia,
+      top_busquedas: topBusquedas, top_rubros: topRubros, top_productos: topProductos,
+      top_origenes: topOrigenes, por_revendedor: porRevendedor, visitas_por_dia: porDia,
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });

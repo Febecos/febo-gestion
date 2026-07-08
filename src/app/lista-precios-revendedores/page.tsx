@@ -14,9 +14,11 @@ const usd = (v: number) => (v ? "US$ " + Number(v).toLocaleString("es-AR", { min
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 // Tracking anónimo de demanda (fire-and-forget; no rompe la página si falla). Sin PII.
+// rev = token del revendedor si el link vino con ?rev=TOKEN (atribución; base del gateo por token).
 function track(tipo: string, dato?: string) {
   try {
-    const body = JSON.stringify({ tipo, dato: dato || "", movil: typeof window !== "undefined" && window.matchMedia("(max-width:700px)").matches });
+    const rev = new URLSearchParams(window.location.search).get("rev") || "";
+    const body = JSON.stringify({ tipo, dato: dato || "", rev, movil: window.matchMedia("(max-width:700px)").matches });
     fetch("/api/public/track", { method: "POST", headers: { "Content-Type": "application/json" }, body, keepalive: true }).catch(() => {});
   } catch { /* noop */ }
 }
@@ -33,7 +35,10 @@ export default function VisorPreciosPage() {
   const toggleTip = (k: string) => setTipKey((cur) => (cur === k ? null : k));
 
   useEffect(() => {
-    track("visita"); // una visita por carga de página
+    // origen de la visita (de dónde llegó) — sin PII, solo el host. Base para medir difusión.
+    let origen = "";
+    try { origen = document.referrer ? new URL(document.referrer).host : "directo"; } catch { origen = "directo"; }
+    track("visita", origen);
     fetch("/api/public/lista-precios")
       .then((r) => r.json())
       .then((d) => { if (d.ok) { setProds(d.productos); setCats(d.categorias || []); setNiveles(d.niveles_volumen || []); } else setErr(d.error || "Error"); })
