@@ -65,11 +65,11 @@ export default function VisorPreciosPage() {
         .vp-item .desc { flex:1; min-width:0; font-size:14px; }   /* min-width:0 permite truncar en flex */
         .vp-item .desc-1 { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }  /* un renglon */
         .vp-item .cod { font-size:11px; color:#94a3b8; font-family:monospace; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        /* "?" indicador → muestra la descripcion completa (hover en compu / tap en celu). */
-        .vp-q { position:relative; flex:0 0 auto; width:20px; height:20px; border-radius:50%; background:#0b3d6b; color:#fff; font-size:12px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; user-select:none; }
-        .vp-tip { display:none; position:absolute; bottom:calc(100% + 10px); right:-6px; width:min(300px,72vw); background:#0b3d6b; color:#fff; padding:9px 11px; border-radius:8px; font-size:12.5px; font-weight:400; line-height:1.45; text-align:left; white-space:normal; box-shadow:0 8px 24px rgba(0,0,0,.28); z-index:30; }
-        .vp-tip::after { content:""; position:absolute; top:100%; right:12px; border:6px solid transparent; border-top-color:#0b3d6b; }  /* flechita hacia el "?" */
-        .vp-q:hover .vp-tip, .vp-tip.open { display:block; }
+        /* "?" indicador → abre la descripción completa DEBAJO del ítem (dentro de la pantalla). */
+        .vp-q { flex:0 0 auto; width:22px; height:22px; border-radius:50%; background:#0b3d6b; color:#fff; font-size:13px; font-weight:800; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; user-select:none; }
+        .vp-item.abierto { background:#eff6ff; }
+        /* Bloque de descripción completa: ancho completo, fondo azul, letras blancas, legible. */
+        .vp-desc-exp { background:#0b3d6b; color:#fff; padding:12px 16px; font-size:14px; line-height:1.5; cursor:pointer; }
         .vp-item .iva { font-size:11px; color:#64748b; white-space:nowrap; }
         .vp-item .px { font-size:15px; font-weight:800; color:#0b3d6b; white-space:nowrap; }
         .vp-note { font-size:11px; color:#64748b; margin-top:14px; text-align:center; line-height:1.6; }
@@ -139,20 +139,25 @@ export default function VisorPreciosPage() {
               <div className="vp-cat">{c}</div>
               {porCat[c].map((p, i) => {
                 const key = c + "-" + i;
-                // Un renglón (truncado). El "?" muestra la descripción completa: hover en compu,
-                // tap en celu (tooltip arriba, fondo azul, letras blancas).
+                const abierto = tipKey === key;
+                // Un renglón (truncado). El "?" abre la descripción completa DEBAJO del ítem, ancho
+                // completo, dentro de la pantalla (así no se corta contra el borde en el celu).
                 return (
-                  <div className="vp-item" key={key}>
-                    <div className="desc">
-                      <div className="desc-1">{p.descripcion}</div>
-                      {p.codigo && <div className="cod">{p.codigo}</div>}
+                  <div key={key}>
+                    <div className={"vp-item" + (abierto ? " abierto" : "")}>
+                      <div className="desc">
+                        <div className="desc-1">{p.descripcion}</div>
+                        {p.codigo && <div className="cod">{p.codigo}</div>}
+                      </div>
+                      <span className="vp-q" onClick={(e) => { e.stopPropagation(); toggleTip(key); }} title="Ver descripción completa">?</span>
+                      <div className="iva">IVA {(Number(p.iva_pct) || 21).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%</div>
+                      <div className="px">{usd(p.precio_reventa)}</div>
                     </div>
-                    <span className="vp-q" onClick={(e) => { e.stopPropagation(); toggleTip(key); }} title="Ver descripción completa">
-                      ?
-                      <span className={"vp-tip" + (tipKey === key ? " open" : "")}>{p.descripcion}{p.codigo ? " · " + p.codigo : ""}</span>
-                    </span>
-                    <div className="iva">IVA {(Number(p.iva_pct) || 21).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%</div>
-                    <div className="px">{usd(p.precio_reventa)}</div>
+                    {abierto && (
+                      <div className="vp-desc-exp" onClick={() => toggleTip(key)}>
+                        {p.descripcion}{p.codigo ? " · " + p.codigo : ""}
+                      </div>
+                    )}
                   </div>
                 );
               })}
