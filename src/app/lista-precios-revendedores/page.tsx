@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 
-// VISOR PÚBLICO de precios (link para compartir — pedido de Guille 07/07). Sin auth (ruta
-// whitelisteada en el middleware). El usuario busca su producto y ve el PRECIO SUGERIDO A PÚBLICO
-// en USD. ⚠️ NO se muestran proveedores, ni costo, ni precio de reventa (eso es interno). Pega solo
-// a /api/public/lista-precios, que ya filtra todo eso server-side.
+// VISOR de la LISTA DE PRECIOS EXCLUSIVA PARA REVENDEDORES (link para compartir — Guille 07/07,
+// reencuadre). Sin auth (ruta whitelisteada en el middleware; abierto por ahora, se gatea por token
+// de revendedor en fase 2). Muestra el PRECIO DE REVENTA en USD (facturado al CUIT del revendedor) +
+// los umbrales de volumen. ⚠️ NO se muestran proveedores ni costo. Pega a /api/public/lista-precios.
 
-type Prod = { codigo: string; descripcion: string; categoria: string; iva_pct: number; precio_publico: number };
+type Prod = { codigo: string; descripcion: string; categoria: string; iva_pct: number; precio_reventa: number };
 type Cat = { categoria: string; n: number };
+type Nivel = { desde_usd: number; hasta_usd: number | null; descuento_pct: number };
 
 const usd = (v: number) => (v ? "US$ " + Number(v).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "—");
 const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -15,6 +16,7 @@ const norm = (s: string) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,
 export default function VisorPreciosPage() {
   const [prods, setProds] = useState<Prod[]>([]);
   const [cats, setCats] = useState<Cat[]>([]);
+  const [niveles, setNiveles] = useState<Nivel[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
@@ -25,7 +27,7 @@ export default function VisorPreciosPage() {
   useEffect(() => {
     fetch("/api/public/lista-precios")
       .then((r) => r.json())
-      .then((d) => { if (d.ok) { setProds(d.productos); setCats(d.categorias || []); } else setErr(d.error || "Error"); })
+      .then((d) => { if (d.ok) { setProds(d.productos); setCats(d.categorias || []); setNiveles(d.niveles_volumen || []); } else setErr(d.error || "Error"); })
       .catch((e) => setErr(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -49,9 +51,9 @@ export default function VisorPreciosPage() {
         .vp-root { background:#eef1f5; min-height:100vh; font-family:Arial,Helvetica,sans-serif; color:#0f172a; }
         .vp-head { background:#0b3d6b; color:#fff; padding:18px 16px; }
         .vp-head-in { max-width:900px; margin:0 auto; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
-        .vp-logo { height:48px; }
-        .vp-head h1 { margin:0; font-size:18px; font-weight:900; }
-        .vp-head .sub { font-size:12px; opacity:.85; }
+        .vp-logo { height:68px; }
+        .vp-head h1 { margin:0; font-size:19px; font-weight:900; }
+        .vp-head .sub { font-size:12px; opacity:.9; margin-top:3px; }
         .vp-wrap { max-width:900px; margin:0 auto; padding:16px; }
         .vp-search { width:100%; box-sizing:border-box; border:1px solid #cbd5e1; border-radius:10px; padding:12px 14px; font-size:15px; }
         .vp-chips { display:flex; gap:6px; flex-wrap:wrap; margin:12px 0; }
@@ -81,8 +83,8 @@ export default function VisorPreciosPage() {
         <div className="vp-head-in">
           <img className="vp-logo" src="https://fv.febecos.com/images/febecos-logo.png" alt="FEBECOS" />
           <div>
-            <h1>Lista de Precios — Precios sugeridos</h1>
-            <div className="sub">Precios en dólares (USD) · + IVA · sujetos a modificación y disponibilidad de stock</div>
+            <h1>Lista de Precios — Exclusiva Revendedores</h1>
+            <div className="sub">Precios en <strong>dólares (USD)</strong> · + IVA · facturación al CUIT del revendedor · sujetos a modificación y disponibilidad de stock</div>
           </div>
         </div>
       </div>
@@ -93,7 +95,20 @@ export default function VisorPreciosPage() {
           <strong>Pedido mínimo USD 1.200</strong> · Entrega SIN CARGO en CABA. Pedidos menores a USD 1.200: costo adicional de USD 35 (entrega/retiro en depósito CABA).
         </div>
         <div className="vp-vol">
-          <strong>📈 A mayor volumen de compra, mejor precio.</strong> Consultanos tu precio por volumen al pedir tu cotización.
+          <strong>📈 A mayor volumen de compra, mejor precio.</strong>{" "}
+          {(() => {
+            // Umbrales (montos netos USD del admin) donde MEJORA el precio — blindaje monótono
+            // (solo los que realmente bajan el precio; sin % ni markup).
+            const umbrales: number[] = [];
+            let maxDesc = 0;
+            for (const n of niveles) {
+              if (n.desde_usd > 0 && n.descuento_pct > maxDesc + 0.01) umbrales.push(n.desde_usd);
+              if (n.descuento_pct > maxDesc) maxDesc = n.descuento_pct;
+            }
+            return umbrales.length
+              ? <>El precio mejora al superar los <strong>{umbrales.map((u) => "US$ " + Math.round(u).toLocaleString("es-AR")).join(" · ")}</strong> (neto) de compra.</>
+              : <>Consultanos tu precio por volumen al pedir tu cotización.</>;
+          })()}
         </div>
         {!loading && !err && catKeys.includes("TERMOTANQUES SOLARES") && (
           <div className="vp-cond" style={{ background: "#fff7ed", borderLeftColor: "#f59e0b" }}>
@@ -137,7 +152,7 @@ export default function VisorPreciosPage() {
                       <span className={"vp-tip" + (tipKey === key ? " open" : "")}>{p.descripcion}{p.codigo ? " · " + p.codigo : ""}</span>
                     </span>
                     <div className="iva">IVA {(Number(p.iva_pct) || 21).toLocaleString("es-AR", { maximumFractionDigits: 1 })}%</div>
-                    <div className="px">{usd(p.precio_publico)}</div>
+                    <div className="px">{usd(p.precio_reventa)}</div>
                   </div>
                 );
               })}
@@ -153,7 +168,7 @@ export default function VisorPreciosPage() {
 
         <div className="vp-note">
           {loading ? "" : `${filtrados.length} productos`} · Tocá el <strong>?</strong> (o pasá el mouse) para ver la descripción completa.<br />
-          Precios sugeridos a público, en USD sin IVA (se adiciona IVA según cada producto).<br />
+          Precios exclusivos para revendedores, en USD sin IVA (se adiciona IVA según cada producto) · facturación al CUIT del revendedor.<br />
           FEBECOS · bombas solares y energía fotovoltaica · febecos.com
         </div>
       </div>
