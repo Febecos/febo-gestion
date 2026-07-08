@@ -32,9 +32,11 @@ export async function GET(req: NextRequest) {
     const topOrigenes = await sql`SELECT COALESCE(dato,'directo') dato, count(*)::int n FROM visor_eventos
       WHERE tipo='visita' AND creado > now() - ${desde}::interval
       GROUP BY COALESCE(dato,'directo') ORDER BY n DESC LIMIT 15` as any[];
-    // Por revendedor (si el link vino con ?rev=TOKEN) → resuelve el nombre desde clientes.
+    // Por revendedor (si el link vino con ?rev=<visor_ref>) → resuelve el nombre por visor_ref.
+    // ⚠️ NO se usa revendedor_token acá: ese es la credencial de sesión del portal y NO debe viajar en
+    // URLs públicas (validación Seguridad 07/07 #6). El ?rev del visor usa visor_ref (id no sensible).
     const porRevendedor = await sql`SELECT e.rev, c.nombre, count(*)::int n
-      FROM visor_eventos e LEFT JOIN clientes c ON c.revendedor_token = e.rev
+      FROM visor_eventos e LEFT JOIN clientes c ON c.visor_ref = e.rev
       WHERE e.rev IS NOT NULL AND e.creado > now() - ${desde}::interval
       GROUP BY e.rev, c.nombre ORDER BY n DESC LIMIT 25` as any[];
 

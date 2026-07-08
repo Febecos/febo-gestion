@@ -8,8 +8,23 @@ import { getDb } from "@/lib/db";
 // cuando comparte con su token, y queda la base para gatear por token en la fase 2). Fire-and-forget.
 const TIPOS = new Set(["visita", "busqueda", "rubro", "detalle"]);
 
+// Rate-limit liviano por IP (best-effort, en memoria por instancia): frena ráfagas de spam de eventos
+// sin romper el uso normal. Mitiga #3 de la validación de Seguridad (07/07). El endpoint es
+// fire-and-forget y no lee datos → el peor caso de un flood es carga de INSERTs, esto lo acota.
+const _hits = new Map<string, number[]>();
+function rateLimited(ip: string, max = 40, windowMs = 60000): boolean {
+  const now = Date.now();
+  const arr = (_hits.get(ip) || []).filter((t) => now - t < windowMs);
+  arr.push(now);
+  _hits.set(ip, arr);
+  if (_hits.size > 5000) _hits.clear(); // techo de memoria
+  return arr.length > max;
+}
+
 export async function POST(req: NextRequest) {
   try {
+    const ip = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || "?";
+    if (rateLimited(ip)) return new NextResponse(null, { status: 204 }); // silencioso, no cuenta
     const b = await req.json().catch(() => ({}));
     const tipo = String(b?.tipo || "");
     if (!TIPOS.has(tipo)) return new NextResponse(null, { status: 204 });

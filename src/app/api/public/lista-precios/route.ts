@@ -31,12 +31,14 @@ export async function GET(req: NextRequest) {
       WHERE activo = true AND origen = 'fv' AND costo_usd IS NOT NULL AND COALESCE(sin_precio, false) = false
       GROUP BY categoria ORDER BY categoria` as any[];
 
+    // Cache en el CDN de Vercel: el precio cambia ~1 vez/día (dólar) → los requests repetidos (y el
+    // scraping en loop) pegan al edge, no a Neon. Mitiga #3 de la validación de Seguridad (07/07).
     return NextResponse.json({
       ok: true, productos, total: productos.length,
       categorias: cats.map((c) => ({ categoria: c.categoria || "VARIOS", n: c.n })),
       niveles_volumen: r.niveles_volumen, // umbrales donde mejora el precio (montos del admin)
       meta: { moneda: "USD", con_iva: r.meta.con_iva },
-    });
+    }, { headers: { "Cache-Control": "public, s-maxage=600, stale-while-revalidate=1800" } });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
