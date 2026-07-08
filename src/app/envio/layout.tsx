@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 
 // Metadata propio de la página pública de envío (/envio/[token]). Evita que la preview al compartir
 // muestre el default del ERP ("FEBO-GESTION · ERP + CRM"). Mismo criterio que el visor (07/07).
-const TITULO = "Datos de envío · Febecos";
-const DESCRIPCION = "Bombas solares y energía fotovoltaica · Febecos";
+const TITULO = "Febecos";
+const DESCRIPCION = "Todo en energía solar para el Gremio";
 const LOGO = "https://fv.febecos.com/images/febecos-logo.png";
 
 export const metadata: Metadata = {

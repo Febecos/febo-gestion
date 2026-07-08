@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 
 // Metadata PROPIO del visor público (pisa el default del ERP en src/app/layout.tsx). Sin esto, la
 // preview al compartir el link por WhatsApp mostraba "FEBO-GESTION · ERP + CRM" (reportado 07/07).
-const TITULO = "Lista de Precios · Febecos";
-const DESCRIPCION = "Bombas solares y energía fotovoltaica · Febecos";
+const TITULO = "Febecos";
+const DESCRIPCION = "Todo en energía solar para el Gremio";
 const LOGO = "https://fv.febecos.com/images/febecos-logo.png";
 const URL = "https://visor.febecos.com/lista-precios-revendedores";
 

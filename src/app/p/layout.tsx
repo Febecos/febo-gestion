@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 // Metadata propio de los comprobantes públicos (/p/[token]: facturas/remitos/presupuestos que se
 // comparten con clientes). Sin esto heredaban el default del ERP ("FEBO-GESTION · ERP + CRM") en la
 // preview al compartir el link (mismo problema que el visor, 07/07). Genérico por comprobante.
-const TITULO = "Comprobante · Febecos";
-const DESCRIPCION = "Bombas solares y energía fotovoltaica · Febecos";
+const TITULO = "Febecos";
+const DESCRIPCION = "Todo en energía solar para el Gremio";
 const LOGO = "https://fv.febecos.com/images/febecos-logo.png";
 
 export const metadata: Metadata = {
