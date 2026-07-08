@@ -184,6 +184,18 @@ function Presupuestos() {
   const [editId, setEditId] = useState<number | null>(null);
   const [mailFor, setMailFor] = useState<Presup | null>(null);
   const [confFor, setConfFor] = useState<{ p: any; items: any[] } | null>(null);
+  // Feature B (resumen consolidado): selección múltiple de presupuestos FV → propuesta sumada.
+  const [sel, setSel] = useState<Record<string, string>>({}); // numero -> public_token
+  const selNums = Object.keys(sel);
+  function toggleSel(numero: string, token: string) {
+    setSel((s) => { const n = { ...s }; if (n[numero]) delete n[numero]; else n[numero] = token; return n; });
+  }
+  function abrirResumenConsolidado() {
+    const tokens = Object.values(sel).filter(Boolean);
+    if (tokens.length < 2) { alert("Seleccioná al menos 2 presupuestos FV para el resumen consolidado."); return; }
+    const url = `https://fv.febecos.com/resumen-consolidado.html?tokens=${encodeURIComponent(tokens.join(","))}`;
+    open("presup-edit", { url, title: `📄 Resumen consolidado (${tokens.length})`, docTitle: "Resumen consolidado - Febecos" });
+  }
   const abrirConfirmar = async (r: Presup) => {
     try {
       const res = await fetch("/api/presupuestos?detalle=" + encodeURIComponent(r.numero));
@@ -244,17 +256,28 @@ function Presupuestos() {
         </select>
         <button onClick={() => load()} disabled={loading} title="Actualizar la lista" className="px-3 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">{loading ? "…" : "🔄 Actualizar"}</button>
         <span className="text-sm text-gray-500">{rows.length}</span>
+        {selNums.length > 0 && (
+          <>
+            <button onClick={abrirResumenConsolidado} disabled={selNums.length < 2} title="Genera una propuesta consolidada sumando los presupuestos FV seleccionados: una línea por equipo + GRAN TOTAL + IVA 10,5% y 21% discriminados." className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40">📄 Resumen consolidado ({selNums.length})</button>
+            <button onClick={() => setSel({})} title="Limpiar selección" className="px-2 py-2 rounded-lg text-gray-500 hover:text-gray-700 text-sm">✕</button>
+          </>
+        )}
       </div>
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-gray-500 text-xs uppercase"><tr>
-            <th className="text-left px-4 py-3">Número</th><th className="text-left px-4 py-3">Tipo</th><th className="text-left px-4 py-3">Cliente</th><th className="text-left px-4 py-3">Detalle</th><th className="text-left px-4 py-3">Vendedor</th><th className="text-left px-4 py-3">Estado</th><th className="text-left px-4 py-3">Fecha</th><th className="text-right px-4 py-3">Precio</th><th></th>
+            <th className="px-2 py-3" title="Seleccioná presupuestos FV para el resumen consolidado"></th><th className="text-left px-4 py-3">Número</th><th className="text-left px-4 py-3">Tipo</th><th className="text-left px-4 py-3">Cliente</th><th className="text-left px-4 py-3">Detalle</th><th className="text-left px-4 py-3">Vendedor</th><th className="text-left px-4 py-3">Estado</th><th className="text-left px-4 py-3">Fecha</th><th className="text-right px-4 py-3">Precio</th><th></th>
           </tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={9} className="text-center py-8 text-gray-400">Cargando…</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={9} className="text-center py-8 text-gray-400">Sin presupuestos</td></tr>
+            {loading ? <tr><td colSpan={10} className="text-center py-8 text-gray-400">Cargando…</td></tr>
+            : rows.length === 0 ? <tr><td colSpan={10} className="text-center py-8 text-gray-400">Sin presupuestos</td></tr>
             : rows.map((r) => (
               <tr key={r.numero} className="border-t border-gray-100 hover:bg-gray-50">
+                <td className="px-2 py-2 text-center">
+                  {r.tipo === "fv" && r.public_token
+                    ? <input type="checkbox" checked={!!sel[r.numero]} onChange={() => toggleSel(r.numero, r.public_token)} title="Incluir en el resumen consolidado" className="cursor-pointer" />
+                    : null}
+                </td>
                 <td className="px-4 py-2 font-semibold">{r.numero}</td>
                 <td className="px-4 py-2">{chip(r.tipo === "fv" ? "FV" : r.tipo === "roi" ? "ROI" : "Rev", r.tipo === "fv" ? "#d97706" : r.tipo === "roi" ? "#16a34a" : "#2563eb")}</td>
                 <td className="px-4 py-2">{nombreCli(r)}</td>
