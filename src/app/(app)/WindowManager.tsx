@@ -9,14 +9,15 @@ import PedidosOnlineClient from "./ventas/PedidosOnlineClient";
 import ProductosClient from "./productos/ProductosClient";
 import StockClient from "./productos/StockClient";
 import CotizadorEmbed from "./cotizadores/CotizadorEmbed";
+import ProyectoFvClient from "./ventas/ProyectoFvClient";
 import ConfigClient from "./config/ConfigClient";
 
-export type WinKey = "clientes" | "proveedores" | "ventas" | "pedidos-online" | "productos" | "stock" | "compras" | "transportistas" | "cot-bomba" | "cot-fv" | "presup-edit" | "config";
+export type WinKey = "clientes" | "proveedores" | "ventas" | "pedidos-online" | "productos" | "stock" | "compras" | "transportistas" | "cot-bomba" | "cot-fv" | "proyecto-fv" | "presup-edit" | "config";
 type Win = { id: number; key: WinKey; title: string; x: number; y: number; w: number; h: number; z: number; max: boolean; min: boolean; payload?: any };
 
 const TITULOS: Record<WinKey, string> = {
   clientes: "👥 Clientes / CRM", proveedores: "🏭 Proveedores", ventas: "🧾 Ventas / Presupuestos", "pedidos-online": "🛒 Pedidos online", productos: "📦 Productos", stock: "📦 Stock / Depósito", compras: "🛒 Compras / Pedido a proveedor", transportistas: "🚚 Transportistas",
-  "cot-bomba": "🔧 Cotizador de bombas", "cot-fv": "☀️ Cotizador fotovoltaico",
+  "cot-bomba": "🔧 Cotizador de bombas", "cot-fv": "☀️ Cotizador fotovoltaico", "proyecto-fv": "☀️ Proyecto fotovoltaico",
   "presup-edit": "✏️ Editar presupuesto",
   config: "⚙️ Configuración",
 };
@@ -42,6 +43,7 @@ function Body({ k, payload }: { k: WinKey; payload?: any }) {
   if (k === "productos") return <ProductosClient />;
   if (k === "stock") return <StockClient />;
   if (k === "config") return <ConfigClient />;
+  if (k === "proyecto-fv") return <ProyectoFvClient />;
   if (k === "presup-edit") return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-100 text-[11px] text-gray-400 shrink-0">

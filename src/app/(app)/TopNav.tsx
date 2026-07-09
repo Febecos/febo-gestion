@@ -10,6 +10,7 @@ const MODULOS: { key: WinKey; label: string; icon: string }[] = [
   { key: "productos", label: "Productos", icon: "📦" },
   { key: "cot-bomba", label: "Cotizar bomba", icon: "🔧" },
   { key: "cot-fv", label: "Cotizar FV", icon: "☀️" },
+  { key: "proyecto-fv", label: "Proyecto FV", icon: "🏗️" },
   { key: "compras", label: "Compras", icon: "🛒" },
   { key: "transportistas", label: "Transportistas", icon: "🚚" },
 ];
