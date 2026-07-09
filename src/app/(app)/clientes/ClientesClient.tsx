@@ -15,7 +15,8 @@ type Cliente = {
 // compró) queda por compat histórica — el flag de compra vive AHORA en tags (ortogonal, ver
 // TAGS.compro), no se agregan más estados combinados tipo "revendedor que compró".
 const ESTADOS = [
-  ["contacto", "📇 Contacto"], ["cliente_final", "✅ Cliente (compró) — heredado, usar 🛒 Compró"],
+  ["contacto", "📇 Contacto"], ["prospecto", "🎯 Prospecto (contactado/cotizado, sin comprar)"],
+  ["cliente_final", "✅ Cliente (compró)"],
   ["revendedor_interesado", "Revendedor interesado"], ["revendedor_manual", "Revendedor manual"],
   ["revendedor", "Revendedor (autorizado)"], ["vendedor_interno", "🏢 Vendedor interno"], ["proveedor", "Proveedor"],
 ];
@@ -26,7 +27,7 @@ const TAGS = [
   ["prospecto_curso", "🎓 Prospecto curso"], ["alumno", "Alumno"],
 ];
 const COLORES: Record<string, string> = {
-  contacto: "#64748b", cliente_final: "#2563eb", revendedor: "#7c3aed",
+  contacto: "#64748b", prospecto: "#d97706", cliente_final: "#2563eb", revendedor: "#7c3aed",
   revendedor_interesado: "#a78bfa", revendedor_manual: "#8b5cf6", vendedor_interno: "#0891b2",
   proveedor: "#059669", compro: "#16a34a", pocero: "#0d9488", instalador: "#ea580c", prospecto_curso: "#db2777",
 };
