@@ -240,7 +240,7 @@ export default function ProyectoFvClient() {
         setProyectoId(r.id);
         if (!nombre.trim()) setNombre(nombreFinal);
         const ref = referencia.trim() || `PROY-${r.id}`;
-        setMsg(`✅ Proyecto guardado (#${r.id}) como "${nombreFinal}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: COTIZADOS\\${nombreFinal} - ${ref}. El dimensionado automático se habilita cuando esté el motor de cálculo.`);
+        setMsg(`✅ Proyecto guardado (#${r.id}) como "${nombreFinal}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: PROYECTOS FV\\${nombreFinal} - ${ref}. El dimensionado automático se habilita cuando esté el motor de cálculo.`);
         cargarLista(); // refrescar la lista para que aparezca ya
       } else setMsg("⚠️ No se pudo guardar: " + (r.error || "error desconocido"));
     } catch (e: any) { setMsg("⚠️ " + e.message); }
@@ -377,7 +377,7 @@ export default function ProyectoFvClient() {
         <div className={cardTit}>Guardado</div>
         <div><label className={lbl}>Referencia (nombre de la carpeta en COTIZADOS)</label>
           <input value={referencia} onChange={(e) => setReferencia(e.target.value)} className={inp} placeholder={`Ej. "FV Escuela" — default PROY-${proyectoId || "…"}`} />
-          <div className="text-[10px] text-gray-400 mt-0.5">La carpeta destino será <b>COTIZADOS\{(nombre.trim() || busqCli.trim() || "cliente")} - {referencia.trim() || (proyectoId ? "PROY-" + proyectoId : "PROY-…")}</b>. El archivo lo baja el sync automático.</div></div>
+          <div className="text-[10px] text-gray-400 mt-0.5">La carpeta destino será <b>PROYECTOS FV\{(nombre.trim() || busqCli.trim() || "cliente")} - {referencia.trim() || (proyectoId ? "PROY-" + proyectoId : "PROY-…")}</b>. El archivo lo baja el sync automático.</div></div>
       </div>
 
       {msg && <div className="text-sm px-4 py-2 rounded-lg bg-gray-50 border border-gray-200">{msg}</div>}
