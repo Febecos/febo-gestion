@@ -119,7 +119,13 @@ export async function POST(req: NextRequest) {
     }
 
     let g = await geminiExtract();
-    if ("err" in g && g.status === 429) { const c = await claudeExtract(); if (c) g = c; }
+    if ("err" in g && g.status === 429) {
+      const c = await claudeExtract();
+      if (c) g = c;
+      else if (!process.env.ANTHROPIC_API_KEY)
+        // Gemini sin cuota diaria (no bursts) y sin respaldo → lo reportamos explícito para el operador.
+        return NextResponse.json({ ok: false, error: "Gemini agotó la cuota diaria y no hay respaldo automático (falta ANTHROPIC_API_KEY en gestión). Cargá el consumo a mano por hoy, o probá con un PDF más tarde.", cuota_gemini: true });
+    }
     if ("err" in g) return NextResponse.json({ ok: false, error: g.err });
     const p = g.p;
 
