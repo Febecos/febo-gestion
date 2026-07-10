@@ -49,7 +49,8 @@ const PROMPT = `Sos un lector de FACTURAS DE ELECTRICIDAD de Argentina. Mirá el
 - "distribuidora": nombre de la distribuidora (Edenor, Edesur, EPE, EDEA, EDEN, EDES, EDELAP, etc.) o null.
 - "titular": nombre del titular de la cuenta o null.
 - "kwh_mes": consumo del período facturado en kWh (número) o null.
-- "kwh_meses": array de hasta 12 números con el consumo mensual histórico si la factura lo muestra (gráfico o tabla de consumos), o [].
+- "kwh_meses": array con el consumo mensual histórico en kWh. Casi todas las facturas argentinas muestran un GRÁFICO DE BARRAS o una TABLA con los consumos de los últimos meses (típicamente 6 a 13 meses) — extraé TODOS esos valores en orden cronológico (del más viejo al más nuevo). Es un dato CLAVE. Devolvé [] solo si realmente no hay historial visible.
+- "meses_detalle": array de objetos {mes, kwh} si podés identificar a qué mes/período corresponde cada barra/fila (ej. [{"mes":"04/2026","kwh":820}]), o [].
 - "potencia_contratada_kw": potencia contratada/demanda en kW si figura (número), o null.
 - "tarifa": categoría tarifaria (T1, T2, T3, residencial, comercial, industrial, etc.) o null.
 - "periodo": período facturado (ej "05/2026") o null.
@@ -134,7 +135,8 @@ export async function POST(req: NextRequest) {
       distribuidora: p.distribuidora ? String(p.distribuidora).slice(0, 60) : null,
       titular: p.titular ? String(p.titular).slice(0, 100) : null,
       kwh_mes: num(p.kwh_mes),
-      kwh_meses: Array.isArray(p.kwh_meses) ? p.kwh_meses.map(num).filter((x: any) => x != null).slice(0, 12) : [],
+      kwh_meses: Array.isArray(p.kwh_meses) ? p.kwh_meses.map(num).filter((x: any) => x != null).slice(0, 13) : [],
+      meses_detalle: Array.isArray(p.meses_detalle) ? p.meses_detalle.map((x: any) => ({ mes: x?.mes ? String(x.mes).slice(0, 12) : null, kwh: num(x?.kwh) })).filter((x: any) => x.kwh != null).slice(0, 13) : [],
       potencia_contratada_kw: num(p.potencia_contratada_kw),
       tarifa: p.tarifa ? String(p.tarifa).slice(0, 30) : null,
       periodo: p.periodo ? String(p.periodo).slice(0, 20) : null,

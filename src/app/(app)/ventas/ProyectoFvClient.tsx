@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from "react";
 // en un LISTADO reabrible/editable. El dimensionado (motor CÁLCULOS FV) + el enganche al cotizador se
 // agregan cuando el motor esté. Look&feel febo-gestion (Tailwind), form seccionado en cards.
 
-type FacturaDatos = { distribuidora: string | null; titular: string | null; kwh_mes: number | null; kwh_meses: number[]; potencia_contratada_kw: number | null; tarifa: string | null; periodo: string | null; importe: number | null };
+type FacturaDatos = { distribuidora: string | null; titular: string | null; kwh_mes: number | null; kwh_meses: number[]; meses_detalle?: { mes: string | null; kwh: number }[]; potencia_contratada_kw: number | null; tarifa: string | null; periodo: string | null; importe: number | null };
 type ProyRow = { id: number; cliente_id: number | null; vendedor: string | null; estado: string; presupuesto_numero: string | null; created_at: string; updated_at: string; sistema: any; cliente_nombre: string | null; cliente_razon_social: string | null };
 
 async function safeJson(r: Response) { try { return await r.json(); } catch { return { ok: false, error: "respuesta inválida" }; } }
@@ -209,7 +209,7 @@ export default function ProyectoFvClient() {
         cliente: { nombre: nombre.trim(), cuit: cuit.trim() || null, razon_social: razon.trim() || null },
         ubicacion: { provincia: provincia || null, localidad: localidad.trim() || null, lat, lng },
         fase, tipo_conexion: conexion, tipo_techo: techo,
-        consumo: { kwh_mes: kwhMes ? Number(kwhMes) : (facturaDatos?.kwh_mes ?? null), kwh_meses: facturaDatos?.kwh_meses || [] },
+        consumo: { kwh_mes: kwhMes ? Number(kwhMes) : (facturaDatos?.kwh_mes ?? null), kwh_meses: facturaDatos?.kwh_meses || [], meses_detalle: facturaDatos?.meses_detalle || [] },
         potencia_contratada_kw: potencia ? Number(potencia) : (facturaDatos?.potencia_contratada_kw ?? null),
         fotos,
       };
@@ -321,6 +321,24 @@ export default function ProyectoFvClient() {
           </div>
           {facturaMsg && <div className="text-[11px] text-gray-600">{facturaMsg}</div>}
           {facturaRef && <div className="text-[11px] text-emerald-600">📎 Copia guardada: {facturaRef.nombre}</div>}
+          {facturaDatos && facturaDatos.kwh_meses.length > 0 && (() => {
+            const det = facturaDatos.meses_detalle && facturaDatos.meses_detalle.length ? facturaDatos.meses_detalle : facturaDatos.kwh_meses.map((k) => ({ mes: null, kwh: k }));
+            const max = Math.max(...det.map((d) => d.kwh), 1);
+            const prom = Math.round(det.reduce((a, d) => a + d.kwh, 0) / det.length);
+            return (
+              <div className="border-t border-gray-100 pt-2">
+                <div className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Consumo mensual histórico (de la factura) · promedio {prom} kWh</div>
+                <div className="flex items-end gap-1 h-16">
+                  {det.map((d, i) => (
+                    <div key={i} className="flex-1 flex flex-col items-center justify-end" title={`${d.mes || "mes " + (i + 1)}: ${d.kwh} kWh`}>
+                      <div className="w-full rounded-t bg-amber-400" style={{ height: `${Math.max(6, (d.kwh / max) * 100)}%` }} />
+                      <div className="text-[8px] text-gray-400 mt-0.5 truncate w-full text-center">{d.mes ? d.mes.slice(0, 5) : d.kwh}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 
