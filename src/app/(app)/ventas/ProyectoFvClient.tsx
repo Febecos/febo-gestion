@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import ParamsFvClient from "./ParamsFvClient";
 
 // Formulario de proyecto FV self-service (backlog #3). Paso 1: el vendedor carga los datos del
 // proyecto (cliente, ubicación, sistema, consumo/factura, fotos) → se guarda en fv_proyectos y queda
@@ -16,7 +17,7 @@ const card = "bg-white rounded-xl border border-gray-200 p-4 space-y-3";
 const cardTit = "text-xs uppercase font-bold text-febo-azul tracking-wide";
 
 export default function ProyectoFvClient() {
-  const [vista, setVista] = useState<"form" | "lista">("form");
+  const [vista, setVista] = useState<"form" | "lista" | "params">("form");
   const [lista, setLista] = useState<ProyRow[]>([]);
   const [cargandoLista, setCargandoLista] = useState(false);
 
@@ -247,6 +248,8 @@ export default function ProyectoFvClient() {
     finally { setGuardando(false); }
   }
 
+  if (vista === "params") return <ParamsFvClient onClose={() => setVista("form")} />;
+
   if (vista === "lista") {
     return (
       <div className="max-w-3xl mx-auto space-y-3">
@@ -284,6 +287,7 @@ export default function ProyectoFvClient() {
         <div className="flex gap-2">
           {proyectoId && <button onClick={nuevo} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm">➕ Nuevo</button>}
           <button onClick={() => setVista("lista")} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm">📋 Proyectos guardados</button>
+          <button onClick={() => setVista("params")} title="Parámetros de cálculo (matriz viva) — CÁLCULOS/Guille" className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm">⚙️ Parámetros</button>
         </div>
       </div>
 
