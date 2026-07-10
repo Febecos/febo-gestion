@@ -17,6 +17,7 @@ async function migrate(sql: any) {
     id SERIAL PRIMARY KEY, cliente_id BIGINT, vendedor TEXT, inputs JSONB, bom JSONB, sistema JSONB,
     factura_ref JSONB, presupuesto_numero TEXT, estado TEXT DEFAULT 'borrador',
     created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())`.catch(() => {});
+  await sql`ALTER TABLE fv_proyectos ADD COLUMN IF NOT EXISTS referencia TEXT`.catch(() => {});
 }
 
 export async function GET(req: NextRequest) {
@@ -68,6 +69,9 @@ export async function POST(req: NextRequest) {
     const factura_ref = b.factura_ref ? JSON.stringify(b.factura_ref) : null;
     const presupuesto_numero = b.presupuesto_numero ? String(b.presupuesto_numero) : null;
     const estado = b.estado ? String(b.estado) : "borrador";
+    // Referencia editable (nombre de la carpeta destino en COTIZADOS). Se sanea a caracteres válidos de
+    // Windows acá también (defensa; el script de sync vuelve a sanear).
+    const referencia = b.referencia != null ? String(b.referencia).replace(/[/\\:*?"<>|]/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 80) : null;
 
     if (b.id) {
       // UPDATE: solo pisa los campos provistos (coalesce), para no borrar lo que no vino.
@@ -80,6 +84,7 @@ export async function POST(req: NextRequest) {
           sistema = COALESCE(${sistema}::jsonb, sistema),
           factura_ref = COALESCE(${factura_ref}::jsonb, factura_ref),
           presupuesto_numero = COALESCE(${presupuesto_numero}, presupuesto_numero),
+          referencia = COALESCE(${referencia}, referencia),
           estado = COALESCE(${estado}, estado),
           updated_at = now()
         WHERE id = ${Number(b.id)} RETURNING id`;
@@ -87,8 +92,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, id: r[0].id });
     }
     const r = await sql`
-      INSERT INTO fv_proyectos (cliente_id, vendedor, inputs, bom, sistema, factura_ref, presupuesto_numero, estado)
-      VALUES (${cliente_id}, ${vendedor}, ${inputs}::jsonb, ${bom}::jsonb, ${sistema}::jsonb, ${factura_ref}::jsonb, ${presupuesto_numero}, ${estado})
+      INSERT INTO fv_proyectos (cliente_id, vendedor, inputs, bom, sistema, factura_ref, presupuesto_numero, referencia, estado)
+      VALUES (${cliente_id}, ${vendedor}, ${inputs}::jsonb, ${bom}::jsonb, ${sistema}::jsonb, ${factura_ref}::jsonb, ${presupuesto_numero}, ${referencia}, ${estado})
       RETURNING id`;
     return NextResponse.json({ ok: true, id: r[0].id });
   } catch (e: any) {

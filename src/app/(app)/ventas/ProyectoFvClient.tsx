@@ -61,6 +61,7 @@ export default function ProyectoFvClient() {
   const [fotos, setFotos] = useState<{ nombre: string; url: string }[]>([]);
   const [subiendoFotos, setSubiendoFotos] = useState(false);
   // Estado
+  const [referencia, setReferencia] = useState(""); // nombre de la carpeta destino en COTIZADOS
   const [guardando, setGuardando] = useState(false);
   const [msg, setMsg] = useState("");
   const [proyectoId, setProyectoId] = useState<number | null>(null);
@@ -186,7 +187,7 @@ export default function ProyectoFvClient() {
     setProvincia(""); setLocalidad(""); setLat(null); setLng(null);
     setFase("mono"); setConexion("on-grid"); setTecho("chapa");
     setKwhMes(""); setPotencia(""); setFacturaLink(""); setFacturaDatos(null); setFacturaRef(null); setFacturaMsg("");
-    setFotos([]); setMsg(""); setArcaMsg(""); setVista("form");
+    setFotos([]); setReferencia(""); setMsg(""); setArcaMsg(""); setVista("form");
   }
 
   async function cargarLista() {
@@ -213,6 +214,7 @@ export default function ProyectoFvClient() {
     setKwhMes(i.consumo?.kwh_mes != null ? String(i.consumo.kwh_mes) : ""); setPotencia(i.potencia_contratada_kw != null ? String(i.potencia_contratada_kw) : "");
     setFacturaDatos(p.factura_ref?.datos || null); setFacturaRef(p.factura_ref?.archivo || null); setFacturaLink(p.factura_ref?.link || "");
     setFotos(Array.isArray(i.fotos) ? i.fotos : []);
+    setReferencia(p.referencia || "");
     setFacturaMsg(""); setArcaMsg(""); setMsg(""); setVista("form");
   }
 
@@ -231,13 +233,14 @@ export default function ProyectoFvClient() {
         fotos,
       };
       const factura_ref = { archivo: facturaRef, datos: facturaDatos, link: facturaLink.trim() || null };
-      const body: any = { cliente_id: clienteId, inputs, factura_ref, estado: "borrador" };
+      const body: any = { cliente_id: clienteId, inputs, factura_ref, referencia: referencia.trim() || null, estado: "borrador" };
       if (proyectoId) body.id = proyectoId;
       const r = await safeJson(await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
       if (r.ok) {
         setProyectoId(r.id);
         if (!nombre.trim()) setNombre(nombreFinal);
-        setMsg(`✅ Proyecto guardado (#${r.id}) como "${nombreFinal}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: COTIZADOS\\${nombreFinal} - PROY-${r.id}. El dimensionado automático se habilita cuando esté el motor de cálculo.`);
+        const ref = referencia.trim() || `PROY-${r.id}`;
+        setMsg(`✅ Proyecto guardado (#${r.id}) como "${nombreFinal}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: COTIZADOS\\${nombreFinal} - ${ref}. El dimensionado automático se habilita cuando esté el motor de cálculo.`);
         cargarLista(); // refrescar la lista para que aparezca ya
       } else setMsg("⚠️ No se pudo guardar: " + (r.error || "error desconocido"));
     } catch (e: any) { setMsg("⚠️ " + e.message); }
@@ -368,6 +371,13 @@ export default function ProyectoFvClient() {
         <input type="file" accept="image/*" multiple disabled={subiendoFotos} onChange={(e) => { subirFotos(e.target.files); e.currentTarget.value = ""; }} className="w-full text-xs" />
         {subiendoFotos && <div className="text-[11px] text-gray-500">⏳ Subiendo…</div>}
         {fotos.map((f, i) => <div key={i} className="text-[11px] text-emerald-600 flex items-center gap-1">✓ {f.nombre}<button onClick={() => setFotos((p) => p.filter((_, j) => j !== i))} className="text-gray-400 hover:text-red-500">✕</button></div>)}
+      </div>
+
+      <div className={card}>
+        <div className={cardTit}>Guardado</div>
+        <div><label className={lbl}>Referencia (nombre de la carpeta en COTIZADOS)</label>
+          <input value={referencia} onChange={(e) => setReferencia(e.target.value)} className={inp} placeholder={`Ej. "FV Escuela" — default PROY-${proyectoId || "…"}`} />
+          <div className="text-[10px] text-gray-400 mt-0.5">La carpeta destino será <b>COTIZADOS\{(nombre.trim() || busqCli.trim() || "cliente")} - {referencia.trim() || (proyectoId ? "PROY-" + proyectoId : "PROY-…")}</b>. El archivo lo baja el sync automático.</div></div>
       </div>
 
       {msg && <div className="text-sm px-4 py-2 rounded-lg bg-gray-50 border border-gray-200">{msg}</div>}
