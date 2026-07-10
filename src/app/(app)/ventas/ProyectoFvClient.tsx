@@ -64,6 +64,8 @@ export default function ProyectoFvClient() {
   // Estado
   const [referencia, setReferencia] = useState(""); // nombre de la carpeta destino en COTIZADOS
   const [guardando, setGuardando] = useState(false);
+  const [dimensionando, setDimensionando] = useState(false);
+  const [resultado, setResultado] = useState<{ sistema: any; bom: any[]; meta: any } | null>(null);
   const [msg, setMsg] = useState("");
   const [proyectoId, setProyectoId] = useState<number | null>(null);
 
@@ -188,7 +190,7 @@ export default function ProyectoFvClient() {
     setProvincia(""); setLocalidad(""); setLat(null); setLng(null);
     setFase("mono"); setConexion("on-grid"); setTecho("chapa");
     setKwhMes(""); setPotencia(""); setFacturaLink(""); setFacturaDatos(null); setFacturaRef(null); setFacturaMsg("");
-    setFotos([]); setReferencia(""); setMsg(""); setArcaMsg(""); setVista("form");
+    setFotos([]); setReferencia(""); setResultado(null); setMsg(""); setArcaMsg(""); setVista("form");
   }
 
   async function cargarLista() {
@@ -216,36 +218,56 @@ export default function ProyectoFvClient() {
     setFacturaDatos(p.factura_ref?.datos || null); setFacturaRef(p.factura_ref?.archivo || null); setFacturaLink(p.factura_ref?.link || "");
     setFotos(Array.isArray(i.fotos) ? i.fotos : []);
     setReferencia(p.referencia || "");
+    setResultado(p.sistema ? { sistema: p.sistema, bom: Array.isArray(p.bom) ? p.bom : [], meta: {} } : null);
     setFacturaMsg(""); setArcaMsg(""); setMsg(""); setVista("form");
   }
 
+  const nombreFinal = () => nombre.trim() || busqCli.trim() || razon.trim() || "Proyecto sin nombre";
+  function construirInputs() {
+    return {
+      cliente: { nombre: nombreFinal(), cuit: cuit.trim() || null, razon_social: razon.trim() || null },
+      ubicacion: { provincia: provincia || null, localidad: localidad.trim() || null, lat, lng },
+      fase, tipo_conexion: conexion, tipo_techo: techo,
+      consumo: { kwh_mes: kwhMes ? Number(kwhMes) : (facturaDatos?.kwh_mes ?? null), kwh_meses: facturaDatos?.kwh_meses || [], meses_detalle: facturaDatos?.meses_detalle || [] },
+      potencia_contratada_kw: potencia ? Number(potencia) : (facturaDatos?.potencia_contratada_kw ?? null),
+      fotos,
+    };
+  }
+  // Guarda y devuelve el id (para encadenar dimensionar). No muestra mensaje si silencioso=true.
+  async function guardarProyecto(silencioso = false): Promise<number | null> {
+    const body: any = { cliente_id: clienteId, inputs: construirInputs(), factura_ref: { archivo: facturaRef, datos: facturaDatos, link: facturaLink.trim() || null }, referencia: referencia.trim() || null, estado: "borrador" };
+    if (proyectoId) body.id = proyectoId;
+    const r = await safeJson(await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    if (!r.ok) { if (!silencioso) setMsg("⚠️ No se pudo guardar: " + (r.error || "error desconocido")); return null; }
+    setProyectoId(r.id); if (!nombre.trim()) setNombre(nombreFinal());
+    return r.id;
+  }
   async function guardar() {
-    // "Guardar SIEMPRE persiste" (Guille): no bloqueamos por campos faltantes. Si el vendedor tipeó el
-    // cliente en el buscador y no lo eligió del dropdown, igual usamos ese texto como nombre.
-    const nombreFinal = nombre.trim() || busqCli.trim() || razon.trim() || "Proyecto sin nombre";
     setGuardando(true); setMsg("");
     try {
-      const inputs = {
-        cliente: { nombre: nombreFinal, cuit: cuit.trim() || null, razon_social: razon.trim() || null },
-        ubicacion: { provincia: provincia || null, localidad: localidad.trim() || null, lat, lng },
-        fase, tipo_conexion: conexion, tipo_techo: techo,
-        consumo: { kwh_mes: kwhMes ? Number(kwhMes) : (facturaDatos?.kwh_mes ?? null), kwh_meses: facturaDatos?.kwh_meses || [], meses_detalle: facturaDatos?.meses_detalle || [] },
-        potencia_contratada_kw: potencia ? Number(potencia) : (facturaDatos?.potencia_contratada_kw ?? null),
-        fotos,
-      };
-      const factura_ref = { archivo: facturaRef, datos: facturaDatos, link: facturaLink.trim() || null };
-      const body: any = { cliente_id: clienteId, inputs, factura_ref, referencia: referencia.trim() || null, estado: "borrador" };
-      if (proyectoId) body.id = proyectoId;
-      const r = await safeJson(await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
-      if (r.ok) {
-        setProyectoId(r.id);
-        if (!nombre.trim()) setNombre(nombreFinal);
-        const ref = referencia.trim() || `PROY-${r.id}`;
-        setMsg(`✅ Proyecto guardado (#${r.id}) como "${nombreFinal}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: PROYECTOS FV\\${nombreFinal} - ${ref}. El dimensionado automático se habilita cuando esté el motor de cálculo.`);
-        cargarLista(); // refrescar la lista para que aparezca ya
-      } else setMsg("⚠️ No se pudo guardar: " + (r.error || "error desconocido"));
+      const id = await guardarProyecto();
+      if (id) {
+        const ref = referencia.trim() || `PROY-${id}`;
+        setMsg(`✅ Proyecto guardado (#${id}) como "${nombreFinal()}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: PROYECTOS FV\\${nombreFinal()} - ${ref}.`);
+        cargarLista();
+      }
     } catch (e: any) { setMsg("⚠️ " + e.message); }
     finally { setGuardando(false); }
+  }
+  // ⚡ Dimensionar: guarda → llama al motor (CÁLCULOS via /api/dimensionar) → guarda sistema+BOM → muestra.
+  async function dimensionar() {
+    if (lat == null || lng == null) { setMsg("⚠️ Elegí la localidad (necesito lat/long para el cálculo de radiación)."); return; }
+    if (!kwhMes && !facturaDatos) { setMsg("⚠️ Cargá el consumo (kWh/mes) o una factura."); return; }
+    setDimensionando(true); setMsg(""); setResultado(null);
+    try {
+      const id = await guardarProyecto(true);
+      const r = await safeJson(await fetch("/api/dimensionar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inputs: construirInputs() }) }));
+      if (!r.ok) { setMsg("⚠️ No se pudo dimensionar: " + (r.error || "error del motor")); return; }
+      setResultado({ sistema: r.sistema, bom: r.bom || [], meta: r.meta || {} });
+      if (id) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, sistema: r.sistema, bom: r.bom }) });
+      setMsg(`✅ Dimensionado listo: ${r.sistema?.kwp} kWp, ${r.sistema?.n_paneles} paneles, cobertura ${Math.round((r.sistema?.cobertura || 0) * 100)}%. Revisá el sistema + la lista de componentes abajo.`);
+    } catch (e: any) { setMsg("⚠️ " + e.message); }
+    finally { setDimensionando(false); }
   }
 
   if (vista === "params") return <ParamsFvClient onClose={() => setVista("form")} />;
@@ -384,10 +406,33 @@ export default function ProyectoFvClient() {
           <div className="text-[10px] text-gray-400 mt-0.5">La carpeta destino será <b>PROYECTOS FV\{(nombre.trim() || busqCli.trim() || "cliente")} - {referencia.trim() || (proyectoId ? "PROY-" + proyectoId : "PROY-…")}</b>. El archivo lo baja el sync automático.</div></div>
       </div>
 
+      {resultado && (
+        <div className="bg-white rounded-xl border-2 border-emerald-300 p-4 space-y-3">
+          <div className="text-xs uppercase font-bold text-emerald-700 tracking-wide">Dimensionado — {resultado.sistema?.tipo} {resultado.sistema?.fase === "tri" ? "trifásico" : "monofásico"}</div>
+          <div className="grid grid-cols-3 gap-3 text-sm">
+            <div><div className="text-[10px] uppercase text-gray-400">Potencia</div><div className="font-bold text-febo-azul">{resultado.sistema?.kwp} kWp</div></div>
+            <div><div className="text-[10px] uppercase text-gray-400">Paneles</div><div className="font-semibold">{resultado.sistema?.n_paneles} × {resultado.sistema?.panel_codigo}</div></div>
+            <div><div className="text-[10px] uppercase text-gray-400">Inversor</div><div className="font-semibold">{resultado.sistema?.inversor_codigo} ({resultado.sistema?.inversor_kw} kW)</div></div>
+            <div><div className="text-[10px] uppercase text-gray-400">Generación anual</div><div className="font-semibold">{resultado.sistema?.generacion_anual_kwh?.toLocaleString("es-AR")} kWh</div></div>
+            <div><div className="text-[10px] uppercase text-gray-400">Cobertura</div><div className="font-semibold">{Math.round((resultado.sistema?.cobertura || 0) * 100)}%</div></div>
+            {resultado.sistema?.banco_kwh ? <div><div className="text-[10px] uppercase text-gray-400">Banco</div><div className="font-semibold">{resultado.sistema.banco_kwh} kWh</div></div> : null}
+            <div><div className="text-[10px] uppercase text-gray-400">Inversor validado</div><div className="font-semibold">{resultado.meta?.validacion_inversor?.ok ? "✔ Sí" : "⚠️ revisar"}</div></div>
+          </div>
+          <div>
+            <div className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Lista de componentes (BOM) — {resultado.bom.length} ítems (sin precio; el cotizador los valoriza)</div>
+            <div className="max-h-52 overflow-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
+              {resultado.bom.map((b, i) => (
+                <div key={i} className="flex justify-between px-3 py-1.5 text-[12px]"><span className="font-mono">{b.codigo}{b.origen === "manual" ? <span className="ml-1 text-[9px] text-amber-600">manual</span> : null}</span><span className="text-gray-500">×{b.cantidad}</span></div>
+              ))}
+            </div>
+          </div>
+          <div className="text-[11px] text-gray-500">Guardado en el proyecto. Próximo paso (en preparación): precargar el cotizador con esta lista para generar el presupuesto + el informe técnico.</div>
+        </div>
+      )}
       {msg && <div className="text-sm px-4 py-2 rounded-lg bg-gray-50 border border-gray-200">{msg}</div>}
       <div className="flex items-center justify-end gap-2">
-        <button onClick={guardar} disabled={guardando} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">{guardando ? "Guardando…" : (proyectoId ? "Actualizar proyecto" : "Guardar proyecto")}</button>
-        <button disabled title="Se habilita cuando esté el motor de cálculo (CÁLCULOS FV): dimensiona el sistema, arma la lista de componentes y precarga el cotizador." className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold opacity-40 cursor-not-allowed">⚡ Dimensionar y cotizar (próximamente)</button>
+        <button onClick={guardar} disabled={guardando || dimensionando} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">{guardando ? "Guardando…" : (proyectoId ? "Actualizar proyecto" : "Guardar proyecto")}</button>
+        <button onClick={dimensionar} disabled={dimensionando || guardando} title="Guarda el proyecto y dimensiona el sistema con el motor de cálculo: potencia, paneles, inversor validado y lista de componentes." className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">{dimensionando ? "Dimensionando…" : "⚡ Dimensionar"}</button>
       </div>
     </div>
   );
