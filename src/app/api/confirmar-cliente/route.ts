@@ -141,6 +141,16 @@ export async function POST(req: NextRequest) {
               payload: { pedido_numero, total: totales?.total ?? null, moneda: totales?.moneda ?? null }, idempotencyKey: `gestion:presupuesto.aceptado:${numero}`, clienteId: cidEv });
             await emitEvento(sql, { tipo: "pedido.creado", entidad: "pedido", entidadId: pedido_numero,
               payload: { presupuesto_numero: numero, origen: "confirmacion_cliente", sin_stock: sinStock, total: totales?.total ?? null, moneda: totales?.moneda ?? null }, idempotencyKey: `gestion:pedido.creado:${pedido_numero}`, clienteId: cidEv });
+            // PROMOCIÓN (plan tipo 'prospecto'): confirmar el pedido = el cliente COMPRÓ. Le agregamos el
+            // tag 'compro' (a cualquier comprador salvo proveedor) y, si era prospecto/contacto, lo
+            // promovemos a cliente_final. NUNCA degrada revendedor (mantiene su tipo + tag compro, norma)
+            // ni pisa un cliente_final existente. Best-effort: no bloquea la confirmación.
+            if (cidEv) {
+              try {
+                await sql`UPDATE clientes SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags,'{}'::text[]) || ARRAY['compro'])), updated_at = now() WHERE id = ${cidEv} AND tipo <> 'proveedor'`;
+                await sql`UPDATE clientes SET tipo = 'cliente_final', updated_at = now() WHERE id = ${cidEv} AND tipo IN ('prospecto','contacto')`;
+              } catch (promErr: any) { console.error("[confirmar-cliente] promoción a cliente_final falló:", promErr.message); }
+            }
           } catch (insErr) {
             // Liberar el número si el INSERT falló (no quemar números → evita huecos).
             await sql`UPDATE pedidos_counter SET ultimo_numero = ultimo_numero - 1 WHERE clave='PED' AND ultimo_numero = ${nro}`.catch(() => {});
