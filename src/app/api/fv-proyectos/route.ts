@@ -40,6 +40,21 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// DELETE /api/fv-proyectos?id=N  → borra el proyecto (hard delete; el vendedor lo pidió explícito).
+export async function DELETE(req: NextRequest) {
+  try {
+    const sql = getDb();
+    await migrate(sql);
+    const id = Number(req.nextUrl.searchParams.get("id") || 0);
+    if (!id) return NextResponse.json({ ok: false, error: "id requerido" }, { status: 400 });
+    const r = await sql`DELETE FROM fv_proyectos WHERE id = ${id} RETURNING id`;
+    if (!r.length) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const sql = getDb();

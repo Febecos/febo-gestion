@@ -27,6 +27,7 @@ export default function ProyectoFvClient() {
   const [razon, setRazon] = useState("");
   const [busqCli, setBusqCli] = useState("");
   const [matchesCli, setMatchesCli] = useState<any[]>([]);
+  const [cliIdx, setCliIdx] = useState(-1);
   const [arcaMsg, setArcaMsg] = useState("");
   // Ubicación (Georef, igual que Transportistas)
   const [provincia, setProvincia] = useState("");
@@ -35,6 +36,15 @@ export default function ProyectoFvClient() {
   const [lng, setLng] = useState<number | null>(null);
   const [busqLoc, setBusqLoc] = useState("");
   const [matchesLoc, setMatchesLoc] = useState<{ nombre: string; prov: string; lat: number; lng: number }[]>([]);
+  const [locIdx, setLocIdx] = useState(-1);
+  // Navegación por teclado (↑/↓/Enter/Esc) para cualquier dropdown de lista del form (pedido de Guille).
+  function navKey<T>(e: React.KeyboardEvent, items: T[], idx: number, setIdx: (n: number) => void, elegir: (it: T) => void) {
+    if (!items.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setIdx(Math.min(idx + 1, items.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setIdx(Math.max(idx - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); elegir(items[idx >= 0 ? idx : 0]); }
+    else if (e.key === "Escape") { setIdx(-1); }
+  }
   // Sistema
   const [fase, setFase] = useState<"mono" | "tri">("mono");
   const [conexion, setConexion] = useState<"on-grid" | "off-grid" | "hibrido">("on-grid");
@@ -76,7 +86,7 @@ export default function ProyectoFvClient() {
     if (!busqCli.trim() || clienteId) { setMatchesCli([]); return; }
     clearTimeout(cliT.current);
     cliT.current = setTimeout(() => {
-      fetch("/api/clientes?limit=8&q=" + encodeURIComponent(busqCli.trim())).then((r) => r.json()).then((d) => setMatchesCli(d.clientes || [])).catch(() => {});
+      fetch("/api/clientes?limit=8&q=" + encodeURIComponent(busqCli.trim())).then((r) => r.json()).then((d) => { setMatchesCli(d.clientes || []); setCliIdx(-1); }).catch(() => {});
     }, 250);
     return () => clearTimeout(cliT.current);
   }, [busqCli, clienteId]);
@@ -110,7 +120,7 @@ export default function ProyectoFvClient() {
       try {
         const u = `https://apis.datos.gob.ar/georef/api/localidades?nombre=${encodeURIComponent(busqLoc.trim())}&campos=nombre,provincia.nombre,centroide.lat,centroide.lon&max=6&aplanar=true`;
         const j = await (await fetch(u)).json();
-        setMatchesLoc((j.localidades || []).map((x: any) => ({ nombre: x.nombre, prov: x.provincia_nombre, lat: x.centroide_lat, lng: x.centroide_lon })));
+        setMatchesLoc((j.localidades || []).map((x: any) => ({ nombre: x.nombre, prov: x.provincia_nombre, lat: x.centroide_lat, lng: x.centroide_lon }))); setLocIdx(-1);
       } catch { setMatchesLoc([]); }
     }, 300);
     return () => clearTimeout(locT.current);
@@ -184,6 +194,12 @@ export default function ProyectoFvClient() {
     try { const d = await safeJson(await fetch("/api/fv-proyectos")); if (d.ok) setLista(d.proyectos || []); }
     finally { setCargandoLista(false); }
   }
+  async function borrarProyecto(id: number, nom: string) {
+    if (!confirm(`¿Eliminar el proyecto #${id}${nom ? ` (${nom})` : ""}? No se puede deshacer.`)) return;
+    const d = await safeJson(await fetch("/api/fv-proyectos?id=" + id, { method: "DELETE" }));
+    if (d.ok) { setLista((prev) => prev.filter((p) => p.id !== id)); if (proyectoId === id) nuevo(); }
+    else alert("No se pudo eliminar: " + (d.error || "error"));
+  }
   useEffect(() => { if (vista === "lista") cargarLista(); }, [vista]);
 
   async function abrirProyecto(id: number) {
@@ -201,12 +217,13 @@ export default function ProyectoFvClient() {
   }
 
   async function guardar() {
-    if (!nombre.trim()) { setMsg("⚠️ Ingresá o buscá el cliente."); return; }
-    if (!kwhMes && !facturaDatos) { setMsg("⚠️ Cargá el consumo (kWh/mes) o una factura."); return; }
+    // "Guardar SIEMPRE persiste" (Guille): no bloqueamos por campos faltantes. Si el vendedor tipeó el
+    // cliente en el buscador y no lo eligió del dropdown, igual usamos ese texto como nombre.
+    const nombreFinal = nombre.trim() || busqCli.trim() || razon.trim() || "Proyecto sin nombre";
     setGuardando(true); setMsg("");
     try {
       const inputs = {
-        cliente: { nombre: nombre.trim(), cuit: cuit.trim() || null, razon_social: razon.trim() || null },
+        cliente: { nombre: nombreFinal, cuit: cuit.trim() || null, razon_social: razon.trim() || null },
         ubicacion: { provincia: provincia || null, localidad: localidad.trim() || null, lat, lng },
         fase, tipo_conexion: conexion, tipo_techo: techo,
         consumo: { kwh_mes: kwhMes ? Number(kwhMes) : (facturaDatos?.kwh_mes ?? null), kwh_meses: facturaDatos?.kwh_meses || [], meses_detalle: facturaDatos?.meses_detalle || [] },
@@ -217,8 +234,12 @@ export default function ProyectoFvClient() {
       const body: any = { cliente_id: clienteId, inputs, factura_ref, estado: "borrador" };
       if (proyectoId) body.id = proyectoId;
       const r = await safeJson(await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
-      if (r.ok) { setProyectoId(r.id); setMsg(`✅ Proyecto guardado (#${r.id}). Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. El dimensionado automático se habilita cuando esté el motor de cálculo.`); }
-      else setMsg("⚠️ " + (r.error || "no se pudo guardar"));
+      if (r.ok) {
+        setProyectoId(r.id);
+        if (!nombre.trim()) setNombre(nombreFinal);
+        setMsg(`✅ Proyecto guardado (#${r.id}) como "${nombreFinal}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: COTIZADOS\\${nombreFinal} - PROY-${r.id}. El dimensionado automático se habilita cuando esté el motor de cálculo.`);
+        cargarLista(); // refrescar la lista para que aparezca ya
+      } else setMsg("⚠️ No se pudo guardar: " + (r.error || "error desconocido"));
     } catch (e: any) { setMsg("⚠️ " + e.message); }
     finally { setGuardando(false); }
   }
@@ -243,7 +264,7 @@ export default function ProyectoFvClient() {
                   <td className="px-4 py-2 text-gray-500">{p.sistema?.kwp ? `${p.sistema.kwp} kWp` : "—"}</td>
                   <td className="px-4 py-2"><span className="text-[11px] rounded px-2 py-0.5 bg-amber-100 text-amber-700">{p.estado}</span></td>
                   <td className="px-4 py-2 text-gray-500">{new Date(p.updated_at).toLocaleDateString("es-AR")}</td>
-                  <td className="px-4 py-2 text-right"><button onClick={() => abrirProyecto(p.id)} className="text-febo-azul hover:underline text-sm">✏️ Editar</button></td>
+                  <td className="px-4 py-2 text-right whitespace-nowrap"><button onClick={() => abrirProyecto(p.id)} className="text-febo-azul hover:underline text-sm mr-3">✏️ Editar</button><button onClick={() => borrarProyecto(p.id, p.cliente_razon_social || p.cliente_nombre || "")} className="text-red-400 hover:text-red-600 text-sm" title="Eliminar proyecto">🗑</button></td>
                 </tr>
               ))}
             </tbody>
@@ -267,10 +288,10 @@ export default function ProyectoFvClient() {
         <div className={cardTit}>Cliente</div>
         <div className="relative">
           <label className={lbl}>Buscar cliente en el CRM</label>
-          <input value={busqCli} onChange={(e) => { setBusqCli(e.target.value); if (clienteId) setClienteId(null); }} className={inp} placeholder="Nombre / razón social / CUIT…" />
+          <input value={busqCli} onChange={(e) => { setBusqCli(e.target.value); if (clienteId) setClienteId(null); }} onKeyDown={(e) => navKey(e, matchesCli, cliIdx, setCliIdx, elegirCliente)} className={inp} placeholder="Nombre / razón social / CUIT…" />
           {matchesCli.length > 0 && (
             <div className="absolute z-20 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-52 overflow-auto">
-              {matchesCli.map((c) => <button key={c.id} onClick={() => elegirCliente(c)} className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">{c.razon_social || c.nombre}{c.cuit ? <span className="text-gray-400"> · {c.cuit}</span> : null}</button>)}
+              {matchesCli.map((c, i) => <button key={c.id} onMouseEnter={() => setCliIdx(i)} onClick={() => elegirCliente(c)} className={"block w-full text-left px-3 py-2 text-sm " + (i === cliIdx ? "bg-febo-azul/10" : "hover:bg-gray-50")}>{c.razon_social || c.nombre}{c.cuit ? <span className="text-gray-400"> · {c.cuit}</span> : null}</button>)}
             </div>
           )}
           {clienteId && <div className="text-[11px] text-emerald-600 mt-0.5">✓ Cliente del CRM #{clienteId} vinculado</div>}
@@ -288,10 +309,10 @@ export default function ProyectoFvClient() {
         <div className={cardTit}>Ubicación</div>
         <div className="relative">
           <label className={lbl}>Ciudad / localidad (buscá y elegí)</label>
-          <input value={busqLoc} onChange={(e) => setBusqLoc(e.target.value)} className={inp} placeholder="🔍 Escribí la localidad…" autoComplete="off" />
+          <input value={busqLoc} onChange={(e) => setBusqLoc(e.target.value)} onKeyDown={(e) => navKey(e, matchesLoc, locIdx, setLocIdx, elegirLoc)} className={inp} placeholder="🔍 Escribí la localidad…" autoComplete="off" />
           {matchesLoc.length > 0 && (
             <div className="absolute z-20 left-0 right-0 bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-52 overflow-auto">
-              {matchesLoc.map((l, i) => <button key={i} onClick={() => elegirLoc(l)} className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50">{l.nombre}<span className="text-gray-400"> · {l.prov}</span></button>)}
+              {matchesLoc.map((l, i) => <button key={i} onMouseEnter={() => setLocIdx(i)} onClick={() => elegirLoc(l)} className={"block w-full text-left px-3 py-2 text-sm " + (i === locIdx ? "bg-febo-azul/10" : "hover:bg-gray-50")}>{l.nombre}<span className="text-gray-400"> · {l.prov}</span></button>)}
             </div>
           )}
         </div>
