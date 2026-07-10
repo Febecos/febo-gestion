@@ -73,6 +73,16 @@ export async function POST(req: NextRequest) {
       // Comprobante creado directo (presupuesto) = cabeza de su propia operación.
       await client.query(`UPDATE fg_comprobantes SET operacion_id = id, token = COALESCE(token, gen_random_uuid()::text) WHERE id = $1`, [comp.id]);
       await client.query("COMMIT");
+      // PROMOCIÓN (plan tipo 'prospecto'): una FACTURA manual directa = compra real → si el cliente era
+      // prospecto/contacto, pasa a cliente_final + tag 'compro' (nunca degrada revendedor/proveedor).
+      // SOLO para tipo='factura' (un 'presupuesto' NO es compra — es lo que define a un prospecto).
+      // Post-COMMIT + best-effort: una falla de la promoción no revierte la factura ya emitida.
+      if (tipo === "factura" && b.cliente_id) {
+        try {
+          await client.query(`UPDATE clientes SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags,'{}'::text[]) || ARRAY['compro'])), updated_at = now() WHERE id = $1 AND tipo <> 'proveedor'`, [b.cliente_id]);
+          await client.query(`UPDATE clientes SET tipo = 'cliente_final', updated_at = now() WHERE id = $1 AND tipo IN ('prospecto','contacto')`, [b.cliente_id]);
+        } catch (promErr: any) { console.error("[ventas] promoción a cliente_final falló:", promErr.message); }
+      }
       return NextResponse.json({ ok: true, id: comp.id, numero: comp.numero });
     } catch (e) { await client.query("ROLLBACK"); throw e; }
     finally { client.release(); }
