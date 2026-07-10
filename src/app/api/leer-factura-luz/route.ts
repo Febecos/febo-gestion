@@ -78,16 +78,50 @@ export async function POST(req: NextRequest) {
     const mimeBase = esPdf ? "application/pdf" : tipo.replace(/;.*/, "");
     const mimeType = MIME_OK.includes(mimeBase) ? mimeBase : "image/jpeg";
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: mimeType, data } }, { text: PROMPT }] }], generationConfig: { maxOutputTokens: 500, temperature: 0 } }) }
-    );
-    const j = await r.json();
-    if (!r.ok) return NextResponse.json({ ok: false, error: `Gemini ${r.status}` }, { status: 502 });
-    const txt = (j?.candidates?.[0]?.content?.parts || []).map((p: any) => p?.text || "").join("").trim();
-    const m = txt.match(/\{[\s\S]*\}/);
-    if (!m) return NextResponse.json({ ok: false, error: "La IA no devolvió datos legibles de la factura." });
-    let p: any; try { p = JSON.parse(m[0]); } catch { return NextResponse.json({ ok: false, error: "respuesta no parseable" }); }
+    const parseJson = (txt: string) => { const m = txt.match(/\{[\s\S]*\}/); if (!m) return null; try { return JSON.parse(m[0]); } catch { return null; } };
+
+    // ── Gemini con RETRY + BACKOFF en 429 (rate-limit transitorio del free tier) ──
+    // Muchos 429 son bursts de RPM (Guille probando seguido) que pasan con un reintento.
+    const geminiExtract = async (): Promise<{ p: any } | { err: string; status: number }> => {
+      const delays = [0, 2000, 5000];
+      let lastStatus = 0;
+      for (let i = 0; i < delays.length; i++) {
+        if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]));
+        const r = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
+          { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: mimeType, data } }, { text: PROMPT }] }], generationConfig: { maxOutputTokens: 500, temperature: 0 } }) }
+        );
+        if (r.status === 429) { lastStatus = 429; continue; } // rate-limit → reintento con backoff
+        if (!r.ok) return { err: `Gemini ${r.status}`, status: r.status };
+        const j = await r.json();
+        const txt = (j?.candidates?.[0]?.content?.parts || []).map((x: any) => x?.text || "").join("").trim();
+        const p = parseJson(txt);
+        return p ? { p } : { err: "La IA no devolvió datos legibles de la factura.", status: 200 };
+      }
+      return { err: `Gemini ${lastStatus || 429}`, status: lastStatus || 429 };
+    };
+
+    // ── Fallback a Claude visión para IMÁGENES si Gemini sigue en 429 (Claude no acepta PDF acá) ──
+    const claudeExtract = async (): Promise<{ p: any } | null> => {
+      const ak = process.env.ANTHROPIC_API_KEY;
+      if (!ak || esPdf) return null;
+      try {
+        const r = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST", headers: { "x-api-key": ak, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+          body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 500, messages: [{ role: "user", content: [{ type: "image", source: { type: "base64", media_type: mimeType, data } }, { type: "text", text: PROMPT }] }] }),
+        });
+        if (!r.ok) return null;
+        const j = await r.json();
+        const txt = (j?.content || []).map((x: any) => x?.text || "").join("").trim();
+        const p = parseJson(txt);
+        return p ? { p } : null;
+      } catch { return null; }
+    }
+
+    let g = await geminiExtract();
+    if ("err" in g && g.status === 429) { const c = await claudeExtract(); if (c) g = c; }
+    if ("err" in g) return NextResponse.json({ ok: false, error: g.err });
+    const p = g.p;
 
     const num = (v: any) => (v == null || v === "" || isNaN(Number(v))) ? null : Number(v);
     const data_out = {
