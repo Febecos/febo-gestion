@@ -25,7 +25,7 @@ const DEFAULTS: Record<string, any> = {
   cobertura_objetivo: 1.0, ratio_min: 1.15, ratio_max: 1.20,
   autonomia_dias: 2, dod_litio: 90, dod_plomo: 50, factor_autonomia_default: 1.0, pr_offgrid: 0.72, sobredim_paneles: 1.3, margen_inversor: 1.2,
   temp_diseno_frio: -10, temp_diseno_calor: 65, strings_por_mppt: 2,
-  panel_default: "AMERISOLAR580", estructura_default: "chapa-inclinada", paneles_por_estructura: 4, cable_bobinas_default: 2, factor_proteccion: 1.25, loss_pvgis: 14,
+  panel_default: "AS-7M144N-HC-580W", estructura_default: "chapa-inclinada", paneles_por_estructura: 4, cable_bobinas_default: 2, factor_proteccion: 1.25, loss_pvgis: 14,
   codigo_cable_tierra: "CAB-TIE", codigo_jabalina: "JAB", codigo_limitador_tri: "TPM-E", codigo_limitador_mono: "SPM-E",
 };
 
