@@ -46,6 +46,25 @@ export default function ProyectoFvClient() {
 
   const fileToB64 = (f: File): Promise<string> => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result)); r.onerror = rej; r.readAsDataURL(f); });
 
+  // Prepara el archivo para mandar al server. Las IMÁGENES se redimensionan/comprimen con canvas para
+  // no exceder el límite de body de Vercel (~4,5MB) — una foto de celular cruda (varios MB) daba 413 y
+  // el form "no tomaba" la factura. Los PDF u otros van tal cual (Gemini los lee nativo y suelen ser chicos).
+  async function prepararArchivo(f: File): Promise<{ b64: string; tipo: string }> {
+    if (!/^image\//.test(f.type)) {
+      const durl = await fileToB64(f);
+      return { b64: durl.split(",")[1], tipo: f.type || "application/pdf" };
+    }
+    const durl = await fileToB64(f);
+    const img = await new Promise<HTMLImageElement>((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = durl; });
+    const MAX = 1600;
+    let w = img.width, h = img.height;
+    if (w > MAX || h > MAX) { const k = MAX / Math.max(w, h); w = Math.round(w * k); h = Math.round(h * k); }
+    const c = document.createElement("canvas"); c.width = w; c.height = h;
+    const ctx = c.getContext("2d"); if (ctx) ctx.drawImage(img, 0, 0, w, h);
+    const out = c.toDataURL("image/jpeg", 0.8);
+    return { b64: out.split(",")[1], tipo: "image/jpeg" };
+  }
+
   // Aplica los datos leídos de la factura a los campos del formulario.
   function aplicarFactura(d: FacturaDatos) {
     setFacturaDatos(d);
@@ -60,12 +79,11 @@ export default function ProyectoFvClient() {
     if (!f) return;
     setLeyendo(true); setFacturaMsg("⏳ Leyendo la factura…");
     try {
-      const dataUrl = await fileToB64(f);
-      const b64 = dataUrl.split(",")[1];
+      const { b64, tipo } = await prepararArchivo(f);
       // Guardar copia propia (por si el vendedor la borra) — mismo /api/adjunto-upload del mail.
-      const up = await safeJson(await fetch("/api/adjunto-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, content_type: f.type, data_b64: b64 }) }));
+      const up = await safeJson(await fetch("/api/adjunto-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, content_type: tipo, data_b64: b64 }) }));
       if (up.ok && up.url) setFacturaRef({ url: up.url, nombre: f.name });
-      const r = await safeJson(await fetch("/api/leer-factura-luz", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64, tipo: f.type }) }));
+      const r = await safeJson(await fetch("/api/leer-factura-luz", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64, tipo }) }));
       if (r.ok && r.data) aplicarFactura(r.data);
       else if (r.sin_key) setFacturaMsg("⚠️ Lectura automática no disponible (falta GEMINI_API_KEY). Cargá el consumo a mano.");
       else setFacturaMsg("⚠️ No se pudo leer la factura: " + (r.error || "error") + ". Cargá el consumo a mano.");
@@ -97,8 +115,8 @@ export default function ProyectoFvClient() {
     setSubiendoFotos(true);
     try {
       for (const f of Array.from(files)) {
-        const b64 = (await fileToB64(f)).split(",")[1];
-        const up = await safeJson(await fetch("/api/adjunto-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, content_type: f.type, data_b64: b64 }) }));
+        const { b64, tipo } = await prepararArchivo(f);
+        const up = await safeJson(await fetch("/api/adjunto-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, content_type: tipo, data_b64: b64 }) }));
         if (up.ok && up.url) setFotos((prev) => [...prev, { nombre: f.name, url: up.url }]);
       }
     } finally { setSubiendoFotos(false); }
