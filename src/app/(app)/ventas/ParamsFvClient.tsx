@@ -13,6 +13,20 @@ const GRUPOS: Grupo[] = [
     { k: "cobertura_objetivo", label: "Cobertura objetivo", tipo: "ratio", min: 0.3, max: 1.5, step: 0.05 },
     { k: "ratio_min", label: "Oversizing DC/AC mínimo", tipo: "ratio", min: 1.0, max: 1.4, step: 0.01 },
     { k: "ratio_max", label: "Oversizing DC/AC máximo", tipo: "ratio", min: 1.0, max: 1.5, step: 0.01 },
+    { k: "fraccion_diurna_default", label: "Fracción diurna (inyección cero)", tipo: "ratio", min: 0.2, max: 1.0, step: 0.05 },
+  ] },
+  { titulo: "Microinversor (sistemas chicos, inyección cero)", aplica: "ON-GRID", campos: [
+    { k: "umbral_micro_paneles", label: "Umbral micro (≤ paneles)", tipo: "num", min: 1, max: 8, step: 1 },
+    { k: "paneles_por_micro", label: "Paneles por micro", tipo: "num", min: 1, max: 4, step: 1 },
+    { k: "micro_default", label: "Microinversor default (código)", tipo: "text" },
+    { k: "codigo_micro_conector", label: "Conector trunk (código)", tipo: "text" },
+    { k: "codigo_micro_endcap", label: "End cap trunk (código)", tipo: "text" },
+  ] },
+  { titulo: "Protecciones / embalaje", campos: [
+    { k: "termica_min_a", label: "Térmica mínima (A)", tipo: "num", min: 10, max: 63, step: 1 },
+    { k: "umbral_embalaje", label: "Umbral embalaje (≤ paneles)", tipo: "num", min: 1, max: 8, step: 1 },
+    { k: "codigo_embalaje_x1", label: "Embalaje ×1 (código)", tipo: "text" },
+    { k: "codigo_embalaje_x2", label: "Embalaje ×2 (código)", tipo: "text" },
   ] },
   { titulo: "Dimensionado — off-grid", aplica: "OFF-GRID", campos: [
     { k: "autonomia_dias", label: "Días de autonomía", tipo: "num", min: 1, max: 5, step: 1 },

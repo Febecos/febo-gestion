@@ -9,7 +9,11 @@ export const runtime = "nodejs";
 // en la misma fila fv_config. Las de precios (A) las maneja la config de precios del cotizador aparte.
 const PARAM_KEYS = [
   // Dimensionado on-grid
-  "cobertura_objetivo", "ratio_min", "ratio_max",
+  "cobertura_objetivo", "ratio_min", "ratio_max", "fraccion_diurna_default",
+  // Microinversor (sistemas chicos, inyección cero)
+  "umbral_micro_paneles", "paneles_por_micro", "micro_default", "codigo_micro_conector", "codigo_micro_endcap",
+  // Protecciones / embalaje
+  "termica_min_a", "umbral_embalaje", "codigo_embalaje_x1", "codigo_embalaje_x2",
   // Off-grid
   "autonomia_dias", "dod_litio", "dod_plomo", "factor_autonomia_default", "pr_offgrid", "sobredim_paneles", "margen_inversor",
   // Validación de tensión
@@ -22,10 +26,12 @@ const PARAM_KEYS = [
 
 // Defaults (espejo de motor/config.default.mjs) para mostrar aunque fv_config aún no los tenga.
 const DEFAULTS: Record<string, any> = {
-  cobertura_objetivo: 1.0, ratio_min: 1.15, ratio_max: 1.20,
+  cobertura_objetivo: 1.0, ratio_min: 1.15, ratio_max: 1.20, fraccion_diurna_default: 0.5,
+  umbral_micro_paneles: 4, paneles_por_micro: 2, micro_default: "NEO1000M-X", codigo_micro_conector: "ACTRUNKCONNECTOR", codigo_micro_endcap: "ACTRUNKENDCAP",
+  termica_min_a: 16, umbral_embalaje: 4, codigo_embalaje_x1: "EMBALAJEPANELESX1", codigo_embalaje_x2: "EMBALAJEPANELESX2",
   autonomia_dias: 2, dod_litio: 90, dod_plomo: 50, factor_autonomia_default: 1.0, pr_offgrid: 0.72, sobredim_paneles: 1.3, margen_inversor: 1.2,
   temp_diseno_frio: -10, temp_diseno_calor: 65, strings_por_mppt: 2,
-  panel_default: "AS-7M144N-HC-580W", estructura_default: "chapa-inclinada", paneles_por_estructura: 4, metros_cable_default: 50, metros_tierra_default: 20, factor_proteccion: 1.25, loss_pvgis: 14,
+  panel_default: "AS-7M144N-HC-580W", estructura_default: "chapa-inclinada", paneles_por_estructura: 4, metros_cable_default: 20, metros_tierra_default: 20, factor_proteccion: 1.25, loss_pvgis: 14,
   codigo_cable_tierra: "CAB-TIE", codigo_cable_solar_metro: "CAB-SOL", codigo_jabalina: "JAB", codigo_limitador_tri: "TPM-E", codigo_limitador_mono: "SPM-E",
 };
 
