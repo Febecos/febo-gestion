@@ -7,7 +7,7 @@ import ParamsFvClient from "./ParamsFvClient";
 // en un LISTADO reabrible/editable. El dimensionado (motor CÁLCULOS FV) + el enganche al cotizador se
 // agregan cuando el motor esté. Look&feel febo-gestion (Tailwind), form seccionado en cards.
 
-type FacturaDatos = { distribuidora: string | null; titular: string | null; kwh_mes: number | null; kwh_meses: number[]; meses_detalle?: { mes: string | null; kwh: number }[]; potencia_contratada_kw: number | null; tarifa: string | null; periodo: string | null; importe: number | null };
+type FacturaDatos = { distribuidora: string | null; titular: string | null; kwh_mes: number | null; kwh_meses: number[]; meses_detalle?: { mes: string | null; kwh: number }[]; potencia_contratada_kw: number | null; tarifa: string | null; periodo: string | null; importe: number | null; cargos_fijos_ars?: number | null };
 type ProyRow = { id: number; cliente_id: number | null; vendedor: string | null; estado: string; presupuesto_numero: string | null; created_at: string; updated_at: string; sistema: any; cliente_nombre: string | null; cliente_razon_social: string | null };
 
 async function safeJson(r: Response) { try { return await r.json(); } catch { return { ok: false, error: "respuesta inválida" }; } }
@@ -52,6 +52,8 @@ export default function ProyectoFvClient() {
   const [techo, setTecho] = useState<"chapa" | "teja" | "losa" | "suelo">("chapa");
   const [inyeccion, setInyeccion] = useState<"cero" | "futuro" | "con-inyeccion">("cero"); // LA decisión clave: gobierna tamaño+topología+limitador
   const [fraccionDiurna, setFraccionDiurna] = useState(""); // % del consumo que es de día (default config 0.5)
+  const [inclinacion, setInclinacion] = useState(""); // ° del plano real (vacío = default config: 30 inclinada / 10 coplanar)
+  const [azimut, setAzimut] = useState(""); // ° desvío del norte (0=norte, +Este, −Oeste)
   const [generandoPresup, setGenerandoPresup] = useState(false);
   const [presupNumero, setPresupNumero] = useState<string | null>(null);
   const [presupToken, setPresupToken] = useState<string | null>(null);
@@ -230,7 +232,7 @@ export default function ProyectoFvClient() {
   function nuevo() {
     setProyectoId(null); setClienteId(null); setNombre(""); setCuit(""); setRazon("");
     setProvincia(""); setLocalidad(""); setLat(null); setLng(null);
-    setFase("mono"); setConexion("on-grid"); setTecho("chapa"); setInyeccion("cero"); setFraccionDiurna(""); setSitioSinTierra(true); setMetrosCable(""); setMetrosTierra("");
+    setFase("mono"); setConexion("on-grid"); setTecho("chapa"); setInyeccion("cero"); setFraccionDiurna(""); setInclinacion(""); setAzimut(""); setSitioSinTierra(true); setMetrosCable(""); setMetrosTierra("");
     setKwhMes(""); setPotencia(""); setFacturaLink(""); setFacturaDatos(null); setFacturaRef(null); setFacturaMsg("");
     setFotos([]); setReferencia(""); setResultado(null); setMsg(""); setArcaMsg(""); setPresupNumero(null); setPresupToken(null); setVista("form");
   }
@@ -259,6 +261,7 @@ export default function ProyectoFvClient() {
     setFase(i.fase || "mono"); setConexion(i.tipo_conexion || "on-grid"); setTecho(i.tipo_techo || "chapa");
     setInyeccion(i.inyeccion === "futuro" ? "futuro" : i.inyeccion === "con-inyeccion" ? "con-inyeccion" : "cero");
     setFraccionDiurna(i.fraccion_diurna != null ? String(i.fraccion_diurna) : ""); setSitioSinTierra(i.sitio_sin_tierra !== false);
+    setInclinacion(i.inclinacion_grados != null ? String(i.inclinacion_grados) : ""); setAzimut(i.azimut_grados != null ? String(i.azimut_grados) : "");
     setMetrosCable(i.metros_cable != null ? String(i.metros_cable) : ""); setMetrosTierra(i.metros_tierra != null ? String(i.metros_tierra) : "");
     setKwhMes(i.consumo?.kwh_mes != null ? String(i.consumo.kwh_mes) : ""); setPotencia(i.potencia_contratada_kw != null ? String(i.potencia_contratada_kw) : "");
     setFacturaDatos(p.factura_ref?.datos || null); setFacturaRef(p.factura_ref?.archivo || null); setFacturaLink(p.factura_ref?.link || "");
@@ -293,7 +296,9 @@ export default function ProyectoFvClient() {
       sitio_sin_tierra: sitioSinTierra,
       metros_cable: metrosCable ? Number(metrosCable) : null,
       metros_tierra: metrosTierra ? Number(metrosTierra) : null,
-      consumo: { kwh_mes: kwhMes ? Number(kwhMes) : (facturaDatos?.kwh_mes ?? null), kwh_meses: facturaDatos?.kwh_meses || [], meses_detalle: facturaDatos?.meses_detalle || [] },
+      consumo: { kwh_mes: kwhMes ? Number(kwhMes) : (facturaDatos?.kwh_mes ?? null), kwh_meses: facturaDatos?.kwh_meses || [], meses_detalle: facturaDatos?.meses_detalle || [], factura_mensual_ars: facturaDatos?.importe ?? null, cargos_fijos_ars: facturaDatos?.cargos_fijos_ars ?? null },
+      inclinacion_grados: inclinacion ? Number(inclinacion) : null,
+      azimut_grados: azimut !== "" ? Number(azimut) : null,
       potencia_contratada_kw: potencia ? Number(potencia) : (facturaDatos?.potencia_contratada_kw ?? null),
       fotos,
     };
@@ -351,11 +356,13 @@ export default function ProyectoFvClient() {
         cliente_id: clienteId,
         tipo_cliente: "cf",
         cliente: { nombre: nombreFinal(), cuit: cuit.trim() || "", razon_social: razon.trim() || "", localidad: localidad.trim() || "", provincia: provincia || "" },
+        form_inputs: construirInputs(), // para el re-run del motor con inversion_usd (repago/ahorro completos)
       };
       const r = await safeJson(await fetch("/api/proyecto-presupuesto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
       if (!r.ok) { setMsg("⚠️ No se pudo generar el presupuesto: " + (r.error || "error")); return; }
       setPresupNumero(r.numero); setPresupToken(r.public_token || null);
-      if (proyectoId) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: proyectoId, presupuesto_numero: r.numero, estado: "cotizado" }) });
+      if (r.meta) setResultado((prev) => (prev ? { ...prev, meta: r.meta } : prev));
+      if (proyectoId) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: proyectoId, presupuesto_numero: r.numero, estado: "cotizado", ...(r.meta ? { meta: r.meta } : {}) }) });
       const falt = Array.isArray(r.faltantes) && r.faltantes.length ? ` ⚠️ Ítems sin precio que quedaron afuera: ${r.faltantes.join(", ")}.` : "";
       setMsg(`✅ Presupuesto ${r.numero} generado (total ${r.totales?.total != null ? "USD " + Number(r.totales.total).toLocaleString("es-AR", { minimumFractionDigits: 2 }) : "—"}, markup ${r.markup_pct ?? "—"}%).${falt} Lo ves en Ventas → Presupuestos o con "Ver presupuesto".`);
       cargarLista();
@@ -473,6 +480,10 @@ export default function ProyectoFvClient() {
             <label className="flex items-center gap-1.5 text-sm pt-2 cursor-pointer"><input type="checkbox" checked={sitioSinTierra} onChange={(e) => setSitioSinTierra(e.target.checked)} /> El sitio NO tiene tierra (agregar jabalina)</label></div>
           <div><label className={lbl}>Cable solar (metros)</label><input value={metrosCable} onChange={(e) => setMetrosCable(e.target.value)} type="number" className={inp} placeholder="default 20" /></div>
           <div><label className={lbl}>Cable de tierra (metros)</label><input value={metrosTierra} onChange={(e) => setMetrosTierra(e.target.value)} type="number" className={inp} placeholder="default 20" /></div>
+          <div><label className={lbl}>Inclinación del plano (°)</label><input value={inclinacion} onChange={(e) => setInclinacion(e.target.value)} type="number" min={0} max={60} className={inp} placeholder="default: 30 inclinada / 10 coplanar" />
+            <div className="text-[10px] text-gray-400 mt-0.5">Tilt real del array; vacío = default según estructura.</div></div>
+          <div><label className={lbl}>Orientación / azimut (°)</label><input value={azimut} onChange={(e) => setAzimut(e.target.value)} type="number" min={-180} max={180} className={inp} placeholder="0 = norte" />
+            <div className="text-[10px] text-gray-400 mt-0.5">Desvío del norte: + hacia el Este, − hacia el Oeste (ej. Bouvier 13°).</div></div>
         </div>
       </div>
 

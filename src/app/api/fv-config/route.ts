@@ -9,7 +9,9 @@ export const runtime = "nodejs";
 // en la misma fila fv_config. Las de precios (A) las maneja la config de precios del cotizador aparte.
 const PARAM_KEYS = [
   // Dimensionado on-grid
-  "cobertura_objetivo", "ratio_min", "ratio_max", "fraccion_diurna_default",
+  "cobertura_objetivo", "ratio_min", "ratio_max", "factor_aprovechamiento",
+  // Plano real (tilt/azimut)
+  "inclinacion_default", "inclinacion_coplanar_default", "fraccion_diurna_default",
   // Microinversor (sistemas chicos, inyección cero)
   "umbral_micro_paneles", "paneles_por_micro", "micro_default", "codigo_micro_conector", "codigo_micro_endcap",
   // Protecciones / embalaje
@@ -26,7 +28,8 @@ const PARAM_KEYS = [
 
 // Defaults (espejo de motor/config.default.mjs) para mostrar aunque fv_config aún no los tenga.
 const DEFAULTS: Record<string, any> = {
-  cobertura_objetivo: 1.0, ratio_min: 1.15, ratio_max: 1.20, fraccion_diurna_default: 0.5,
+  cobertura_objetivo: 1.0, ratio_min: 1.15, ratio_max: 1.20, factor_aprovechamiento: 0.7,
+  inclinacion_default: 30, inclinacion_coplanar_default: 10, fraccion_diurna_default: 0.5,
   umbral_micro_paneles: 4, paneles_por_micro: 2, micro_default: "NEO1000M-X", codigo_micro_conector: "ACTRUNKCONNECTOR", codigo_micro_endcap: "ACTRUNKENDCAP",
   termica_min_a: 16, umbral_embalaje: 4, codigo_embalaje_x1: "EMBALAJEPANELESX1", codigo_embalaje_x2: "EMBALAJEPANELESX2",
   autonomia_dias: 2, dod_litio: 90, dod_plomo: 50, factor_autonomia_default: 1.0, pr_offgrid: 0.72, sobredim_paneles: 1.3, margen_inversor: 1.2,

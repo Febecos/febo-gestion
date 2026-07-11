@@ -55,6 +55,7 @@ const PROMPT = `Sos un lector de FACTURAS DE ELECTRICIDAD de Argentina. Mirá el
 - "tarifa": categoría tarifaria (T1, T2, T3, residencial, comercial, industrial, etc.) o null.
 - "periodo": período facturado (ej "05/2026") o null.
 - "importe": importe total de la factura (número, sin símbolos) o null.
+- "cargos_fijos_ars": suma en $ de los CARGOS FIJOS de la factura — los que NO dependen del consumo: cuota fija, cargo fijo, alumbrado público, tasa municipal, ambulancia, gas u otros servicios no eléctricos, cuota capital (número) o null si no se pueden identificar. NO incluyas la energía variable ni los impuestos porcentuales sobre la energía.
 Los números SIN separador de miles ni símbolos. Usá null (o [] para kwh_meses) si el dato no aparece.`;
 
 export async function POST(req: NextRequest) {
@@ -141,6 +142,7 @@ export async function POST(req: NextRequest) {
       tarifa: p.tarifa ? String(p.tarifa).slice(0, 30) : null,
       periodo: p.periodo ? String(p.periodo).slice(0, 20) : null,
       importe: num(p.importe),
+      cargos_fijos_ars: num(p.cargos_fijos_ars),
     };
     return NextResponse.json({ ok: true, data: data_out, ...(devolverArchivo ? { archivo: { b64: data, tipo } } : {}) });
   } catch (e: any) {

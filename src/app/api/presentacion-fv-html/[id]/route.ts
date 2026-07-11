@@ -131,8 +131,11 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     // ── GENERACIÓN: h3 + caption + arrays del script ──
     html = html.replace(/<h3 class="big">Genera ~[^<]*<\/h3>/,
       `<h3 class="big">Genera ~${fmt(genAnual)} kWh por año — para consumir de día</h3>`);
+    const planoTxt = sup.inclinacion_grados != null
+      ? ` Plano: ${sup.inclinacion_grados}° hacia el norte${sup.azimut_grados ? ` (desvío ${sup.azimut_grados}°)` : ""}${sup.factor_transposicion != null ? ` · rinde ${Math.round(sup.factor_transposicion * 100)}% del óptimo` : ""}.`
+      : "";
     html = html.replace(/<p class="caption">Barras verdes[\s\S]*?<\/p>/,
-      `<p class="caption">Barras verdes = <b>generación solar estimada</b> (Global Solar Atlas${u.localidad ? ", " + esc(u.localidad) : ""}${u.lat != null ? " · lat " + Number(u.lat).toFixed(2).replace(".", ",") : ""}) · línea roja = <b>tu consumo real</b> (histórico de tu factura). Generación ~${fmt(genAnual)} kWh/año · consumo ~${fmt(consAnual)} kWh/año → el sol cubre ~${cobertura}%.</p>`);
+      `<p class="caption">Barras verdes = <b>generación solar estimada</b> (Global Solar Atlas${u.localidad ? ", " + esc(u.localidad) : ""}${u.lat != null ? " · lat " + Number(u.lat).toFixed(2).replace(".", ",") : ""}) · línea roja = <b>tu consumo real</b> (histórico de tu factura). Generación ~${fmt(genAnual)} kWh/año · consumo ~${fmt(consAnual)} kWh/año → el sol cubre ~${cobertura}%.${planoTxt}</p>`);
     if (genArr.length === 12) {
       const gmax = Math.max(...genArr, ...consArr, 1);
       html = html.replace(/var gen=\[[^\]]*\];/, `var gen=[${genArr.join(",")}];`);
@@ -141,17 +144,22 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     }
 
     // ── CMP factura hoy vs con solar ──
-    if (facturaMes != null && ahorroMes != null) {
-      const conSolar = Math.max(0, facturaMes - ahorroMes);
-      const pct = facturaMes > 0 ? Math.round((conSolar / facturaMes) * 100) : 100;
+    const facturaHoy = m.ahorro?.factura_mensual ?? facturaMes;
+    if (facturaHoy != null && ahorroMes != null) {
+      const conSolar = m.ahorro?.factura_con_solar ?? Math.max(0, facturaHoy - ahorroMes);
+      const pct = facturaHoy > 0 ? Math.round((conSolar / facturaHoy) * 100) : 100;
+      const fijos = m.ahorro?.cargos_fijos;
       const cmp = `<div class="cmp">
-        <div class="barrow"><div class="barlbl"><span>Factura hoy</span><b>$${fmt(facturaMes)}</b></div><div class="bar now"><i></i></div></div>
+        <div class="barrow"><div class="barlbl"><span>Factura hoy</span><b>$${fmt(facturaHoy)}</b></div><div class="bar now"><i></i></div></div>
         <div class="barrow"><div class="barlbl"><span>Factura estimada con solar</span><b>~$${fmt(conSolar)}</b></div><div class="bar sol"><i style="width:${pct}%"></i></div>
           <div class="saved">▼ Ahorrás ~$${fmt(ahorroMes)} por mes  ·  ~$${fmt(ahorroAnio)} por año</div></div>
       </div>`;
       html = replaceBlock(html, /<div class="cmp">/, "</div>\n      <p style=\"font-size:12.5px", cmp + "\n      <p style=\"font-size:12.5px", "cmp");
+      const notaFijos = fijos != null
+        ? `de tu factura de <b>$${fmt(facturaHoy)}</b>, <b>~$${fmt(fijos)} son cargos fijos</b> (cuota fija, alumbrado, tasas) que el sol <b>no</b> baja. El ahorro corresponde al consumo diurno que el sistema cubre${esCero ? " en modo inyección cero" : ""}.`
+        : `el ahorro corresponde al consumo diurno que el sistema cubre${esCero ? " en modo inyección cero" : ""}; los cargos fijos de la factura (alumbrado, tasas) no bajan con el sol.`;
       html = html.replace(/<p style="font-size:12\.5px;color:var\(--muted\);margin-top:10px"><b>Nota honesta:<\/b>[\s\S]*?<\/p>/,
-        `<p style="font-size:12.5px;color:var(--muted);margin-top:10px"><b>Nota:</b> el ahorro corresponde al consumo diurno que el sistema cubre${esCero ? " en modo inyección cero" : ""}; los cargos fijos de la factura (alumbrado, tasas) no bajan con el sol. Valores a tarifa de hoy.</p>`);
+        `<p style="font-size:12.5px;color:var(--muted);margin-top:10px"><b>Nota honesta:</b> ${notaFijos} Valores a tarifa de hoy.</p>`);
     } else {
       // sin tarifa/ahorro: dejar estructura con aviso (los criterios finales los define CÁLCULOS)
       html = replaceBlock(html, /<div class="cmp">/, "</div>\n      <p style=\"font-size:12.5px",

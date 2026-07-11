@@ -14,6 +14,9 @@ const GRUPOS: Grupo[] = [
     { k: "ratio_min", label: "Oversizing DC/AC mínimo", tipo: "ratio", min: 1.0, max: 1.4, step: 0.01 },
     { k: "ratio_max", label: "Oversizing DC/AC máximo", tipo: "ratio", min: 1.0, max: 1.5, step: 0.01 },
     { k: "fraccion_diurna_default", label: "Fracción diurna (inyección cero)", tipo: "ratio", min: 0.2, max: 1.0, step: 0.05 },
+    { k: "factor_aprovechamiento", label: "Factor aprovechamiento (iny. cero)", tipo: "ratio", min: 0.4, max: 1.0, step: 0.05 },
+    { k: "inclinacion_default", label: "Inclinación default estructura (°)", tipo: "num", min: 0, max: 60, step: 1 },
+    { k: "inclinacion_coplanar_default", label: "Pendiente coplanar default (°)", tipo: "num", min: 0, max: 30, step: 1 },
   ] },
   { titulo: "Microinversor (sistemas chicos, inyección cero)", aplica: "ON-GRID", campos: [
     { k: "umbral_micro_paneles", label: "Umbral micro (≤ paneles)", tipo: "num", min: 1, max: 8, step: 1 },

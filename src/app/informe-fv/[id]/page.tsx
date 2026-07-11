@@ -90,7 +90,11 @@ export default function InformeFv({ params }: { params: { id: string } }) {
 
       {/* 2. Recurso solar */}
       <h2 className="text-[13px] font-bold text-[#0b3d6b] uppercase border-b border-gray-300 mb-2">2 · Recurso solar</h2>
-      <div className="mb-4 text-[12px]">Fuente: <b>Global Solar Atlas</b> (PVOUT específico, salida neta a ángulo óptimo) · <b>{fmt(m.pvout)} kWh/kWp/año</b> en el punto del proyecto.</div>
+      <div className="mb-1 text-[12px]">Fuente: <b>Global Solar Atlas</b> (base al óptimo del sitio) · <b>{fmt(m.pvout)} kWh/kWp/año</b> al plano del proyecto.</div>
+      {sup.inclinacion_grados != null && (
+        <div className="mb-4 text-[12px]">Plano real: <b>inclinación {sup.inclinacion_grados}°</b> · orientación norte{sup.azimut_grados ? ` (desvío ${sup.azimut_grados}°)` : ""}{sup.factor_transposicion != null ? <> · rendimiento del plano: <b>{Math.round(sup.factor_transposicion * 100)}%</b> del óptimo{sup.factor_transposicion < 0.9 ? <span className="text-amber-600"> ⚠ el plano rinde menos del 90% del óptimo</span> : null}</> : null}</div>
+      )}
+      {sup.inclinacion_grados == null && <div className="mb-4" />}
 
       {/* 3. Dimensionado */}
       <h2 className="text-[13px] font-bold text-[#0b3d6b] uppercase border-b border-gray-300 mb-2">3 · Dimensionado</h2>
