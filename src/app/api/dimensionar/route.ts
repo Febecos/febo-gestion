@@ -16,7 +16,19 @@ export async function POST(req: NextRequest) {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + secret },
       body: JSON.stringify({ inputs: b.inputs || b }),
     });
-    const d = await r.json().catch(() => ({ ok: false, error: "respuesta no-JSON del motor" }));
+    // Leemos el body como TEXTO y luego intentamos JSON: si el motor devuelve HTML (404/500/timeout),
+    // igual respondemos JSON estructurado con la causa (status + snippet) en vez de un "no-JSON" opaco.
+    const txt = await r.text();
+    let d: any;
+    try { d = JSON.parse(txt); }
+    catch {
+      return NextResponse.json({
+        ok: false,
+        error: `El motor (fv.febecos.com/api/dimensionar) devolvió una respuesta no-JSON (HTTP ${r.status}). ${r.status === 404 ? "Endpoint no encontrado (ruta no registrada)." : r.status >= 500 ? "Error interno del motor." : ""}`.trim(),
+        upstream_status: r.status,
+        upstream_snippet: txt.slice(0, 300),
+      }, { status: 502 });
+    }
     return NextResponse.json(d, { status: r.ok ? 200 : r.status });
   } catch (e: any) { return NextResponse.json({ ok: false, error: e.message }, { status: 500 }); }
 }
