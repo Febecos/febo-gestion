@@ -180,7 +180,7 @@ export default function PresentacionFv({ params }: { params: { id: string } }) {
           <div style={{ fontSize: 13, color: INK2, marginBottom: 8 }}>1. Confirmás la propuesta · 2. Coordinamos visita técnica y fecha · 3. Instalación y puesta en marcha.</div>
           <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 24, paddingTop: 12, fontSize: 10.5, color: MUT, display: "flex", justifyContent: "space-between" }}>
             <span>FEBECOS · Energía Solar · febecos.com · ventas@febecos.com</span>
-            <span>Propuesta válida 15 días · Proyecto FV #{p.id}</span>
+            <span>Propuesta válida 48 horas · Proyecto FV #{p.id}</span>
           </div>
         </div>
       </div>

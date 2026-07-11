@@ -1497,7 +1497,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
             <datalist id="dl-lugar">{FV_LUGAR.map((o) => <option key={o} value={o} />)}</datalist>
             <div className="grid grid-cols-2 gap-2">
               <label className="text-[11px] text-gray-500">Validez
-                <input list="dl-validez" value={dv.validez} onChange={(e) => setDv({ ...dv, validez: e.target.value })} placeholder="Ej: 15 días" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
+                <input list="dl-validez" value={dv.validez} onChange={(e) => setDv({ ...dv, validez: e.target.value })} placeholder="48 horas (regla)" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
               <label className="text-[11px] text-gray-500">Plazo de Entrega
                 <input list="dl-plazo" value={dv.plazo_entrega} onChange={(e) => setDv({ ...dv, plazo_entrega: e.target.value })} placeholder="Ej: A confirmar stock" className="block w-full border border-gray-300 rounded px-2 py-1 text-sm" /></label>
               <label className="text-[11px] text-gray-500">Condición de Pago <span className="text-emerald-600">· factura</span>
