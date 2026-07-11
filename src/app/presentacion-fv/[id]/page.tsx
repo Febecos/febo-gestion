@@ -2,32 +2,24 @@
 import { useEffect, useState } from "react";
 
 // PRESENTACIÓN COMERCIAL del proyecto FV (salida C) — el documento para el CLIENTE.
-// REGLA DURA (propuesta vs presupuesto): la propuesta va AGRUPADA en 3-4 líneas SIN precios
-// unitarios — solo el TOTAL. El detalle con precios vive únicamente en el presupuesto (PREV).
-// Estiliza los números del informe técnico (no recalcula nada): sistema, generación, cobertura,
-// chip "inversor validado ✔", y el TOTAL del presupuesto si ya se generó.
+// ESTILO = el de las propuestas hechas a mano (referencia: "Edgardo Bouvier - Propuesta Solar FV.html"):
+// paleta VERDE (#15694a/#0d4a33) + ámbar solar, títulos serif Georgia, cards REDONDEADAS, hero
+// degradado, KPI strip. REGLA DURA (propuesta vs presupuesto): agrupado SIN precios unitarios,
+// el TOTAL es el único número de plata. No recalcula: estiliza motor + total del cotizador.
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 const n0 = (v: any) => (v == null || isNaN(Number(v)) ? 0 : Number(v));
 const fmt = (v: any, d = 0) => n0(v).toLocaleString("es-AR", { minimumFractionDigits: d, maximumFractionDigits: d });
 
-// Agrupa la BOM en 3-4 renglones comerciales (sin precios): sistema / estructura / eléctrica / medición.
 function agruparBom(bom: any[], sistema: any): { titulo: string; detalle: string }[] {
   const grupos: { titulo: string; detalle: string }[] = [];
   const kwp = sistema?.kwp ? `${String(sistema.kwp).replace(".", ",")} kWp` : "";
   const wp = String(sistema?.panel_codigo || "").match(/(\d{3})\s*W/i)?.[1];
   const esMicro = /NEO|micro/i.test(sistema?.inversor_codigo || "");
-  grupos.push({
-    titulo: `Sistema fotovoltaico ${kwp}`,
-    detalle: `${sistema?.n_paneles || "?"} paneles solares${wp ? ` de ${wp}W` : ""} + ${esMicro ? "microinversor" : "inversor"} ${sistema?.inversor_codigo || ""} (${sistema?.inversor_kw || "?"} kW)${sistema?.banco_kwh ? ` + banco de baterías ${sistema.banco_kwh} kWh` : ""}`,
-  });
-  const esEstructura = (b: any) => /estructura|chiko|coplanar|triang/i.test((b.descripcion_corta || "") + " " + (b.codigo || ""));
-  const esMedicion = (b: any) => /medidor|eastron|SPM-E|TPM-E|limitador/i.test((b.descripcion_corta || "") + " " + (b.codigo || ""));
-  const estructuras = (bom || []).filter(esEstructura);
-  if (estructuras.length) grupos.push({ titulo: "Estructura de montaje", detalle: "Soportería de aluminio con fijaciones, apta intemperie, para el tipo de techo del proyecto" });
-  grupos.push({ titulo: "Instalación eléctrica y protecciones", detalle: "Protecciones CC y CA (térmicas, disyuntor, descargadores de sobretensión), cableado solar, conectores y puesta a tierra según norma" });
-  const medicion = (bom || []).filter(esMedicion);
-  if (medicion.length) grupos.push({ titulo: "Medición y control de inyección", detalle: "Medidor inteligente para operar en modo inyección cero (sin volcar excedentes a la red)" });
+  grupos.push({ titulo: `Sistema fotovoltaico ${kwp}`, detalle: `${sistema?.n_paneles || "?"} paneles solares${wp ? ` de ${wp}W` : ""} + ${esMicro ? "microinversor" : "inversor"} ${sistema?.inversor_codigo || ""} (${sistema?.inversor_kw || "?"} kW)${sistema?.banco_kwh ? ` + banco de baterías ${sistema.banco_kwh} kWh` : ""}` });
+  if ((bom || []).some((b: any) => /estructura|chiko|coplanar|triang/i.test((b.descripcion_corta || "") + (b.codigo || "")))) grupos.push({ titulo: "Estructura de montaje", detalle: "Soportería de aluminio apta intemperie, para el techo del proyecto" });
+  grupos.push({ titulo: "Instalación eléctrica y protecciones", detalle: "Protecciones CC y CA, descargadores de sobretensión, cableado solar, conectores y puesta a tierra según norma" });
+  if ((bom || []).some((b: any) => /medidor|eastron|SPM-E|TPM-E|limitador/i.test((b.descripcion_corta || "") + (b.codigo || "")))) grupos.push({ titulo: "Medición y control de inyección", detalle: "Medidor inteligente para operar en modo inyección cero (sin volcar excedentes a la red)" });
   return grupos.slice(0, 4);
 }
 
@@ -49,91 +41,147 @@ export default function PresentacionFv({ params }: { params: { id: string } }) {
       }).catch((e) => setErr(e.message));
   }, [params.id]);
 
-  if (err) return <div className="p-10 text-center text-red-600">⚠️ {err}</div>;
-  if (!p) return <div className="p-10 text-center text-gray-400">Cargando presentación…</div>;
+  if (err) return <div style={{ padding: 60, textAlign: "center", color: "#b00" }}>⚠️ {err}</div>;
+  if (!p) return <div style={{ padding: 60, textAlign: "center", color: "#999" }}>Cargando presentación…</div>;
 
   const i = p.inputs || {}, s = p.sistema || {}, m = p.meta || {}, c = i.cliente || {}, u = i.ubicacion || {};
   const gen: number[] = Array.isArray(m.perfil_mensual_gen) ? m.perfil_mensual_gen.map(n0) : [];
-  const maxY = Math.max(...gen, 1);
+  const cons: number[] = Array.isArray(m.perfil_mensual_consumo) ? m.perfil_mensual_consumo.map(n0) : [];
+  const maxY = Math.max(...gen, ...cons, 1);
   const grupos = agruparBom(p.bom || [], s);
   const fecha = new Date().toLocaleDateString("es-AR", { day: "2-digit", month: "long", year: "numeric" });
   const invValidado = m.validacion_inversor?.ok === true || m.validacion_inversor?.topologia === "micro";
+  const esCero = (m.supuestos?.inyeccion || i.inyeccion || "cero") === "cero";
+
+  const B = "#15694a", B2 = "#0d4a33", SOFT = "#e7f1ec", SOLAR = "#e0980f", INK = "#18231e", INK2 = "#3b4a43", MUT = "#6f7c74", LINE = "#e4e6e0";
+  const serif = 'Georgia,"Iowan Old Style","Times New Roman",serif';
+  const sec: React.CSSProperties = { fontSize: 12, letterSpacing: ".16em", textTransform: "uppercase", color: B, margin: "0 0 4px", fontWeight: 700 };
+  const big: React.CSSProperties = { fontFamily: serif, fontWeight: 400, fontSize: 26, lineHeight: 1.15, letterSpacing: "-.01em", margin: "0 0 16px", color: INK };
 
   return (
-    <div className="max-w-[800px] mx-auto bg-white text-gray-800">
-      <style>{`@media print { .no-print { display:none !important } body { background:#fff } } @page { size: A4 portrait; margin: 0; } .hero{background:linear-gradient(135deg,#0b3d6b 0%,#155a96 100%)}`}</style>
-      <div className="no-print flex justify-end gap-2 p-4">
-        <button onClick={() => window.print()} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold">🖨️ Imprimir / Guardar PDF</button>
+    <div style={{ background: "#eceae3", minHeight: "100vh", fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif', color: INK }}>
+      <style>{`@media print { .no-print { display:none !important } body{background:#fff} .sheet{box-shadow:none !important} } @page { size: A4 portrait; margin: 0; }`}</style>
+      <div className="no-print" style={{ maxWidth: 840, margin: "0 auto", padding: "14px 0", display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={() => window.print()} style={{ background: B, color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>🖨️ Imprimir / Guardar PDF</button>
       </div>
+      <div className="sheet" style={{ maxWidth: 840, margin: "0 auto 40px", background: "#fff", borderRadius: 6, overflow: "hidden", boxShadow: "0 6px 30px #0b2a1e1a" }}>
 
-      {/* Portada / hero */}
-      <div className="hero text-white px-10 py-10 print:py-14">
-        <img src="https://fv.febecos.com/images/febecos-logo.png" alt="FEBECOS" className="h-14 mb-6 brightness-0 invert" />
-        <div className="text-[26px] font-black leading-tight">Propuesta de energía solar</div>
-        <div className="text-[15px] opacity-90 mt-1">{c.razon_social || c.nombre || ""}</div>
-        <div className="text-[12px] opacity-70 mt-3">{[u.localidad, u.provincia].filter(Boolean).join(", ")} · {fecha}</div>
-        <div className="flex gap-8 mt-8">
-          <div><div className="text-[28px] font-black">{s.kwp ?? "—"} <span className="text-[14px] font-semibold">kWp</span></div><div className="text-[11px] opacity-75 uppercase">Potencia instalada</div></div>
-          <div><div className="text-[28px] font-black">{fmt(s.generacion_anual_kwh)} <span className="text-[14px] font-semibold">kWh/año</span></div><div className="text-[11px] opacity-75 uppercase">Generación estimada</div></div>
-          <div><div className="text-[28px] font-black">{Math.round((s.cobertura || 0) * 100)}<span className="text-[14px] font-semibold">%</span></div><div className="text-[11px] opacity-75 uppercase">De tu consumo</div></div>
-        </div>
-      </div>
-
-      <div className="px-10 py-8">
-        {/* La propuesta — agrupada, SIN precios */}
-        <h2 className="text-[15px] font-black text-[#0b3d6b] uppercase tracking-wide mb-3">Tu sistema incluye</h2>
-        <div className="space-y-3 mb-2">
-          {grupos.map((g, j) => (
-            <div key={j} className="flex gap-3 items-start">
-              <div className="w-7 h-7 rounded-full bg-[#f5b301] text-[#0b3d6b] font-black text-[13px] flex items-center justify-center shrink-0">{j + 1}</div>
-              <div><div className="font-bold text-[14px] text-[#0b3d6b]">{g.titulo}</div><div className="text-[12px] text-gray-600">{g.detalle}</div></div>
-            </div>
-          ))}
-        </div>
-        <div className="flex gap-2 mb-6 text-[11px]">
-          {invValidado && <span className="rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 font-semibold">✔ Inversor validado técnicamente</span>}
-          <span className="rounded-full bg-blue-50 text-blue-700 border border-blue-200 px-3 py-1 font-semibold">Instalación según norma con puesta a tierra</span>
+        {/* Topbar */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 46px", borderBottom: `1px solid ${LINE}` }}>
+          <img src="https://fv.febecos.com/images/febecos-logo.png" alt="FEBECOS" style={{ height: 42 }} />
+          <div style={{ fontSize: 11, letterSpacing: ".18em", textTransform: "uppercase", color: MUT, fontWeight: 700 }}>Propuesta · {fecha}</div>
         </div>
 
-        {/* Generación mensual (visual simple) */}
-        {gen.length === 12 && (
-          <>
-            <h2 className="text-[15px] font-black text-[#0b3d6b] uppercase tracking-wide mb-2">Cuánto genera tu sistema, mes a mes</h2>
-            <svg viewBox="0 0 720 150" className="w-full mb-6">
-              {gen.map((g, j) => {
-                const x = 15 + j * 59, bw = 40, h = (g / maxY) * 105;
-                return (
-                  <g key={j}>
-                    <rect x={x} y={125 - h} width={bw} height={h} fill="#f5b301" rx={3} />
-                    <text x={x + bw / 2} y={138} textAnchor="middle" fontSize={9.5} fill="#888">{MESES[j]}</text>
-                  </g>
-                );
-              })}
-              <text x={15} y={12} fontSize={10} fill="#999">kWh generados por mes (estimado para tu ubicación)</text>
-            </svg>
-          </>
-        )}
-
-        {/* Total — el ÚNICO número de plata */}
-        <div className="rounded-xl border-2 border-[#0b3d6b] overflow-hidden mb-6">
-          <div className="bg-[#0b3d6b] text-white px-5 py-2 text-[12px] font-bold uppercase tracking-wide">Inversión total</div>
-          <div className="px-5 py-4 flex items-baseline justify-between">
-            <div className="text-[26px] font-black text-[#0b3d6b]">{total != null ? "USD " + fmt(total, 2) : "A confirmar"}</div>
-            <div className="text-[11px] text-gray-500 text-right">+ IVA · llave en mano según alcance{p.presupuesto_numero ? ` · Detalle en presupuesto ${p.presupuesto_numero}` : ""}</div>
+        {/* Hero */}
+        <div style={{ background: `linear-gradient(150deg,${B2},${B} 70%)`, color: "#eaf3ee", padding: "42px 46px" }}>
+          <div style={{ fontSize: 11.5, letterSpacing: ".2em", textTransform: "uppercase", color: SOLAR, fontWeight: 700, marginBottom: 12 }}>Propuesta de Energía Solar</div>
+          <h1 style={{ fontFamily: serif, fontWeight: 400, fontSize: 34, lineHeight: 1.1, letterSpacing: "-.015em", margin: "0 0 14px", maxWidth: "18ch" }}>
+            Un sistema solar de {String(s.kwp ?? "—").replace(".", ",")} kWp{esCero ? " con inyección cero" : ""}
+          </h1>
+          <div style={{ fontSize: 14, color: "#cfe1d8", borderTop: "1px solid #ffffff26", paddingTop: 16, marginTop: 22 }}>
+            Preparada para <b style={{ color: "#fff" }}>{c.razon_social || c.nombre || ""}</b>{u.localidad ? <> · {[u.localidad, u.provincia].filter(Boolean).join(", ")}</> : null}
           </div>
         </div>
 
-        {/* Por qué Febecos */}
-        <h2 className="text-[15px] font-black text-[#0b3d6b] uppercase tracking-wide mb-2">Por qué FEBECOS</h2>
-        <div className="grid grid-cols-3 gap-3 text-[11.5px] text-gray-600 mb-8">
-          <div className="rounded-lg bg-gray-50 border border-gray-200 p-3"><b className="text-[#0b3d6b]">Ingeniería real.</b> Dimensionado con datos satelitales de tu ubicación y validación eléctrica del equipamiento.</div>
-          <div className="rounded-lg bg-gray-50 border border-gray-200 p-3"><b className="text-[#0b3d6b]">Equipos tier-1.</b> Paneles y electrónica de marcas líderes con garantía oficial en Argentina.</div>
-          <div className="rounded-lg bg-gray-50 border border-gray-200 p-3"><b className="text-[#0b3d6b]">Acompañamiento.</b> Del cálculo a la puesta en marcha, con soporte local.</div>
+        {/* KPI strip */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 1, background: LINE, borderBottom: `1px solid ${LINE}` }}>
+          {[
+            { n: String(s.kwp ?? "—").replace(".", ","), u: "kWp", l: "Potencia instalada" },
+            { n: fmt(s.generacion_anual_kwh), u: "kWh/año", l: "Generación estimada" },
+            { n: String(Math.round((s.cobertura || 0) * 100)), u: "%", l: "De tu consumo cubierto" },
+            { n: String(s.n_paneles ?? "—"), u: "paneles", l: "Módulos de alta eficiencia" },
+          ].map((k, j) => (
+            <div key={j} style={{ background: "#fff", padding: "20px 16px", textAlign: "center" }}>
+              <div style={{ fontFamily: serif, fontSize: 28, lineHeight: 1, color: B, marginBottom: 5 }}>{k.n} <small style={{ fontSize: 14, color: MUT }}>{k.u}</small></div>
+              <div style={{ fontSize: 11, color: INK2 }}>{k.l}</div>
+            </div>
+          ))}
         </div>
 
-        <div className="border-t border-gray-200 pt-3 text-[10.5px] text-gray-400 flex justify-between">
-          <span>FEBECOS · Energía Solar · febecos.com · ventas@febecos.com</span>
-          <span>Propuesta válida 15 días · Proyecto FV #{p.id}</span>
+        <div style={{ padding: "34px 46px" }}>
+          {/* La solución — agrupada, SIN precios */}
+          <h2 style={sec}>La solución</h2>
+          <h3 style={big}>Tu sistema incluye</h3>
+          <div style={{ display: "grid", gap: 12, marginBottom: 14 }}>
+            {grupos.map((g, j) => (
+              <div key={j} style={{ display: "flex", gap: 14, alignItems: "flex-start", background: j === 0 ? SOFT : "#fff", border: `1px solid ${j === 0 ? "#cfe3d8" : LINE}`, borderRadius: 12, padding: "14px 18px" }}>
+                <div style={{ width: 30, height: 30, borderRadius: "50%", background: SOLAR, color: "#fff", fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{j + 1}</div>
+                <div><div style={{ fontWeight: 700, fontSize: 14.5, color: B2 }}>{g.titulo}</div><div style={{ fontSize: 12.5, color: INK2, marginTop: 2 }}>{g.detalle}</div></div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 30 }}>
+            {invValidado && <span style={{ fontSize: 11, borderRadius: 999, background: "#e4f3ec", color: "#1c8a5b", border: "1px solid #bfe0cf", padding: "5px 12px", fontWeight: 600 }}>✔ Inversor validado técnicamente</span>}
+            <span style={{ fontSize: 11, borderRadius: 999, background: SOFT, color: B2, border: "1px solid #cfe3d8", padding: "5px 12px", fontWeight: 600 }}>Instalación según norma con puesta a tierra</span>
+            {esCero && <span style={{ fontSize: 11, borderRadius: 999, background: "#fbf0d5", color: "#8a6205", border: "1px solid #edd9a3", padding: "5px 12px", fontWeight: 600 }}>Inyección cero — sin trámite de generación</span>}
+          </div>
+
+          {/* Generación */}
+          {gen.length === 12 && (
+            <>
+              <h2 style={sec}>Generación y consumo</h2>
+              <h3 style={big}>Genera ~{fmt(s.generacion_anual_kwh)} kWh por año</h3>
+              <div style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "18px 16px 8px", marginBottom: 8 }}>
+                <svg viewBox="0 0 748 170" style={{ width: "100%" }}>
+                  {gen.map((g, j) => {
+                    const x = 16 + j * 61, bw = 42, h = (g / maxY) * 118;
+                    return (
+                      <g key={j}>
+                        <rect x={x} y={140 - h} width={bw} height={h} fill={SOLAR} rx={4} opacity={0.9} />
+                        <text x={x + bw / 2} y={134 - h} textAnchor="middle" fontSize={9} fill={MUT}>{fmt(g)}</text>
+                        <text x={x + bw / 2} y={154} textAnchor="middle" fontSize={9.5} fill={MUT}>{MESES[j]}</text>
+                      </g>
+                    );
+                  })}
+                  {cons.length === 12 && <polyline fill="none" stroke={B} strokeWidth={2.2} points={cons.map((cx, j) => `${16 + j * 61 + 21},${140 - (cx / maxY) * 118}`).join(" ")} />}
+                  <rect x={560} y={4} width={10} height={10} fill={SOLAR} rx={2} /><text x={575} y={13} fontSize={10} fill={INK2}>Generación</text>
+                  {cons.length === 12 && <><line x1={648} y1={9} x2={668} y2={9} stroke={B} strokeWidth={2.2} /><text x={673} y={13} fontSize={10} fill={INK2}>Tu consumo</text></>}
+                </svg>
+              </div>
+              <div style={{ fontSize: 12, color: MUT, marginBottom: 30 }}>kWh por mes, estimados con datos satelitales de tu ubicación (Global Solar Atlas).</div>
+            </>
+          )}
+
+          {/* Retorno (solo si el motor lo calculó) */}
+          {m.ahorro && (
+            <>
+              <h2 style={sec}>Retorno de la inversión</h2>
+              <h3 style={big}>Ahorrás ~$ {fmt(m.ahorro.mensual)} por mes{m.repago_anios ? ` — se paga en ~${m.repago_anios} años` : ""}</h3>
+              <div style={{ fontSize: 13, color: INK2, marginBottom: 30 }}>$ {fmt(m.ahorro.anual)} al año a valores de tu tarifa actual. Después del repago, la energía es prácticamente gratis por el resto de la vida útil del sistema (25+ años).</div>
+            </>
+          )}
+
+          {/* Tu inversión — el ÚNICO número */}
+          <h2 style={sec}>Tu inversión</h2>
+          <div style={{ border: `2px solid ${B}`, borderRadius: 14, overflow: "hidden", marginBottom: 30 }}>
+            <div style={{ background: B, color: "#fff", padding: "10px 22px", fontSize: 12, fontWeight: 700, letterSpacing: ".12em", textTransform: "uppercase" }}>Inversión total llave en mano</div>
+            <div style={{ padding: "18px 22px", display: "flex", justifyContent: "space-between", alignItems: "baseline", background: SOFT }}>
+              <div style={{ fontFamily: serif, fontSize: 32, color: B2 }}>{total != null ? "USD " + fmt(total, 2) : "A confirmar"}</div>
+              <div style={{ fontSize: 11.5, color: MUT, textAlign: "right" }}>+ IVA · equipos, materiales e instalación según alcance{p.presupuesto_numero ? <><br />Detalle completo en presupuesto {p.presupuesto_numero}</> : null}</div>
+            </div>
+          </div>
+
+          {/* Por qué Febecos */}
+          <h2 style={sec}>Por qué FEBECOS</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 30 }}>
+            {[
+              ["Ingeniería real", "Dimensionado con datos satelitales de tu ubicación y validación eléctrica de cada equipo."],
+              ["Equipos tier-1", "Paneles y electrónica de marcas líderes con garantía oficial en Argentina."],
+              ["Acompañamiento", "Del cálculo a la puesta en marcha, con soporte local y repuestos."],
+            ].map(([t, d], j) => (
+              <div key={j} style={{ background: "#fff", border: `1px solid ${LINE}`, borderRadius: 12, padding: "14px 16px", fontSize: 12, color: INK2 }}>
+                <b style={{ color: B2, display: "block", marginBottom: 4 }}>{t}</b>{d}
+              </div>
+            ))}
+          </div>
+
+          {/* Próximos pasos */}
+          <h2 style={sec}>Próximos pasos</h2>
+          <div style={{ fontSize: 13, color: INK2, marginBottom: 8 }}>1. Confirmás la propuesta · 2. Coordinamos visita técnica y fecha · 3. Instalación y puesta en marcha.</div>
+          <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 24, paddingTop: 12, fontSize: 10.5, color: MUT, display: "flex", justifyContent: "space-between" }}>
+            <span>FEBECOS · Energía Solar · febecos.com · ventas@febecos.com</span>
+            <span>Propuesta válida 15 días · Proyecto FV #{p.id}</span>
+          </div>
         </div>
       </div>
     </div>
