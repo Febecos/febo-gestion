@@ -30,9 +30,13 @@ export async function GET(req: NextRequest) {
       if (!r.length) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
       return NextResponse.json({ ok: true, proyecto: r[0] });
     }
+    // COALESCE: el nombre visible sale del CRM si hay cliente vinculado, si no del propio formulario
+    // (inputs.cliente) → nunca más filas "—" por proyectos sin cliente_id.
     const rows = await sql`
-      SELECT p.id, p.cliente_id, p.vendedor, p.estado, p.presupuesto_numero, p.created_at, p.updated_at,
-             p.sistema, c.nombre AS cliente_nombre, c.razon_social AS cliente_razon_social
+      SELECT p.id, p.cliente_id, p.vendedor, p.estado, p.presupuesto_numero, p.referencia, p.created_at, p.updated_at,
+             p.sistema,
+             COALESCE(c.nombre, p.inputs->'cliente'->>'nombre') AS cliente_nombre,
+             COALESCE(c.razon_social, p.inputs->'cliente'->>'razon_social') AS cliente_razon_social
       FROM fv_proyectos p LEFT JOIN clientes c ON c.id = p.cliente_id
       ORDER BY p.updated_at DESC LIMIT 200`;
     return NextResponse.json({ ok: true, proyectos: rows });

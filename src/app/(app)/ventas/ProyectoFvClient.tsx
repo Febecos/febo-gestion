@@ -52,6 +52,9 @@ export default function ProyectoFvClient() {
   const [techo, setTecho] = useState<"chapa" | "teja" | "losa" | "suelo">("chapa");
   const [inyeccion, setInyeccion] = useState<"cero" | "futuro" | "con-inyeccion">("cero"); // LA decisión clave: gobierna tamaño+topología+limitador
   const [fraccionDiurna, setFraccionDiurna] = useState(""); // % del consumo que es de día (default config 0.5)
+  const [generandoPresup, setGenerandoPresup] = useState(false);
+  const [presupNumero, setPresupNumero] = useState<string | null>(null);
+  const [presupToken, setPresupToken] = useState<string | null>(null);
   const [sitioSinTierra, setSitioSinTierra] = useState(true); // sin puesta a tierra → agrega jabalina
   const [metrosCable, setMetrosCable] = useState(""); // metros de cable solar (default config 20)
   const [metrosTierra, setMetrosTierra] = useState(""); // metros de cable de tierra (default config 20)
@@ -195,7 +198,7 @@ export default function ProyectoFvClient() {
     setProvincia(""); setLocalidad(""); setLat(null); setLng(null);
     setFase("mono"); setConexion("on-grid"); setTecho("chapa"); setInyeccion("cero"); setFraccionDiurna(""); setSitioSinTierra(true); setMetrosCable(""); setMetrosTierra("");
     setKwhMes(""); setPotencia(""); setFacturaLink(""); setFacturaDatos(null); setFacturaRef(null); setFacturaMsg("");
-    setFotos([]); setReferencia(""); setResultado(null); setMsg(""); setArcaMsg(""); setVista("form");
+    setFotos([]); setReferencia(""); setResultado(null); setMsg(""); setArcaMsg(""); setPresupNumero(null); setPresupToken(null); setVista("form");
   }
 
   async function cargarLista() {
@@ -216,6 +219,7 @@ export default function ProyectoFvClient() {
     if (!d.ok) { setMsg("⚠️ No se pudo abrir el proyecto."); return; }
     const p = d.proyecto; const i = p.inputs || {};
     setProyectoId(p.id); setClienteId(p.cliente_id ?? null);
+    setPresupNumero(p.presupuesto_numero || null); setPresupToken(null); // el link se rearma al regenerar
     setNombre(i.cliente?.nombre || ""); setCuit(i.cliente?.cuit || ""); setRazon(i.cliente?.razon_social || "");
     setProvincia(i.ubicacion?.provincia || ""); setLocalidad(i.ubicacion?.localidad || ""); setLat(i.ubicacion?.lat ?? null); setLng(i.ubicacion?.lng ?? null);
     setFase(i.fase || "mono"); setConexion(i.tipo_conexion || "on-grid"); setTecho(i.tipo_techo || "chapa");
@@ -294,10 +298,35 @@ export default function ProyectoFvClient() {
       // Autopoblar la referencia (=nombre de carpeta) con el título normado si el vendedor no puso una.
       let refFinal = referencia.trim();
       if (!refFinal) { refFinal = tituloNormado(r.sistema); setReferencia(refFinal); }
-      if (id) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, sistema: r.sistema, bom: r.bom, referencia: refFinal || null }) });
+      if (id) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, sistema: r.sistema, bom: r.bom, referencia: refFinal || null, estado: "dimensionado" }) });
       setMsg(`✅ Dimensionado listo: ${r.sistema?.kwp} kWp, ${r.sistema?.n_paneles} paneles, cobertura ${Math.round((r.sistema?.cobertura || 0) * 100)}%. Revisá el sistema + la lista de componentes abajo.`);
     } catch (e: any) { setMsg("⚠️ " + e.message); }
     finally { setDimensionando(false); }
+  }
+
+  // 📄 Presupuesto AUTOMÁTICO: la BOM del dimensionado se valoriza con el cotizador (server-side) y se
+  // crea el PREV real (numeración/token/CRM). NO manda mail (regla dura: solo botón explícito de envío).
+  async function generarPresupuesto() {
+    if (!resultado?.bom?.length) { setMsg("⚠️ Dimensioná primero — el presupuesto sale de la lista de componentes."); return; }
+    setGenerandoPresup(true); setMsg("");
+    try {
+      const body = {
+        bom: resultado.bom,
+        sistema: resultado.sistema,
+        proyecto_id: proyectoId,
+        cliente_id: clienteId,
+        tipo_cliente: "cf",
+        cliente: { nombre: nombreFinal(), cuit: cuit.trim() || "", razon_social: razon.trim() || "", localidad: localidad.trim() || "", provincia: provincia || "" },
+      };
+      const r = await safeJson(await fetch("/api/proyecto-presupuesto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+      if (!r.ok) { setMsg("⚠️ No se pudo generar el presupuesto: " + (r.error || "error")); return; }
+      setPresupNumero(r.numero); setPresupToken(r.public_token || null);
+      if (proyectoId) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: proyectoId, presupuesto_numero: r.numero, estado: "cotizado" }) });
+      const falt = Array.isArray(r.faltantes) && r.faltantes.length ? ` ⚠️ Ítems sin precio que quedaron afuera: ${r.faltantes.join(", ")}.` : "";
+      setMsg(`✅ Presupuesto ${r.numero} generado (total ${r.totales?.total != null ? "USD " + Number(r.totales.total).toLocaleString("es-AR", { minimumFractionDigits: 2 }) : "—"}, markup ${r.markup_pct ?? "—"}%).${falt} Lo ves en Ventas → Presupuestos o con "Ver presupuesto".`);
+      cargarLista();
+    } catch (e: any) { setMsg("⚠️ " + e.message); }
+    finally { setGenerandoPresup(false); }
   }
 
   if (vista === "params") return <ParamsFvClient onClose={() => setVista("form")} />;
@@ -320,7 +349,10 @@ export default function ProyectoFvClient() {
                   <td className="px-4 py-2 font-semibold">{p.id}</td>
                   <td className="px-4 py-2">{p.cliente_razon_social || p.cliente_nombre || "—"}</td>
                   <td className="px-4 py-2 text-gray-500">{p.sistema?.kwp ? `${p.sistema.kwp} kWp` : "—"}</td>
-                  <td className="px-4 py-2"><span className="text-[11px] rounded px-2 py-0.5 bg-amber-100 text-amber-700">{p.estado}</span></td>
+                  <td className="px-4 py-2">
+                    <span className={"text-[11px] rounded px-2 py-0.5 " + (p.estado === "cotizado" ? "bg-emerald-100 text-emerald-700" : p.estado === "dimensionado" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700")}>{p.estado}</span>
+                    {p.presupuesto_numero && <span className="ml-1 text-[10px] font-semibold text-emerald-700">{p.presupuesto_numero}</span>}
+                  </td>
                   <td className="px-4 py-2 text-gray-500">{new Date(p.updated_at).toLocaleDateString("es-AR")}</td>
                   <td className="px-4 py-2 text-right whitespace-nowrap"><button onClick={() => abrirProyecto(p.id)} className="text-febo-azul hover:underline text-sm mr-3">✏️ Editar</button><button onClick={() => borrarProyecto(p.id, p.cliente_razon_social || p.cliente_nombre || "")} className="text-red-400 hover:text-red-600 text-sm" title="Eliminar proyecto">🗑</button></td>
                 </tr>
@@ -393,8 +425,16 @@ export default function ProyectoFvClient() {
               <option value="con-inyeccion">Con inyección (100%, sin limitador)</option>
             </select>
             <div className="text-[10px] text-gray-400 mt-0.5">Determina el tamaño del sistema y si lleva limitador.</div></div>
-          <div><label className={lbl}>Fracción diurna (0.2–1)</label><input value={fraccionDiurna} onChange={(e) => setFraccionDiurna(e.target.value)} type="number" min={0.2} max={1} step={0.05} className={inp} placeholder="default 0.5" />
-            <div className="text-[10px] text-gray-400 mt-0.5">¿Qué parte del consumo es de día? Casa 0.5 · comercio diurno 0.7-0.8.</div></div>
+          <div><label className={lbl}>Uso / fracción diurna</label>
+            <select value={["0.5", "0.6", "0.75"].includes(fraccionDiurna) ? fraccionDiurna : (fraccionDiurna ? "custom" : "")} onChange={(e) => { const v = e.target.value; if (v === "custom") return; setFraccionDiurna(v); }} className={inp}>
+              <option value="">Default (residencial 0.5)</option>
+              <option value="0.5">Residencial — 0.5</option>
+              <option value="0.6">Comercio — 0.6</option>
+              <option value="0.75">Industria — 0.75</option>
+              {fraccionDiurna && !["0.5", "0.6", "0.75"].includes(fraccionDiurna) ? <option value="custom">Otro: {fraccionDiurna}</option> : null}
+            </select>
+            <input value={fraccionDiurna} onChange={(e) => setFraccionDiurna(e.target.value)} type="number" min={0.2} max={1} step={0.05} className={inp + " mt-1"} placeholder="o tipeá un valor (0.2–1)" />
+            <div className="text-[10px] text-gray-400 mt-0.5">¿Qué parte del consumo es de día? Gobierna el tamaño en inyección cero.</div></div>
           <div><label className={lbl}>Puesta a tierra del sitio</label>
             <label className="flex items-center gap-1.5 text-sm pt-2 cursor-pointer"><input type="checkbox" checked={sitioSinTierra} onChange={(e) => setSitioSinTierra(e.target.checked)} /> El sitio NO tiene tierra (agregar jabalina)</label></div>
           <div><label className={lbl}>Cable solar (metros)</label><input value={metrosCable} onChange={(e) => setMetrosCable(e.target.value)} type="number" className={inp} placeholder="default 20" /></div>
@@ -475,7 +515,11 @@ export default function ProyectoFvClient() {
               ))}
             </div>
           </div>
-          <div className="text-[11px] text-gray-500">Guardado en el proyecto. Próximo paso (en preparación): precargar el cotizador con esta lista para generar el presupuesto + el informe técnico.</div>
+          <div className="flex items-center gap-2 pt-1">
+            <button onClick={generarPresupuesto} disabled={generandoPresup} title="Valoriza esta lista con el cotizador (precios/markup reales) y crea el presupuesto PREV. No manda mail." className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">{generandoPresup ? "Generando…" : "📄 Generar presupuesto"}</button>
+            {presupNumero && presupToken && <a href={`https://fv.febecos.com/ver-presupuesto?token=${presupToken}`} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 text-sm font-semibold">👁 Ver {presupNumero}</a>}
+            <span className="text-[11px] text-gray-500">El presupuesto usa los precios/markup del cotizador. El informe técnico y la presentación vienen después.</span>
+          </div>
         </div>
       )}
       {msg && <div className="text-sm px-4 py-2 rounded-lg bg-gray-50 border border-gray-200">{msg}</div>}
