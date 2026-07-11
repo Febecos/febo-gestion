@@ -227,6 +227,20 @@ export default function ProyectoFvClient() {
   }
 
   const nombreFinal = () => nombre.trim() || busqCli.trim() || razon.trim() || "Proyecto sin nombre";
+  // Norma de título autogenerado (Guille): "CLIENTE — kWp N×Wp + kW tipo — localidad"
+  // ej "BOUVIER EDGARDO — 3,48 kWp 6×580 + 3kW on-grid — Las Carabelas". Se usa como referencia (=nombre
+  // de carpeta), editable. Requiere el sistema dimensionado (kWp/paneles/inversor).
+  function tituloNormado(sistema: any): string {
+    const cli = (razon.trim() || nombre.trim() || busqCli.trim() || "Proyecto").toUpperCase();
+    const kwp = sistema?.kwp != null ? `${String(sistema.kwp).replace(".", ",")} kWp` : "";
+    const wp = String(sistema?.panel_codigo || "").match(/(\d{3})\s*W/i)?.[1] || "";
+    const paneles = sistema?.n_paneles ? `${sistema.n_paneles}×${wp || "?"}` : "";
+    const inv = sistema?.inversor_kw ? `${sistema.inversor_kw}kW` : "";
+    const tipo = sistema?.tipo || conexion;
+    const loc = localidad.trim();
+    const medio = [kwp, paneles].filter(Boolean).join(" ") + (inv ? ` + ${inv} ${tipo}` : ` ${tipo}`);
+    return [cli, medio.trim(), loc].filter(Boolean).join(" — ").replace(/\s{2,}/g, " ").trim().slice(0, 90);
+  }
   function construirInputs() {
     return {
       cliente: { nombre: nombreFinal(), cuit: cuit.trim() || null, razon_social: razon.trim() || null },
@@ -254,8 +268,8 @@ export default function ProyectoFvClient() {
     try {
       const id = await guardarProyecto();
       if (id) {
-        const ref = referencia.trim() || `PROY-${id}`;
-        setMsg(`✅ Proyecto guardado (#${id}) como "${nombreFinal()}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: PROYECTOS FV\\${nombreFinal()} - ${ref}.`);
+        const carpeta = referencia.trim() || `${nombreFinal()} - PROY-${id}`;
+        setMsg(`✅ Proyecto guardado (#${id}) como "${nombreFinal()}". Lo encontrás en "📋 Proyectos guardados" para reabrir y editar. 📁 Carpeta destino: PROYECTOS FV\\${carpeta}.`);
         cargarLista();
       }
     } catch (e: any) { setMsg("⚠️ " + e.message); }
@@ -271,7 +285,10 @@ export default function ProyectoFvClient() {
       const r = await safeJson(await fetch("/api/dimensionar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ inputs: construirInputs() }) }));
       if (!r.ok) { setMsg("⚠️ No se pudo dimensionar: " + (r.error || "error del motor")); return; }
       setResultado({ sistema: r.sistema, bom: r.bom || [], meta: r.meta || {} });
-      if (id) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, sistema: r.sistema, bom: r.bom }) });
+      // Autopoblar la referencia (=nombre de carpeta) con el título normado si el vendedor no puso una.
+      let refFinal = referencia.trim();
+      if (!refFinal) { refFinal = tituloNormado(r.sistema); setReferencia(refFinal); }
+      if (id) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, sistema: r.sistema, bom: r.bom, referencia: refFinal || null }) });
       setMsg(`✅ Dimensionado listo: ${r.sistema?.kwp} kWp, ${r.sistema?.n_paneles} paneles, cobertura ${Math.round((r.sistema?.cobertura || 0) * 100)}%. Revisá el sistema + la lista de componentes abajo.`);
     } catch (e: any) { setMsg("⚠️ " + e.message); }
     finally { setDimensionando(false); }
@@ -418,9 +435,9 @@ export default function ProyectoFvClient() {
 
       <div className={card}>
         <div className={cardTit}>Guardado</div>
-        <div><label className={lbl}>Referencia (nombre de la carpeta en COTIZADOS)</label>
-          <input value={referencia} onChange={(e) => setReferencia(e.target.value)} className={inp} placeholder={`Ej. "FV Escuela" — default PROY-${proyectoId || "…"}`} />
-          <div className="text-[10px] text-gray-400 mt-0.5">La carpeta destino será <b>PROYECTOS FV\{(nombre.trim() || busqCli.trim() || "cliente")} - {referencia.trim() || (proyectoId ? "PROY-" + proyectoId : "PROY-…")}</b>. El archivo lo baja el sync automático.</div></div>
+        <div><label className={lbl}>Referencia = nombre de la carpeta (se autogenera al dimensionar; editable)</label>
+          <input value={referencia} onChange={(e) => setReferencia(e.target.value)} className={inp} placeholder="Se completa al Dimensionar (ej. BOUVIER EDGARDO — 3,48 kWp 6×580 + 3kW on-grid — Las Carabelas)" />
+          <div className="text-[10px] text-gray-400 mt-0.5">La carpeta destino será <b>PROYECTOS FV\{referencia.trim() || `${(nombre.trim() || busqCli.trim() || "cliente")} - ${proyectoId ? "PROY-" + proyectoId : "PROY-…"}`}</b>. Editá la referencia para que coincida con una carpeta ya existente y se guarda ahí. El archivo lo baja el sync automático.</div></div>
       </div>
 
       {resultado && (
