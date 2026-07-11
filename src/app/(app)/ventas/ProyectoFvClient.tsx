@@ -142,9 +142,25 @@ export default function ProyectoFvClient() {
     setBusqLoc(""); setMatchesLoc([]);
   }
 
+  // CONSUMO representativo = promedio de los últimos 12 MESES CERRADOS (regla de Guille): se excluye
+  // el período en curso de la factura (parcial/último del historial) y se promedian los 12 previos.
+  // Bouvier: 13 barras, (3460−196)/12 = 272 = lo que dice la factura. NO usar el mes actual ni ÷13.
+  function promedio12(meses: { kwh: number }[] | number[] | undefined): number | null {
+    if (!Array.isArray(meses) || !meses.length) return null;
+    const vals = meses.map((x: any) => Number(typeof x === "object" ? x.kwh : x)).filter((v) => !isNaN(v) && v > 0);
+    if (!vals.length) return null;
+    const cerrados = vals.length >= 2 ? vals.slice(0, -1) : vals;  // excluir el período en curso (último)
+    const ult12 = cerrados.slice(-12);                              // hasta 12 meses cerrados más recientes
+    return Math.round(ult12.reduce((a, b) => a + b, 0) / ult12.length);
+  }
+
   function aplicarFactura(d: FacturaDatos) {
     setFacturaDatos(d);
-    if (d.kwh_mes != null) setKwhMes(String(d.kwh_mes));
+    // Consumo para dimensionar: promedio 12 meses cerrados del historial; el kwh_mes del período
+    // (mes en curso, ej. 196) solo si no hay historial.
+    const prom12 = promedio12(d.meses_detalle?.length ? d.meses_detalle : d.kwh_meses);
+    if (prom12 != null) setKwhMes(String(prom12));
+    else if (d.kwh_mes != null) setKwhMes(String(d.kwh_mes));
     if (d.potencia_contratada_kw != null) setPotencia(String(d.potencia_contratada_kw));
     const partes = [d.distribuidora && `Distribuidora: ${d.distribuidora}`, d.tarifa && `Tarifa: ${d.tarifa}`, d.periodo && `Período: ${d.periodo}`].filter(Boolean);
     setFacturaMsg("✓ Factura leída. " + (partes.join(" · ") || "Datos cargados."));
@@ -477,10 +493,10 @@ export default function ProyectoFvClient() {
           {facturaDatos && facturaDatos.kwh_meses.length > 0 && (() => {
             const det = facturaDatos.meses_detalle && facturaDatos.meses_detalle.length ? facturaDatos.meses_detalle : facturaDatos.kwh_meses.map((k) => ({ mes: null, kwh: k }));
             const max = Math.max(...det.map((d) => d.kwh), 1);
-            const prom = Math.round(det.reduce((a, d) => a + d.kwh, 0) / det.length);
+            const prom = promedio12(det); // últimos 12 meses CERRADOS (excluye el período en curso) = el promedio de la factura
             return (
               <div className="border-t border-gray-100 pt-2">
-                <div className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Consumo mensual histórico (de la factura) · promedio {prom} kWh</div>
+                <div className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Consumo mensual histórico (de la factura) · promedio últimos 12 meses cerrados: {prom} kWh</div>
                 <div className="flex items-end gap-1" style={{ height: 72 }}>
                   {det.map((d, i) => (
                     <div key={i} className="flex-1 h-full flex flex-col items-center justify-end" title={`${d.mes || "mes " + (i + 1)}: ${d.kwh} kWh`}>
