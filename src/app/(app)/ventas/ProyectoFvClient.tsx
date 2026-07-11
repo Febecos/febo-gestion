@@ -298,7 +298,7 @@ export default function ProyectoFvClient() {
       // Autopoblar la referencia (=nombre de carpeta) con el título normado si el vendedor no puso una.
       let refFinal = referencia.trim();
       if (!refFinal) { refFinal = tituloNormado(r.sistema); setReferencia(refFinal); }
-      if (id) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, sistema: r.sistema, bom: r.bom, referencia: refFinal || null, estado: "dimensionado" }) });
+      if (id) await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, sistema: r.sistema, bom: r.bom, meta: r.meta || null, referencia: refFinal || null, estado: "dimensionado" }) });
       setMsg(`✅ Dimensionado listo: ${r.sistema?.kwp} kWp, ${r.sistema?.n_paneles} paneles, cobertura ${Math.round((r.sistema?.cobertura || 0) * 100)}%. Revisá el sistema + la lista de componentes abajo.`);
     } catch (e: any) { setMsg("⚠️ " + e.message); }
     finally { setDimensionando(false); }
@@ -518,6 +518,7 @@ export default function ProyectoFvClient() {
           <div className="flex items-center gap-2 pt-1">
             <button onClick={generarPresupuesto} disabled={generandoPresup} title="Valoriza esta lista con el cotizador (precios/markup reales) y crea el presupuesto PREV. No manda mail." className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">{generandoPresup ? "Generando…" : "📄 Generar presupuesto"}</button>
             {presupNumero && presupToken && <a href={`https://fv.febecos.com/ver-presupuesto?token=${presupToken}`} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 text-sm font-semibold">👁 Ver {presupNumero}</a>}
+            {proyectoId && <a href={`/informe-fv/${proyectoId}`} target="_blank" rel="noreferrer" title="Propuesta de Cálculos: informe técnico con consumo vs generación mensual, validación del inversor y componentes. Imprimir/Guardar PDF en la carpeta del proyecto." className="px-4 py-2 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold">📋 Informe técnico</a>}
             <span className="text-[11px] text-gray-500">El presupuesto usa los precios/markup del cotizador. El informe técnico y la presentación vienen después.</span>
           </div>
         </div>

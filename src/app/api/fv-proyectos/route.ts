@@ -18,6 +18,7 @@ async function migrate(sql: any) {
     factura_ref JSONB, presupuesto_numero TEXT, estado TEXT DEFAULT 'borrador',
     created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())`.catch(() => {});
   await sql`ALTER TABLE fv_proyectos ADD COLUMN IF NOT EXISTS referencia TEXT`.catch(() => {});
+  await sql`ALTER TABLE fv_proyectos ADD COLUMN IF NOT EXISTS meta JSONB`.catch(() => {});
 }
 
 export async function GET(req: NextRequest) {
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
     const inputs = b.inputs ? JSON.stringify(b.inputs) : null;
     const bom = b.bom ? JSON.stringify(b.bom) : null;
     const sistema = b.sistema ? JSON.stringify(b.sistema) : null;
+    const meta = b.meta ? JSON.stringify(b.meta) : null;
     const factura_ref = b.factura_ref ? JSON.stringify(b.factura_ref) : null;
     const presupuesto_numero = b.presupuesto_numero ? String(b.presupuesto_numero) : null;
     const estado = b.estado ? String(b.estado) : "borrador";
@@ -86,6 +88,7 @@ export async function POST(req: NextRequest) {
           inputs = COALESCE(${inputs}::jsonb, inputs),
           bom = COALESCE(${bom}::jsonb, bom),
           sistema = COALESCE(${sistema}::jsonb, sistema),
+          meta = COALESCE(${meta}::jsonb, meta),
           factura_ref = COALESCE(${factura_ref}::jsonb, factura_ref),
           presupuesto_numero = COALESCE(${presupuesto_numero}, presupuesto_numero),
           referencia = COALESCE(${referencia}, referencia),
@@ -96,8 +99,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, id: r[0].id });
     }
     const r = await sql`
-      INSERT INTO fv_proyectos (cliente_id, vendedor, inputs, bom, sistema, factura_ref, presupuesto_numero, referencia, estado)
-      VALUES (${cliente_id}, ${vendedor}, ${inputs}::jsonb, ${bom}::jsonb, ${sistema}::jsonb, ${factura_ref}::jsonb, ${presupuesto_numero}, ${referencia}, ${estado})
+      INSERT INTO fv_proyectos (cliente_id, vendedor, inputs, bom, sistema, meta, factura_ref, presupuesto_numero, referencia, estado)
+      VALUES (${cliente_id}, ${vendedor}, ${inputs}::jsonb, ${bom}::jsonb, ${sistema}::jsonb, ${meta}::jsonb, ${factura_ref}::jsonb, ${presupuesto_numero}, ${referencia}, ${estado})
       RETURNING id`;
     return NextResponse.json({ ok: true, id: r[0].id });
   } catch (e: any) {
