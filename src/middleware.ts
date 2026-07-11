@@ -28,6 +28,15 @@ export async function middleware(req: NextRequest) {
 
   if (PUBLIC.some((p) => pathname.startsWith(p))) return NextResponse.next();
 
+  // Endpoints server↔server: pasan el middleware SOLO si traen Authorization Bearer — la validación
+  // REAL del secret la hace el propio endpoint (FV_BRIDGE_SECRET/INTERNAL_SERVICE_SECRET) y devuelve
+  // su propio 401 si no coincide. Sin esto, el middleware cortaba con 401 ANTES de llegar al endpoint
+  // (root cause del 401 de FEBOCAR: el secret podía estar bien, el middleware nunca lo dejaba entrar).
+  const S2S = ["/api/clientes/upsert"];
+  if (S2S.some((p) => pathname.startsWith(p)) && (req.headers.get("authorization") || "").startsWith("Bearer ")) {
+    return NextResponse.next();
+  }
+
   const token = req.cookies.get("fg_token")?.value;
   const secret = process.env.FG_JWT_SECRET;
   if (token && secret) {
