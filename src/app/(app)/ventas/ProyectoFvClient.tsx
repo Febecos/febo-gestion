@@ -50,6 +50,9 @@ export default function ProyectoFvClient() {
   const [fase, setFase] = useState<"mono" | "tri">("mono");
   const [conexion, setConexion] = useState<"on-grid" | "off-grid" | "hibrido">("on-grid");
   const [techo, setTecho] = useState<"chapa" | "teja" | "losa" | "suelo">("chapa");
+  const [inyeccion, setInyeccion] = useState<"cero" | "futuro">("cero"); // default: inyección cero (todo proyecto lleva limitador)
+  const [metrosCable, setMetrosCable] = useState(""); // metros de cable solar (default motor 50)
+  const [metrosTierra, setMetrosTierra] = useState(""); // metros de cable de tierra (default motor 20)
   // Consumo / factura
   const [kwhMes, setKwhMes] = useState("");
   const [potencia, setPotencia] = useState("");
@@ -188,7 +191,7 @@ export default function ProyectoFvClient() {
   function nuevo() {
     setProyectoId(null); setClienteId(null); setNombre(""); setCuit(""); setRazon("");
     setProvincia(""); setLocalidad(""); setLat(null); setLng(null);
-    setFase("mono"); setConexion("on-grid"); setTecho("chapa");
+    setFase("mono"); setConexion("on-grid"); setTecho("chapa"); setInyeccion("cero"); setMetrosCable(""); setMetrosTierra("");
     setKwhMes(""); setPotencia(""); setFacturaLink(""); setFacturaDatos(null); setFacturaRef(null); setFacturaMsg("");
     setFotos([]); setReferencia(""); setResultado(null); setMsg(""); setArcaMsg(""); setVista("form");
   }
@@ -214,6 +217,7 @@ export default function ProyectoFvClient() {
     setNombre(i.cliente?.nombre || ""); setCuit(i.cliente?.cuit || ""); setRazon(i.cliente?.razon_social || "");
     setProvincia(i.ubicacion?.provincia || ""); setLocalidad(i.ubicacion?.localidad || ""); setLat(i.ubicacion?.lat ?? null); setLng(i.ubicacion?.lng ?? null);
     setFase(i.fase || "mono"); setConexion(i.tipo_conexion || "on-grid"); setTecho(i.tipo_techo || "chapa");
+    setInyeccion(i.inyeccion === "futuro" ? "futuro" : "cero"); setMetrosCable(i.metros_cable != null ? String(i.metros_cable) : ""); setMetrosTierra(i.metros_tierra != null ? String(i.metros_tierra) : "");
     setKwhMes(i.consumo?.kwh_mes != null ? String(i.consumo.kwh_mes) : ""); setPotencia(i.potencia_contratada_kw != null ? String(i.potencia_contratada_kw) : "");
     setFacturaDatos(p.factura_ref?.datos || null); setFacturaRef(p.factura_ref?.archivo || null); setFacturaLink(p.factura_ref?.link || "");
     setFotos(Array.isArray(i.fotos) ? i.fotos : []);
@@ -228,6 +232,9 @@ export default function ProyectoFvClient() {
       cliente: { nombre: nombreFinal(), cuit: cuit.trim() || null, razon_social: razon.trim() || null },
       ubicacion: { provincia: provincia || null, localidad: localidad.trim() || null, lat, lng },
       fase, tipo_conexion: conexion, tipo_techo: techo,
+      inyeccion, // 'cero' (default, con limitador) | 'futuro'
+      metros_cable: metrosCable ? Number(metrosCable) : null,
+      metros_tierra: metrosTierra ? Number(metrosTierra) : null,
       consumo: { kwh_mes: kwhMes ? Number(kwhMes) : (facturaDatos?.kwh_mes ?? null), kwh_meses: facturaDatos?.kwh_meses || [], meses_detalle: facturaDatos?.meses_detalle || [] },
       potencia_contratada_kw: potencia ? Number(potencia) : (facturaDatos?.potencia_contratada_kw ?? null),
       fotos,
@@ -355,6 +362,16 @@ export default function ProyectoFvClient() {
           <div><label className={lbl}>Conexión</label><select value={conexion} onChange={(e) => setConexion(e.target.value as any)} className={inp}><option value="on-grid">On-grid</option><option value="off-grid">Off-grid</option><option value="hibrido">Híbrido</option></select></div>
           <div><label className={lbl}>Tipo de techo</label><select value={techo} onChange={(e) => setTecho(e.target.value as any)} className={inp}><option value="chapa">Chapa</option><option value="teja">Teja</option><option value="losa">Losa</option><option value="suelo">Suelo</option></select></div>
         </div>
+        <div className="grid grid-cols-3 gap-3 border-t border-gray-100 pt-3">
+          <div><label className={lbl}>Inyección a la red</label>
+            <div className="flex gap-3 text-sm pt-1.5">
+              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="inyeccion" checked={inyeccion === "cero"} onChange={() => setInyeccion("cero")} /> Cero (con limitador)</label>
+              <label className="flex items-center gap-1 cursor-pointer"><input type="radio" name="inyeccion" checked={inyeccion === "futuro"} onChange={() => setInyeccion("futuro")} /> A futuro</label>
+            </div>
+            <div className="text-[10px] text-gray-400 mt-0.5">Default: inyección cero (todo proyecto lleva limitador).</div></div>
+          <div><label className={lbl}>Cable solar (metros)</label><input value={metrosCable} onChange={(e) => setMetrosCable(e.target.value)} type="number" className={inp} placeholder="default 50" /></div>
+          <div><label className={lbl}>Cable de tierra (metros)</label><input value={metrosTierra} onChange={(e) => setMetrosTierra(e.target.value)} type="number" className={inp} placeholder="default 20" /></div>
+        </div>
       </div>
 
       <div className={card}>
@@ -422,7 +439,11 @@ export default function ProyectoFvClient() {
             <div className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Lista de componentes (BOM) — {resultado.bom.length} ítems (sin precio; el cotizador los valoriza)</div>
             <div className="max-h-52 overflow-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
               {resultado.bom.map((b, i) => (
-                <div key={i} className="flex justify-between px-3 py-1.5 text-[12px]"><span className="font-mono">{b.codigo}{b.origen === "manual" ? <span className="ml-1 text-[9px] text-amber-600">manual</span> : null}</span><span className="text-gray-500">×{b.cantidad}</span></div>
+                <div key={i} className="flex items-center gap-2 px-3 py-1.5 text-[12px]">
+                  <span className="text-gray-500 w-8 shrink-0">×{b.cantidad}</span>
+                  <span className="flex-1 text-gray-700">{b.descripcion_corta || b.descripcion || <span className="text-gray-400">—</span>}</span>
+                  <span className="font-mono text-[10px] text-gray-400 shrink-0">{b.codigo}{b.origen === "manual" ? <span className="ml-1 text-amber-600">manual</span> : null}</span>
+                </div>
               ))}
             </div>
           </div>

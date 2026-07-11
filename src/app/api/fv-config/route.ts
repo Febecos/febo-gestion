@@ -15,9 +15,9 @@ const PARAM_KEYS = [
   // Validación de tensión
   "temp_diseno_frio", "temp_diseno_calor", "strings_por_mppt",
   // Armado del BOM
-  "panel_default", "estructura_default", "paneles_por_estructura", "cable_bobinas_default", "factor_proteccion", "loss_pvgis",
+  "panel_default", "estructura_default", "paneles_por_estructura", "metros_cable_default", "metros_tierra_default", "factor_proteccion", "loss_pvgis",
   // Códigos de ítems de norma
-  "codigo_cable_tierra", "codigo_jabalina", "codigo_limitador_tri", "codigo_limitador_mono",
+  "codigo_cable_tierra", "codigo_cable_solar_metro", "codigo_jabalina", "codigo_limitador_tri", "codigo_limitador_mono",
 ] as const;
 
 // Defaults (espejo de motor/config.default.mjs) para mostrar aunque fv_config aún no los tenga.
@@ -25,8 +25,8 @@ const DEFAULTS: Record<string, any> = {
   cobertura_objetivo: 1.0, ratio_min: 1.15, ratio_max: 1.20,
   autonomia_dias: 2, dod_litio: 90, dod_plomo: 50, factor_autonomia_default: 1.0, pr_offgrid: 0.72, sobredim_paneles: 1.3, margen_inversor: 1.2,
   temp_diseno_frio: -10, temp_diseno_calor: 65, strings_por_mppt: 2,
-  panel_default: "AS-7M144N-HC-580W", estructura_default: "chapa-inclinada", paneles_por_estructura: 4, cable_bobinas_default: 2, factor_proteccion: 1.25, loss_pvgis: 14,
-  codigo_cable_tierra: "CAB-TIE", codigo_jabalina: "JAB", codigo_limitador_tri: "TPM-E", codigo_limitador_mono: "SPM-E",
+  panel_default: "AS-7M144N-HC-580W", estructura_default: "chapa-inclinada", paneles_por_estructura: 4, metros_cable_default: 50, metros_tierra_default: 20, factor_proteccion: 1.25, loss_pvgis: 14,
+  codigo_cable_tierra: "CAB-TIE", codigo_cable_solar_metro: "CAB-SOL", codigo_jabalina: "JAB", codigo_limitador_tri: "TPM-E", codigo_limitador_mono: "SPM-E",
 };
 
 async function ensureRow(sql: any) {
