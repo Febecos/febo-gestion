@@ -150,15 +150,31 @@ export default function ProyectoFvClient() {
     setFacturaMsg("✓ Factura leída. " + (partes.join(" · ") || "Datos cargados."));
   }
 
+  // AUTO-PERSISTIR la lectura al proyecto apenas llega (bug: si el vendedor no re-guardaba, la lectura
+  // se perdía — factura_ref.datos quedaba null en la DB y el informe no tenía el consumo mensual).
+  // Usa los VALORES locales (datos/archivo recién obtenidos), no el state (stale en este tick).
+  async function persistirFactura(datos: FacturaDatos | null, archivo: { url?: string; nombre?: string } | null, link: string | null) {
+    if (!proyectoId) return; // sin proyecto todavía: el próximo Guardar/Dimensionar la lleva
+    try {
+      const inputsConFactura = {
+        ...construirInputs(),
+        consumo: { kwh_mes: datos?.kwh_mes ?? (kwhMes ? Number(kwhMes) : null), kwh_meses: datos?.kwh_meses || [], meses_detalle: datos?.meses_detalle || [] },
+        potencia_contratada_kw: datos?.potencia_contratada_kw ?? (potencia ? Number(potencia) : null),
+      };
+      await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: proyectoId, inputs: inputsConFactura, factura_ref: { archivo, datos, link } }) });
+    } catch { /* best-effort: el Guardar explícito la lleva igual */ }
+  }
+
   async function subirFactura(f?: File) {
     if (!f) return;
     setLeyendo(true); setFacturaMsg("⏳ Leyendo la factura…");
     try {
       const { b64, tipo } = await prepararArchivo(f);
       const up = await safeJson(await fetch("/api/adjunto-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: f.name, content_type: tipo, data_b64: b64 }) }));
-      if (up.ok && up.url) setFacturaRef({ url: up.url, nombre: f.name });
+      const archivo = up.ok && up.url ? { url: up.url, nombre: f.name } : null;
+      if (archivo) setFacturaRef(archivo);
       const r = await safeJson(await fetch("/api/leer-factura-luz", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64, tipo }) }));
-      if (r.ok && r.data) aplicarFactura(r.data);
+      if (r.ok && r.data) { aplicarFactura(r.data); await persistirFactura(r.data, archivo, null); }
       else if (r.sin_key) setFacturaMsg("⚠️ Lectura automática no disponible (falta GEMINI_API_KEY). Cargá el consumo a mano.");
       else setFacturaMsg("⚠️ No se pudo leer la factura: " + (r.error || "error") + ". Cargá el consumo a mano.");
     } catch (e: any) { setFacturaMsg("⚠️ " + e.message); }
@@ -171,10 +187,12 @@ export default function ProyectoFvClient() {
       const r = await safeJson(await fetch("/api/leer-factura-luz", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ link: facturaLink.trim() }) }));
       if (r.ok && r.data) {
         aplicarFactura(r.data);
+        let archivo: { url?: string; nombre?: string } | null = null;
         if (r.archivo?.b64) {
           const up = await safeJson(await fetch("/api/adjunto-upload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filename: "factura-luz", content_type: r.archivo.tipo, data_b64: r.archivo.b64 }) }));
-          if (up.ok && up.url) setFacturaRef({ url: up.url, nombre: "factura-luz (del link)" });
+          if (up.ok && up.url) { archivo = { url: up.url, nombre: "factura-luz (del link)" }; setFacturaRef(archivo); }
         }
+        await persistirFactura(r.data, archivo, facturaLink.trim() || null);
       } else if (r.link_inaccesible) setFacturaMsg("⚠️ " + (r.error || "El link no es accesible.") + " Subí el archivo en su lugar.");
       else setFacturaMsg("⚠️ " + (r.error || "No se pudo leer.") + " Subí el archivo en su lugar.");
     } catch (e: any) { setFacturaMsg("⚠️ " + e.message); }
@@ -463,11 +481,13 @@ export default function ProyectoFvClient() {
             return (
               <div className="border-t border-gray-100 pt-2">
                 <div className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Consumo mensual histórico (de la factura) · promedio {prom} kWh</div>
-                <div className="flex items-end gap-1 h-16">
+                <div className="flex items-end gap-1" style={{ height: 72 }}>
                   {det.map((d, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center justify-end" title={`${d.mes || "mes " + (i + 1)}: ${d.kwh} kWh`}>
-                      <div className="w-full rounded-t bg-amber-400" style={{ height: `${Math.max(6, (d.kwh / max) * 100)}%` }} />
-                      <div className="text-[8px] text-gray-400 mt-0.5 truncate w-full text-center">{d.mes ? d.mes.slice(0, 5) : d.kwh}</div>
+                    <div key={i} className="flex-1 h-full flex flex-col items-center justify-end" title={`${d.mes || "mes " + (i + 1)}: ${d.kwh} kWh`}>
+                      <div className="text-[8px] text-gray-500 leading-none mb-0.5">{d.kwh}</div>
+                      {/* h-full en el wrapper: sin altura definida, la barra con height % colapsaba a 0 (bug del gráfico vacío) */}
+                      <div className="w-full rounded-t bg-amber-400" style={{ height: `${Math.max(4, (d.kwh / max) * 78)}%` }} />
+                      <div className="text-[8px] text-gray-400 mt-0.5 truncate w-full text-center">{d.mes ? d.mes.slice(0, 5) : i + 1}</div>
                     </div>
                   ))}
                 </div>
