@@ -16,7 +16,15 @@ export default function InformeFv({ params }: { params: { id: string } }) {
   const [err, setErr] = useState("");
   useEffect(() => {
     fetch("/api/fv-proyectos?id=" + params.id).then((r) => r.json())
-      .then((d) => (d.ok ? setP(d.proyecto) : setErr(d.error || "no encontrado")))
+      .then((d) => {
+        if (!d.ok) { setErr(d.error || "no encontrado"); return; }
+        setP(d.proyecto);
+        // NORMA nombre de PDF: "{NÚMERO} - {cliente} - Informe tecnico" (el título del documento es el
+        // nombre que sugiere el navegador al Guardar como PDF — nunca "FEBO-GESTION.pdf").
+        const cli = d.proyecto?.inputs?.cliente?.razon_social || d.proyecto?.inputs?.cliente?.nombre || "";
+        const num = d.proyecto?.presupuesto_numero || `PROY-${d.proyecto?.id}`;
+        document.title = `${num} - ${cli} - Informe tecnico`.replace(/[/\\:*?"<>|]/g, " ").replace(/\s{2,}/g, " ").trim();
+      })
       .catch((e) => setErr(e.message));
   }, [params.id]);
 

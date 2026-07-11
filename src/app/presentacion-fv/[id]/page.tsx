@@ -32,6 +32,10 @@ export default function PresentacionFv({ params }: { params: { id: string } }) {
       .then(async (d) => {
         if (!d.ok) { setErr(d.error || "no encontrado"); return; }
         setP(d.proyecto);
+        // NORMA nombre de PDF: "{NÚMERO} - {cliente} - Propuesta" (nunca "FEBO-GESTION.pdf").
+        const cli = d.proyecto?.inputs?.cliente?.razon_social || d.proyecto?.inputs?.cliente?.nombre || "";
+        const num = d.proyecto?.presupuesto_numero || `PROY-${d.proyecto?.id}`;
+        document.title = `${num} - ${cli} - Propuesta`.replace(/[/\\:*?"<>|]/g, " ").replace(/\s{2,}/g, " ").trim();
         if (d.proyecto?.presupuesto_numero) {
           try {
             const pr = await (await fetch("/api/presupuestos?detalle=" + encodeURIComponent(d.proyecto.presupuesto_numero))).json();
