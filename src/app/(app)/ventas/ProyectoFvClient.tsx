@@ -86,6 +86,11 @@ export default function ProyectoFvClient() {
   // Extras del wizard que el form técnico no tiene como campo: respaldo (P3) y off_grid (P4)
   const [respaldoExtra, setRespaldoExtra] = useState<any>(null);
   const [offgridExtra, setOffgridExtra] = useState<any>(null);
+  // Intención off-grid (define sizing Y ahorro): backup = mantiene red, canasto crítico, ahorro variable ·
+  // desconexión = se independiza, lista completa de equipos, ahorro = factura completa.
+  const [intencionOG, setIntencionOG] = useState<"backup" | "desconexion">("backup");
+  // Editor de cargas: null = usar canasto default del motor (sin mandar cargas). Al abrirlo se precarga.
+  const [cargasList, setCargasList] = useState<{ nombre: string; potencia_w: number; horas_dia: number; cantidad: number }[] | null>(null);
   const [msg, setMsg] = useState("");
   const [proyectoId, setProyectoId] = useState<number | null>(null);
 
@@ -276,6 +281,10 @@ export default function ProyectoFvClient() {
     setKwhMes(i.consumo?.kwh_mes != null ? String(i.consumo.kwh_mes) : ""); setPotencia(i.potencia_contratada_kw != null ? String(i.potencia_contratada_kw) : "");
     setFacturaDatos(p.factura_ref?.datos || null); setFacturaRef(p.factura_ref?.archivo || null); setFacturaLink(p.factura_ref?.link || "");
     setFotos(Array.isArray(i.fotos) ? i.fotos : []);
+    setIntencionOG(i.off_grid?.intencion === "desconexion" ? "desconexion" : "backup");
+    setOffgridExtra(i.off_grid ? { ...(i.off_grid.factor_autonomia != null ? { factor_autonomia: i.off_grid.factor_autonomia } : {}), ...(i.off_grid.autonomia_dias != null ? { autonomia_dias: i.off_grid.autonomia_dias } : {}) } : null);
+    setRespaldoExtra(i.respaldo || null);
+    setCargasList(Array.isArray(i.cargas) && i.cargas.length ? i.cargas : null);
     setReferencia(p.referencia || "");
     setResultado(p.sistema ? { sistema: p.sistema, bom: Array.isArray(p.bom) ? p.bom : [], meta: {} } : null);
     setFacturaMsg(""); setArcaMsg(""); setMsg(""); setVista("form");
@@ -312,10 +321,23 @@ export default function ProyectoFvClient() {
       potencia_contratada_kw: potencia ? Number(potencia) : (facturaDatos?.potencia_contratada_kw ?? null),
       // Extras del wizard criollo (P3 respaldo / P4 autonomía) — passthrough al motor; null si no aplican.
       ...(respaldoExtra ? { respaldo: respaldoExtra } : {}),
-      ...(offgridExtra ? { off_grid: offgridExtra } : {}),
+      // Off-grid: la INTENCIÓN define sizing y ahorro (backup=canasto+ahorro variable ·
+      // desconexión=lista completa+ahorro factura completa) + overrides del wizard (P4).
+      ...(conexion === "off-grid" ? { off_grid: { intencion: intencionOG, ...(offgridExtra || {}) } } : offgridExtra ? { off_grid: offgridExtra } : {}),
+      // Cargas editadas (canasto ajustado o lista completa). null = el motor usa su canasto default.
+      ...(cargasList && cargasList.length ? { cargas: cargasList } : {}),
       fotos,
     };
   }
+
+  // Canasto crítico default (espejo de config.canasto_critico del motor) — precarga del editor.
+  const CANASTO_DEFAULT = [
+    { nombre: "Heladera con freezer", potencia_w: 150, horas_dia: 8, cantidad: 1 },
+    { nombre: "Iluminación LED (8-10 luces)", potencia_w: 80, horas_dia: 6, cantidad: 1 },
+    { nombre: "Router/comunicación", potencia_w: 30, horas_dia: 24, cantidad: 1 },
+    { nombre: "TV + tomas esenciales", potencia_w: 150, horas_dia: 5, cantidad: 1 },
+    { nombre: "Bomba de agua", potencia_w: 750, horas_dia: 0.5, cantidad: 1 },
+  ];
 
   // 🗣️→🔧 Traducción criollo→técnico (tabla de CÁLCULOS — MAPEO-CRIOLLO-TECNICO.md; no inventar acá).
   function aplicarWizard() {
@@ -329,17 +351,19 @@ export default function ProyectoFvClient() {
     else if (w.p2 === "permiso") { setConexion("on-grid"); setInyeccion("con-inyeccion"); }
     else if (w.p2 === "respaldo") { setConexion("hibrido"); setInyeccion("cero"); }
     else if (w.p2 === "independizarme") { setConexion("off-grid"); }
-    // P3 (solo respaldo 🔋) · qué sigue andando → respaldo {fracción del diario, horas}
+    // P3 (solo respaldo 🔋) · qué sigue andando → cargas (canasto) + días de respaldo
     if (w.p2 === "respaldo" && w.p3) {
-      const frac = w.p3 === "basico" ? 0.3 : w.p3 === "toda" ? 1.0 : 0.5;
-      const horas = w.p3h === "24" ? 24 : 12;
-      const kwhDia = facturaDatos?.kwh_meses?.length ? null : (kwhMes ? Number(kwhMes) / 30 : null);
-      setRespaldoExtra({ consumo_critico_frac: frac, horas, ...(kwhDia ? { consumo_diario_kwh: kwhDia * frac } : {}) });
+      if (w.p3 === "basico") { setCargasList(null); setRespaldoExtra(null); }          // canasto default del motor, 1 día
+      else if (w.p3 === "basico-mas") { setCargasList(CANASTO_DEFAULT.map((c) => ({ ...c }))); setRespaldoExtra(null); } // abre editor precargado
+      else if (w.p3 === "corte-largo") { setCargasList(null); setRespaldoExtra({ dias: 2 }); }
     } else if (w.p2 !== "respaldo") setRespaldoExtra(null);
-    // P4 (solo off-grid 🏝️) · días nublados → factor_autonomia (los días salen de config, default 2)
-    if (w.p2 === "independizarme" && w.p4) {
-      setOffgridExtra({ factor_autonomia: w.p4 === "con-respaldo" ? 0.75 : 1.0 });
-    } else if (w.p2 !== "independizarme") setOffgridExtra(null);
+    // P4 (solo off-grid 🏝️) · días nublados → autonomia_dias (override por proyecto) + factor
+    if (w.p2 === "independizarme") {
+      setIntencionOG("backup");
+      if (w.p4 === "con-respaldo") setOffgridExtra({ factor_autonomia: 0.75, autonomia_dias: 2 });
+      else if (w.p4 === "brava") setOffgridExtra({ factor_autonomia: 1.0, autonomia_dias: 3 });
+      else if (w.p4) setOffgridExtra({ factor_autonomia: 1.0, autonomia_dias: 2 });
+    } else setOffgridExtra(null);
     // P5 · techo → estructura + inclinación
     if (w.p5 === "chapa-inclinada") { setTecho("chapa"); setInclinacion("30"); }
     else if (w.p5 === "chapa-plana") { setTecho("chapa"); setInclinacion("10"); }
@@ -538,45 +562,49 @@ export default function ProyectoFvClient() {
             <div><label className={lbl}>1 · ¿Dónde se usa la luz?</label>
               <select value={wiz.p1 || ""} onChange={(e) => setWiz({ ...wiz, p1: e.target.value })} className={inp}>
                 <option value="">—</option><option value="casa">🏠 Casa (de día poco)</option><option value="campo">🌾 Campo / casa quinta (uso parejo)</option><option value="comercio">🏪 Comercio / oficina (abre de día)</option><option value="industria">🏭 Industria / consumo fuerte de día</option>
-              </select></div>
+              </select>
+              <div className="text-[10px] text-gray-500 mt-0.5">Los paneles generan de día. Si la luz se usa sobre todo de día, aprovechás casi todo lo que generan y el sistema te rinde más. Si se usa más de noche, el sistema se arma más chico para no regalar energía.</div></div>
             <div><label className={lbl}>2 · ¿Qué querés hacer con la red?</label>
               <select value={wiz.p2 || ""} onChange={(e) => setWiz({ ...wiz, p2: e.target.value })} className={inp}>
                 <option value="">—</option><option value="bajar">💡 Bajar la factura, sin vueltas</option><option value="vender-futuro">🔄 Bajar y más adelante vender excedente</option><option value="permiso">📜 Ya tengo/hago el permiso de inyección</option><option value="respaldo">🔋 Que no se me corte nunca (respaldo)</option><option value="independizarme">🏝️ Independizarme / no llega la red</option>
-              </select></div>
-            {wiz.p2 === "respaldo" && (<>
-              <div><label className={lbl}>3 · ¿Qué querés que siga andando?</label>
+              </select>
+              <div className="text-[10px] text-gray-500 mt-0.5">¿Buscás pagar menos luz, tener luz cuando se corta, o directamente arreglarte solo sin la compañía? Cada camino lleva un equipo distinto.</div></div>
+            {wiz.p2 === "respaldo" && (
+              <div><label className={lbl}>3 · ¿Qué querés que siga andando y cuánto?</label>
                 <select value={wiz.p3 || ""} onChange={(e) => setWiz({ ...wiz, p3: e.target.value })} className={inp}>
-                  <option value="">—</option><option value="basico">Lo básico: heladera, luces, wifi (30%)</option><option value="media">Media casa (50%)</option><option value="toda">Toda la casa (100%)</option>
-                </select></div>
-              <div><label className={lbl}>3b · ¿Y si el corte es largo?</label>
-                <select value={wiz.p3h || "12"} onChange={(e) => setWiz({ ...wiz, p3h: e.target.value })} className={inp}>
-                  <option value="12">12 horas está bien</option><option value="24">Que aguante 24 horas</option>
-                </select></div>
-            </>)}
+                  <option value="">—</option><option value="basico">Lo básico: heladera, luces, wifi</option><option value="basico-mas">Lo básico + algo más (elegís del editor)</option><option value="corte-largo">Que aguante un corte largo (2 días)</option>
+                </select>
+                <div className="text-[10px] text-gray-500 mt-0.5">Cuando se corta la luz, la batería no banca toda la casa: banca lo que elijas. Lo típico: heladera, luces y enchufes básicos. Cuanto más quieras que siga andando (y por más horas), más batería hace falta.</div></div>
+            )}
             {wiz.p2 === "independizarme" && (
               <div><label className={lbl}>4 · ¿Cuántos días nublados aguanta?</label>
                 <select value={wiz.p4 || ""} onChange={(e) => setWiz({ ...wiz, p4: e.target.value })} className={inp}>
-                  <option value="">—</option><option value="normal">Uno-dos días está bien</option><option value="con-respaldo">Tengo grupo/red como respaldo</option><option value="brava">Zona brava, que aguante</option>
-                </select></div>
+                  <option value="">—</option><option value="normal">Uno-dos días está bien</option><option value="con-respaldo">Tengo grupo/red como respaldo</option><option value="brava">Zona brava, que aguante (3 días)</option>
+                </select>
+                <div className="text-[10px] text-gray-500 mt-0.5">Los días muy nublados los paneles generan poco y se vive de la batería. Acá se define cuántos días seguidos así aguanta el banco. Si tenés grupo electrógeno o llega la red, puede ser más chico (más barato).</div></div>
             )}
             <div><label className={lbl}>5 · ¿Cómo es el techo?</label>
               <select value={wiz.p5 || ""} onChange={(e) => setWiz({ ...wiz, p5: e.target.value })} className={inp}>
                 <option value="">—</option><option value="chapa-inclinada">🏠 Chapa con pendiente</option><option value="chapa-plana">▬ Chapa casi plana (coplanar)</option><option value="losa">🧱 Losa / terraza plana</option><option value="teja">🟫 Tejas</option><option value="suelo">🌱 Va al piso / en el campo</option>
-              </select></div>
+              </select>
+              <div className="text-[10px] text-gray-500 mt-0.5">El tipo de techo define el soporte de los paneles y su inclinación. Un panel bien inclinado genera más; pegado a un techo plano genera un poco menos — lo tenemos en cuenta en el cálculo.</div></div>
             <div><label className={lbl}>6 · ¿Para dónde mira el techo?</label>
               <select value={wiz.p6 || ""} onChange={(e) => setWiz({ ...wiz, p6: e.target.value })} className={inp}>
                 <option value="">—</option><option value="norte">🧭 Al norte (o más o menos)</option><option value="este">Al este (sol de mañana)</option><option value="oeste">Al oeste (sol de tarde)</option><option value="sur">Al sur</option><option value="ni-idea">Ni idea (verificar en visita)</option>
               </select>
               {wiz.p6 === "sur" && <div className="text-[11px] text-amber-700 mt-0.5">⚠️ Mirando al sur rinde ~40% menos — ¿seguro? Conviene suelo u otra agua del techo.</div>}
-              {wiz.p6 === "ni-idea" && <div className="text-[10px] text-gray-400 mt-0.5">Se asume norte + nota "verificar en visita".</div>}</div>
+              {wiz.p6 === "ni-idea" && <div className="text-[10px] text-gray-400 mt-0.5">Se asume norte + nota "verificar en visita".</div>}
+              <div className="text-[10px] text-gray-500 mt-0.5">En Argentina el sol pega desde el norte: un techo al norte es el ideal. Al este rinde más de mañana, al oeste más de tarde.</div></div>
             <div><label className={lbl}>7 · ¿La casa tiene jabalina (tierra)?</label>
               <select value={wiz.p7 || ""} onChange={(e) => setWiz({ ...wiz, p7: e.target.value })} className={inp}>
                 <option value="">—</option><option value="si">Sí</option><option value="no">No / ni idea (se agrega jabalina)</option>
-              </select></div>
+              </select>
+              <div className="text-[10px] text-gray-500 mt-0.5">La jabalina descarga al piso cualquier falla eléctrica y protege a las personas y los equipos. Si no tenés o no sabés, la incluimos — es barata y va siempre.</div></div>
             <div><label className={lbl}>8 · ¿Metros del techo al tablero?</label>
               <select value={wiz.p8 || ""} onChange={(e) => setWiz({ ...wiz, p8: e.target.value })} className={inp}>
                 <option value="">—</option><option value="cerca">Cerquita (~10 m)</option><option value="normal">Normal (~20 m)</option><option value="lejos">Lejos (~50 m)</option>
-              </select></div>
+              </select>
+              <div className="text-[10px] text-gray-500 mt-0.5">No hace falta exacto: cerquita, normal o lejos alcanza — el cable se cotiza por metro, así no pagás de más.</div></div>
             <div className="col-span-2 flex items-center gap-3">
               <button onClick={aplicarWizard} className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold">Traducir a configuración técnica ↓</button>
               <div className="text-[11px] text-gray-500">El panel, inversor, protecciones y radiación salen solos (catálogo + Atlas). {wizAplicado ? "✔ Aplicado — revisá abajo." : ""}</div>
@@ -612,6 +640,14 @@ export default function ProyectoFvClient() {
             <div className="text-[10px] text-gray-400 mt-0.5">¿Qué parte del consumo es de día? Gobierna el tamaño en inyección cero.</div></div>
           <div><label className={lbl}>Puesta a tierra del sitio</label>
             <label className="flex items-center gap-1.5 text-sm pt-2 cursor-pointer"><input type="checkbox" checked={sitioSinTierra} onChange={(e) => setSitioSinTierra(e.target.checked)} /> El sitio NO tiene tierra (agregar jabalina)</label></div>
+          {conexion === "off-grid" && (
+            <div><label className={lbl}>¿Para qué querés el off-grid?</label>
+              <select value={intencionOG} onChange={(e) => { const v = e.target.value as any; setIntencionOG(v); if (v === "desconexion" && !cargasList) setCargasList(CANASTO_DEFAULT.map((c) => ({ ...c }))); }} className={inp}>
+                <option value="backup">🔋 Backup (mantiene la red, cargas críticas)</option>
+                <option value="desconexion">🔌 Desconectarme de la red (lista completa)</option>
+              </select>
+              <div className="text-[10px] text-gray-400 mt-0.5">Backup: ahorro = parte variable. Desconexión: ahorro = factura completa (si se da de baja el suministro).</div></div>
+          )}
           <div><label className={lbl}>Cable solar (metros)</label><input value={metrosCable} onChange={(e) => setMetrosCable(e.target.value)} type="number" className={inp} placeholder="default 20" /></div>
           <div><label className={lbl}>Cable de tierra (metros)</label><input value={metrosTierra} onChange={(e) => setMetrosTierra(e.target.value)} type="number" className={inp} placeholder="default 20" /></div>
           <div><label className={lbl}>Inclinación del plano (°)</label><input value={inclinacion} onChange={(e) => setInclinacion(e.target.value)} type="number" min={0} max={60} className={inp} placeholder="default: 30 inclinada / 10 coplanar" />
@@ -620,6 +656,41 @@ export default function ProyectoFvClient() {
             <div className="text-[10px] text-gray-400 mt-0.5">Desvío del norte: + hacia el Este, − hacia el Oeste (ej. Bouvier 13°).</div></div>
         </div>
       </div>
+
+      {/* Editor de cargas (off-grid / híbrido): canasto crítico ajustable o lista completa (desconexión) */}
+      {(conexion === "off-grid" || conexion === "hibrido") && (
+        <div className={card}>
+          <div className="flex items-center justify-between">
+            <div className={cardTit}>{conexion === "off-grid" && intencionOG === "desconexion" ? "🔌 Lista completa de equipos (desconexión)" : "🔋 Cargas de respaldo (canasto crítico)"}</div>
+            {cargasList === null ? (
+              <button onClick={() => setCargasList(CANASTO_DEFAULT.map((c) => ({ ...c })))} className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs font-semibold text-gray-600">✏️ Ajustar cargas</button>
+            ) : (
+              <button onClick={() => setCargasList(null)} className="px-3 py-1.5 rounded-lg border border-gray-300 text-xs text-gray-500">↩ Volver al canasto default</button>
+            )}
+          </div>
+          {cargasList === null ? (
+            <div className="text-[11px] text-gray-500 mt-1">Se usa el canasto crítico default: {CANASTO_DEFAULT.map((c) => c.nombre.split(" ")[0]).join(", ")} (≈3,5 kWh/día · ~1.160 W). El respaldo cubre ESTAS cargas básicas, no toda la casa.</div>
+          ) : (
+            <div className="mt-2 space-y-1">
+              <div className="grid grid-cols-[1fr_90px_90px_70px_30px] gap-2 text-[10px] uppercase text-gray-400 font-semibold"><div>Equipo</div><div>Potencia (W)</div><div>Horas/día</div><div>Cant.</div><div /></div>
+              {cargasList.map((c, i) => (
+                <div key={i} className="grid grid-cols-[1fr_90px_90px_70px_30px] gap-2">
+                  <input value={c.nombre} onChange={(e) => setCargasList(cargasList.map((x, j) => j === i ? { ...x, nombre: e.target.value } : x))} className={inp} />
+                  <input type="number" value={c.potencia_w} onChange={(e) => setCargasList(cargasList.map((x, j) => j === i ? { ...x, potencia_w: Number(e.target.value) } : x))} className={inp} />
+                  <input type="number" step={0.5} value={c.horas_dia} onChange={(e) => setCargasList(cargasList.map((x, j) => j === i ? { ...x, horas_dia: Number(e.target.value) } : x))} className={inp} />
+                  <input type="number" min={1} value={c.cantidad} onChange={(e) => setCargasList(cargasList.map((x, j) => j === i ? { ...x, cantidad: Number(e.target.value) } : x))} className={inp} />
+                  <button onClick={() => setCargasList(cargasList.filter((_, j) => j !== i))} className="text-red-500 text-sm" title="Quitar">✕</button>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-1">
+                <button onClick={() => setCargasList([...cargasList, { nombre: "", potencia_w: 0, horas_dia: 1, cantidad: 1 }])} className="px-3 py-1 rounded-lg border border-gray-300 text-xs font-semibold text-gray-600">+ Agregar equipo</button>
+                <div className="text-[11px] text-gray-500">Total: <b>{cargasList.reduce((s, c) => s + (c.potencia_w || 0) * (c.cantidad || 1), 0).toLocaleString("es-AR")} W</b> · <b>{(cargasList.reduce((s, c) => s + (c.potencia_w || 0) * (c.cantidad || 1) * (c.horas_dia || 0), 0) / 1000).toFixed(1)} kWh/día</b></div>
+              </div>
+              {conexion === "off-grid" && intencionOG === "desconexion" && <div className="text-[10px] text-gray-400">Desconexión: cargá TODO lo que funciona en la casa — el sistema se dimensiona a esta lista y el ahorro es la factura completa (si se da de baja el suministro).</div>}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className={card}>
         <div className={cardTit}>Consumo / factura de luz</div>
@@ -636,9 +707,13 @@ export default function ProyectoFvClient() {
           {facturaMsg && <div className="text-[11px] text-gray-600">{facturaMsg}</div>}
           {facturaRef && <div className="text-[11px] text-emerald-600">📎 Copia guardada: {facturaRef.nombre}</div>}
           {facturaDatos && facturaDatos.kwh_meses.length > 0 && (() => {
-            const det = facturaDatos.meses_detalle && facturaDatos.meses_detalle.length ? facturaDatos.meses_detalle : facturaDatos.kwh_meses.map((k) => ({ mes: null, kwh: k }));
+            const crudos = facturaDatos.meses_detalle && facturaDatos.meses_detalle.length ? facturaDatos.meses_detalle : facturaDatos.kwh_meses.map((k) => ({ mes: null, kwh: k }));
+            // El gráfico muestra EXACTAMENTE los 12 meses cerrados del promedio (misma regla que el
+            // motor: excluir el período en curso — la factura trae 13 barras y la última es parcial).
+            const validos = crudos.filter((d: any) => Number(d.kwh) > 0);
+            const det = (validos.length >= 2 ? validos.slice(0, -1) : validos).slice(-12);
             const max = Math.max(...det.map((d) => d.kwh), 1);
-            const prom = promedio12(det); // últimos 12 meses CERRADOS (excluye el período en curso) = el promedio de la factura
+            const prom = promedio12(crudos); // últimos 12 meses CERRADOS (excluye el período en curso) = el promedio de la factura
             return (
               <div className="border-t border-gray-100 pt-2">
                 <div className="text-[10px] uppercase text-gray-400 font-semibold mb-1">Consumo mensual histórico (de la factura) · promedio últimos 12 meses cerrados: {prom} kWh</div>
