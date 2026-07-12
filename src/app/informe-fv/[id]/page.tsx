@@ -151,16 +151,22 @@ export default function InformeFv({ params }: { params: { id: string } }) {
       {/* 5. Validación del inversor */}
       <h2 className="text-[13px] font-bold text-[#0b3d6b] uppercase border-b border-gray-300 mb-2">5 · Validación del inversor</h2>
       <div className="mb-4">
-        {v.topologia === "micro" ? (
-          <Check ok={true} label={`Microinversor — MPPT por panel (${v.n_micros} unidad/es), sin strings serie. ${v.nota || ""}`} />
-        ) : v.ok != null ? (
+        {/* Validación COMPLETA para TODA topología (checks del motor: a_voc_max, b_arranque,
+            c_rango_mppt, d_corriente) — con el valor medido; nunca "revisar" genérico. */}
+        {v.ok != null && v.checks ? (
           <div className="grid grid-cols-2 gap-x-6">
-            <Check ok={v.ok} label={`Configuración: ${v.n_serie ?? "?"} paneles en serie × ${v.n_strings ?? "?"} string(s)`} />
-            <Check ok={v.checks?.a_voc_max ?? v.ok} label={`Voc en frío ${v.voc_frio ?? "?"} V ≤ Voc máx del inversor`} />
-            <Check ok={v.checks?.b_vmp_min ?? v.ok} label={`Vmp en calor ${v.vmp_calor ?? "?"} V dentro del rango MPPT`} />
-            <Check ok={v.checks?.c_mppt ?? v.ok} label={`Vmp STC ${v.vmp_stc ?? "?"} V en rango MPPT`} />
-            <Check ok={v.checks?.d_corriente ?? v.ok} label={`Corriente de string ${v.i_string ?? "?"} A ≤ máx por MPPT`} />
+            <Check ok={v.ok} label={v.topologia === "micro"
+              ? `Microinversor — MPPT por panel (${v.n_micros ?? "?"} unidad/es), sin strings serie`
+              : `Configuración: ${v.n_serie ?? "?"} paneles en serie × ${v.n_strings ?? "?"} string(s)`} />
+            <Check ok={v.checks.a_voc_max ?? v.ok} label={`Voc en frío ${v.voc_frio ?? "?"} V ≤ Voc máx del inversor`} />
+            <Check ok={v.checks.b_arranque ?? v.checks.b_vmp_min ?? v.ok} label={`Vmp en calor ${v.vmp_calor ?? "?"} V > tensión de arranque`} />
+            <Check ok={v.checks.c_rango_mppt ?? v.checks.c_mppt ?? v.ok} label={`Vmp STC ${v.vmp_stc ?? "?"} V dentro del rango MPPT`} />
+            <Check ok={v.checks.d_corriente ?? v.ok} label={`Corriente ${v.i_string ?? v.i_panel ?? "?"} A ≤ máx por MPPT`} />
+            {v.checks.e_potencia != null ? <Check ok={v.checks.e_potencia} label="Potencia PV ≤ máx del microinversor" /> : null}
+            {v.sin_dato?.length ? <div className="text-[10px] text-gray-400 col-span-2">Spec sin dato (pasa con nota): {v.sin_dato.join(", ")}</div> : null}
           </div>
+        ) : v.topologia === "micro" ? (
+          <Check ok={true} label={`Microinversor — MPPT por panel (${v.n_micros ?? "?"} unidad/es), sin strings serie. ${v.nota || ""}`} />
         ) : <div className="text-[12px] text-gray-500">{v.motivo || "Sin datos de validación."}</div>}
       </div>
 
@@ -181,6 +187,29 @@ export default function InformeFv({ params }: { params: { id: string } }) {
           <>Ahorro estimado: <b>$ {fmt(m.ahorro.mensual)}/mes</b> · $ {fmt(m.ahorro.anual)}/año{m.repago_anios ? <> · Repago estimado: <b>{m.repago_anios} años</b></> : null}</>
         ) : <span className="text-gray-500">Para calcular el ahorro/repago se necesita la tarifa ($/kWh) de la factura{p.presupuesto_numero ? " y el total del presupuesto" : ""} — cargala en el proyecto y re-dimensioná.</span>}
       </div>
+
+      {/* 8. Balance de cargas (off-grid / híbrido): qué podés hacer funcionar — en criollo */}
+      {m.balance?.cargas?.length ? (
+        <>
+          <h2 className="text-[13px] font-bold text-[#0b3d6b] uppercase border-b border-gray-300 mb-2">8 · Balance de cargas — qué podés hacer funcionar</h2>
+          <table className="w-full text-[11px] mb-2 border border-gray-200">
+            <thead><tr className="bg-gray-50 text-gray-500"><th className="px-2 py-1 text-left">Equipo</th><th className="px-2 py-1 text-right w-20">Potencia (W)</th><th className="px-2 py-1 text-right w-20">Horas/día</th><th className="px-2 py-1 text-right w-24">Consumo (Wh/día)</th></tr></thead>
+            <tbody>
+              {m.balance.cargas.map((c: any, j: number) => (
+                <tr key={j} className={j % 2 ? "bg-gray-50" : ""}><td className="px-2 py-1">{c.nombre}</td><td className="px-2 py-1 text-right">{fmt(c.potencia_w)}</td><td className="px-2 py-1 text-right">{c.horas_dia}</td><td className="px-2 py-1 text-right">{fmt(c.wh_dia)}</td></tr>
+              ))}
+              <tr className="border-t-2 border-gray-300 font-bold"><td className="px-2 py-1">Total</td><td className="px-2 py-1 text-right">{fmt(m.balance.potencia_cargas_w)}</td><td className="px-2 py-1" /><td className="px-2 py-1 text-right">{fmt((m.balance.consumo_cargas_kwh_dia || 0) * 1000)}</td></tr>
+            </tbody>
+          </table>
+          <div className="mb-1 text-[12px]">Capacidad del sistema: inversor <b>{fmt(m.balance.potencia_inversor_w)} W</b>{m.balance.banco_utilizable_kwh != null ? <> · banco utilizable <b>{m.balance.banco_utilizable_kwh} kWh</b> (de {m.balance.banco_kwh} kWh)</> : null}.</div>
+          <div className="mb-1 text-[12px]">Con todo prendido a la vez usás <b>{fmt(m.balance.potencia_cargas_w)} W de {fmt(m.balance.potencia_inversor_w)} W</b> → te quedan <b>{fmt(m.balance.potencia_libre_w)} W libres</b>.{m.balance.autonomia_horas != null ? <> El banco sostiene estas cargas <b>{m.balance.autonomia_horas} horas</b> (~{m.balance.autonomia_dias} día/s) sin sol.</> : null}</div>
+          {m.balance.cobertura === "backup" ? (
+            <div className="mb-4 text-[11px] text-amber-700">🔋 Respaldo preparado para estas cargas básicas (canasto crítico) — NO cubre el consumo total de la casa (aire acondicionado, termotanque eléctrico, etc.).</div>
+          ) : m.balance.cobertura === "desconexion" ? (
+            <div className="mb-4 text-[11px] text-gray-600">🔌 Dimensionado para la lista completa de cargas (desconexión de la red).</div>
+          ) : <div className="mb-4" />}
+        </>
+      ) : null}
 
       {/* Supuestos */}
       <h2 className="text-[13px] font-bold text-[#0b3d6b] uppercase border-b border-gray-300 mb-2">Notas y supuestos</h2>

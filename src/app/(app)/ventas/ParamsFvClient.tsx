@@ -39,6 +39,17 @@ const GRUPOS: Grupo[] = [
     { k: "pr_offgrid", label: "Performance ratio off-grid", tipo: "ratio", min: 0.5, max: 0.9, step: 0.01 },
     { k: "sobredim_paneles", label: "Sobredimensión paneles", tipo: "ratio", min: 1.0, max: 1.6, step: 0.05 },
     { k: "margen_inversor", label: "Margen del inversor", tipo: "ratio", min: 1.0, max: 1.5, step: 0.05 },
+    { k: "factor_cc", label: "Factor interruptor CC (× Isc)", tipo: "ratio", min: 1.25, max: 2.0, step: 0.01 },
+    { k: "codigo_fusible_bateria", label: "Fusible NH banco (código)", tipo: "text" },
+    { k: "codigo_seccionador_bateria_48", label: "Seccionador banco 48V (código)", tipo: "text" },
+    { k: "codigo_seccionador_bateria_1224", label: "Seccionador banco 12/24V (código)", tipo: "text" },
+  ] },
+  { titulo: "Híbrido (red + banco de respaldo)", aplica: "HÍBRIDO", campos: [
+    { k: "cobertura_hibrido", label: "Cobertura de dimensionado", tipo: "ratio", min: 0.5, max: 1.2, step: 0.05 },
+    { k: "factor_aprovechamiento_hibrido", label: "Factor aprovechamiento (c/batería)", tipo: "ratio", min: 0.6, max: 1.0, step: 0.05 },
+    { k: "dias_respaldo_hibrido", label: "Días de respaldo (canasto crítico)", tipo: "num", min: 1, max: 3, step: 1 },
+    { k: "umbral_banco_nh_kwh", label: "Umbral banco NH (kWh)", tipo: "num", min: 5, max: 30, step: 1 },
+    { k: "codigo_cable_bateria", label: "Cable batería c/fusible (código)", tipo: "text" },
   ] },
   { titulo: "Validación de tensión", aplica: "con paneles", campos: [
     { k: "temp_diseno_frio", label: "Temp. diseño frío (°C)", tipo: "num", min: -25, max: 5, step: 1 },

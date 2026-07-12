@@ -76,6 +76,16 @@ export default function ProyectoFvClient() {
   const [guardando, setGuardando] = useState(false);
   const [dimensionando, setDimensionando] = useState(false);
   const [resultado, setResultado] = useState<{ sistema: any; bom: any[]; meta: any } | null>(null);
+  const [comparando, setComparando] = useState(false);
+  const [comparacion, setComparacion] = useState<{ opciones: any[]; recomendacion: any } | null>(null);
+  // WIZARD doble modo: 🗣️ criollo (preguntas simples → traducción MAPEO-CRIOLLO-TECNICO.md de CÁLCULOS)
+  // o 🔧 técnico (el form directo). Ambos alimentan el MISMO motor. Uso interno (Guille) — sin roles.
+  const [modoCalc, setModoCalc] = useState<"criollo" | "tecnico">("tecnico");
+  const [wiz, setWiz] = useState<Record<string, string>>({});
+  const [wizAplicado, setWizAplicado] = useState(false);
+  // Extras del wizard que el form técnico no tiene como campo: respaldo (P3) y off_grid (P4)
+  const [respaldoExtra, setRespaldoExtra] = useState<any>(null);
+  const [offgridExtra, setOffgridExtra] = useState<any>(null);
   const [msg, setMsg] = useState("");
   const [proyectoId, setProyectoId] = useState<number | null>(null);
 
@@ -300,8 +310,53 @@ export default function ProyectoFvClient() {
       inclinacion_grados: inclinacion ? Number(inclinacion) : null,
       azimut_grados: azimut !== "" ? Number(azimut) : null,
       potencia_contratada_kw: potencia ? Number(potencia) : (facturaDatos?.potencia_contratada_kw ?? null),
+      // Extras del wizard criollo (P3 respaldo / P4 autonomía) — passthrough al motor; null si no aplican.
+      ...(respaldoExtra ? { respaldo: respaldoExtra } : {}),
+      ...(offgridExtra ? { off_grid: offgridExtra } : {}),
       fotos,
     };
+  }
+
+  // 🗣️→🔧 Traducción criollo→técnico (tabla de CÁLCULOS — MAPEO-CRIOLLO-TECNICO.md; no inventar acá).
+  function aplicarWizard() {
+    const w = wiz;
+    // P1 · dónde se usa la luz → fracción diurna
+    const P1: Record<string, string> = { casa: "0.5", campo: "0.6", comercio: "0.7", industria: "0.8" };
+    if (w.p1) setFraccionDiurna(P1[w.p1] || "");
+    // P2 · qué hacer con la red → tipo + inyección
+    if (w.p2 === "bajar") { setConexion("on-grid"); setInyeccion("cero"); }
+    else if (w.p2 === "vender-futuro") { setConexion("on-grid"); setInyeccion("futuro"); }
+    else if (w.p2 === "permiso") { setConexion("on-grid"); setInyeccion("con-inyeccion"); }
+    else if (w.p2 === "respaldo") { setConexion("hibrido"); setInyeccion("cero"); }
+    else if (w.p2 === "independizarme") { setConexion("off-grid"); }
+    // P3 (solo respaldo 🔋) · qué sigue andando → respaldo {fracción del diario, horas}
+    if (w.p2 === "respaldo" && w.p3) {
+      const frac = w.p3 === "basico" ? 0.3 : w.p3 === "toda" ? 1.0 : 0.5;
+      const horas = w.p3h === "24" ? 24 : 12;
+      const kwhDia = facturaDatos?.kwh_meses?.length ? null : (kwhMes ? Number(kwhMes) / 30 : null);
+      setRespaldoExtra({ consumo_critico_frac: frac, horas, ...(kwhDia ? { consumo_diario_kwh: kwhDia * frac } : {}) });
+    } else if (w.p2 !== "respaldo") setRespaldoExtra(null);
+    // P4 (solo off-grid 🏝️) · días nublados → factor_autonomia (los días salen de config, default 2)
+    if (w.p2 === "independizarme" && w.p4) {
+      setOffgridExtra({ factor_autonomia: w.p4 === "con-respaldo" ? 0.75 : 1.0 });
+    } else if (w.p2 !== "independizarme") setOffgridExtra(null);
+    // P5 · techo → estructura + inclinación
+    if (w.p5 === "chapa-inclinada") { setTecho("chapa"); setInclinacion("30"); }
+    else if (w.p5 === "chapa-plana") { setTecho("chapa"); setInclinacion("10"); }
+    else if (w.p5 === "losa") { setTecho("losa"); setInclinacion("30"); }
+    else if (w.p5 === "teja") { setTecho("teja"); setInclinacion("30"); }
+    else if (w.p5 === "suelo") { setTecho("suelo"); setInclinacion("30"); }
+    // P6 · orientación → azimut (0=norte, +Este, −Oeste)
+    const P6: Record<string, string> = { norte: "0", este: "90", oeste: "-90", sur: "180", "ni-idea": "0" };
+    if (w.p6) setAzimut(P6[w.p6] ?? "");
+    // P7 · jabalina → sitio_sin_tierra
+    if (w.p7) setSitioSinTierra(w.p7 !== "si");
+    // P8 · metros al tablero
+    if (w.p8 === "cerca") { setMetrosCable("10"); setMetrosTierra("10"); }
+    else if (w.p8 === "normal") { setMetrosCable("20"); setMetrosTierra("20"); }
+    else if (w.p8 === "lejos") { setMetrosCable("50"); setMetrosTierra("30"); }
+    setWizAplicado(true);
+    setMsg("✅ Respuestas traducidas a la configuración técnica (la ves abajo, editable). Ahora: ⚡ Dimensionar o ⚡ Calcular las 3 opciones.");
   }
   // Guarda y devuelve el id (para encadenar dimensionar). No muestra mensaje si silencioso=true.
   async function guardarProyecto(silencioso = false): Promise<number | null> {
@@ -341,6 +396,24 @@ export default function ProyectoFvClient() {
       setMsg(`✅ Dimensionado listo: ${r.sistema?.kwp} kWp, ${r.sistema?.n_paneles} paneles, cobertura ${Math.round((r.sistema?.cobertura || 0) * 100)}%. Revisá el sistema + la lista de componentes abajo.`);
     } catch (e: any) { setMsg("⚠️ " + e.message); }
     finally { setDimensionando(false); }
+  }
+
+  // ⚡⚡ COMPARADOR 3 OPCIONES (Fase 1): motor 3× (on-grid/off-grid/híbrido) con la MISMA factura,
+  // cada BOM valorizada por el cotizador → tabla + recomendación por MENOR repago. No crea PREV:
+  // el vendedor elige el modo (selector Conexión), re-dimensiona y genera el presupuesto de esa opción.
+  async function compararOpciones() {
+    if (lat == null || lng == null) { setMsg("⚠️ Elegí la localidad (necesito lat/long para el cálculo de radiación)."); return; }
+    if (!kwhMes && !facturaDatos) { setMsg("⚠️ Cargá el consumo (kWh/mes) o una factura."); return; }
+    setComparando(true); setMsg(""); setComparacion(null);
+    try {
+      await guardarProyecto(true);
+      const r = await safeJson(await fetch("/api/proyecto-comparar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form_inputs: construirInputs() }) }));
+      if (!r.ok) { setMsg("⚠️ No se pudo comparar: " + (r.error || "error del comparador")); return; }
+      setComparacion({ opciones: r.opciones || [], recomendacion: r.recomendacion || null });
+      const rec = r.recomendacion;
+      setMsg(rec ? `✅ Comparación lista. Sugerida: ${rec.label} (repago ${rec.repago_anios} años). Elegí el modo en "Conexión" y dimensioná esa opción para generar su presupuesto.` : "✅ Comparación lista (sin repago calculable — revisá factura $ y cargos fijos).");
+    } catch (e: any) { setMsg("⚠️ " + e.message); }
+    finally { setComparando(false); }
   }
 
   // 📄 Presupuesto AUTOMÁTICO: la BOM del dimensionado se valoriza con el cotizador (server-side) y se
@@ -451,6 +524,67 @@ export default function ProyectoFvClient() {
         {(localidad || provincia) && <div className="text-[12px] text-gray-600">📍 {[localidad, provincia].filter(Boolean).join(", ")}{lat != null && lng != null ? <span className="text-gray-400"> · {lat.toFixed(2)}, {lng.toFixed(2)}</span> : null}</div>}
       </div>
 
+      {/* WIZARD doble modo — "¿Cómo querés calcularlo?" (mapeo criollo→técnico de CÁLCULOS) */}
+      <div className={card}>
+        <div className="flex items-center justify-between">
+          <div className={cardTit}>¿Cómo querés calcularlo?</div>
+          <div className="flex gap-1">
+            <button onClick={() => setModoCalc("criollo")} className={"px-3 py-1.5 rounded-lg text-sm font-semibold border " + (modoCalc === "criollo" ? "bg-febo-azul text-white border-febo-azul" : "border-gray-300 text-gray-600")}>🗣️ Criollo</button>
+            <button onClick={() => setModoCalc("tecnico")} className={"px-3 py-1.5 rounded-lg text-sm font-semibold border " + (modoCalc === "tecnico" ? "bg-febo-azul text-white border-febo-azul" : "border-gray-300 text-gray-600")}>🔧 Técnico</button>
+          </div>
+        </div>
+        {modoCalc === "criollo" && (
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <div><label className={lbl}>1 · ¿Dónde se usa la luz?</label>
+              <select value={wiz.p1 || ""} onChange={(e) => setWiz({ ...wiz, p1: e.target.value })} className={inp}>
+                <option value="">—</option><option value="casa">🏠 Casa (de día poco)</option><option value="campo">🌾 Campo / casa quinta (uso parejo)</option><option value="comercio">🏪 Comercio / oficina (abre de día)</option><option value="industria">🏭 Industria / consumo fuerte de día</option>
+              </select></div>
+            <div><label className={lbl}>2 · ¿Qué querés hacer con la red?</label>
+              <select value={wiz.p2 || ""} onChange={(e) => setWiz({ ...wiz, p2: e.target.value })} className={inp}>
+                <option value="">—</option><option value="bajar">💡 Bajar la factura, sin vueltas</option><option value="vender-futuro">🔄 Bajar y más adelante vender excedente</option><option value="permiso">📜 Ya tengo/hago el permiso de inyección</option><option value="respaldo">🔋 Que no se me corte nunca (respaldo)</option><option value="independizarme">🏝️ Independizarme / no llega la red</option>
+              </select></div>
+            {wiz.p2 === "respaldo" && (<>
+              <div><label className={lbl}>3 · ¿Qué querés que siga andando?</label>
+                <select value={wiz.p3 || ""} onChange={(e) => setWiz({ ...wiz, p3: e.target.value })} className={inp}>
+                  <option value="">—</option><option value="basico">Lo básico: heladera, luces, wifi (30%)</option><option value="media">Media casa (50%)</option><option value="toda">Toda la casa (100%)</option>
+                </select></div>
+              <div><label className={lbl}>3b · ¿Y si el corte es largo?</label>
+                <select value={wiz.p3h || "12"} onChange={(e) => setWiz({ ...wiz, p3h: e.target.value })} className={inp}>
+                  <option value="12">12 horas está bien</option><option value="24">Que aguante 24 horas</option>
+                </select></div>
+            </>)}
+            {wiz.p2 === "independizarme" && (
+              <div><label className={lbl}>4 · ¿Cuántos días nublados aguanta?</label>
+                <select value={wiz.p4 || ""} onChange={(e) => setWiz({ ...wiz, p4: e.target.value })} className={inp}>
+                  <option value="">—</option><option value="normal">Uno-dos días está bien</option><option value="con-respaldo">Tengo grupo/red como respaldo</option><option value="brava">Zona brava, que aguante</option>
+                </select></div>
+            )}
+            <div><label className={lbl}>5 · ¿Cómo es el techo?</label>
+              <select value={wiz.p5 || ""} onChange={(e) => setWiz({ ...wiz, p5: e.target.value })} className={inp}>
+                <option value="">—</option><option value="chapa-inclinada">🏠 Chapa con pendiente</option><option value="chapa-plana">▬ Chapa casi plana (coplanar)</option><option value="losa">🧱 Losa / terraza plana</option><option value="teja">🟫 Tejas</option><option value="suelo">🌱 Va al piso / en el campo</option>
+              </select></div>
+            <div><label className={lbl}>6 · ¿Para dónde mira el techo?</label>
+              <select value={wiz.p6 || ""} onChange={(e) => setWiz({ ...wiz, p6: e.target.value })} className={inp}>
+                <option value="">—</option><option value="norte">🧭 Al norte (o más o menos)</option><option value="este">Al este (sol de mañana)</option><option value="oeste">Al oeste (sol de tarde)</option><option value="sur">Al sur</option><option value="ni-idea">Ni idea (verificar en visita)</option>
+              </select>
+              {wiz.p6 === "sur" && <div className="text-[11px] text-amber-700 mt-0.5">⚠️ Mirando al sur rinde ~40% menos — ¿seguro? Conviene suelo u otra agua del techo.</div>}
+              {wiz.p6 === "ni-idea" && <div className="text-[10px] text-gray-400 mt-0.5">Se asume norte + nota "verificar en visita".</div>}</div>
+            <div><label className={lbl}>7 · ¿La casa tiene jabalina (tierra)?</label>
+              <select value={wiz.p7 || ""} onChange={(e) => setWiz({ ...wiz, p7: e.target.value })} className={inp}>
+                <option value="">—</option><option value="si">Sí</option><option value="no">No / ni idea (se agrega jabalina)</option>
+              </select></div>
+            <div><label className={lbl}>8 · ¿Metros del techo al tablero?</label>
+              <select value={wiz.p8 || ""} onChange={(e) => setWiz({ ...wiz, p8: e.target.value })} className={inp}>
+                <option value="">—</option><option value="cerca">Cerquita (~10 m)</option><option value="normal">Normal (~20 m)</option><option value="lejos">Lejos (~50 m)</option>
+              </select></div>
+            <div className="col-span-2 flex items-center gap-3">
+              <button onClick={aplicarWizard} className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold">Traducir a configuración técnica ↓</button>
+              <div className="text-[11px] text-gray-500">El panel, inversor, protecciones y radiación salen solos (catálogo + Atlas). {wizAplicado ? "✔ Aplicado — revisá abajo." : ""}</div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className={card}>
         <div className={cardTit}>Sistema</div>
         <div className="grid grid-cols-3 gap-3">
@@ -538,6 +672,44 @@ export default function ProyectoFvClient() {
           <div className="text-[10px] text-gray-400 mt-0.5">La carpeta destino será <b>PROYECTOS FV\{referencia.trim() || `${(nombre.trim() || busqCli.trim() || "cliente")} - ${proyectoId ? "PROY-" + proyectoId : "PROY-…"}`}</b>. Editá la referencia para que coincida con una carpeta ya existente y se guarda ahí. El archivo lo baja el sync automático.</div></div>
       </div>
 
+      {comparacion && (
+        <div className="bg-white rounded-xl border-2 border-febo-azul p-4 space-y-3">
+          <div className="text-xs uppercase font-bold text-febo-azul tracking-wide">⚡ Comparación de las 3 opciones — mismo consumo (factura real)</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[12px]">
+              <thead><tr className="text-[10px] uppercase text-gray-400 text-left">
+                <th className="py-1 pr-2">Opción</th><th className="py-1 pr-2">Potencia</th><th className="py-1 pr-2">Generación</th><th className="py-1 pr-2">Cobertura</th><th className="py-1 pr-2">Inversión</th><th className="py-1 pr-2">Ahorro/mes</th><th className="py-1 pr-2">Repago</th><th className="py-1">Autonomía</th>
+              </tr></thead>
+              <tbody>
+                {comparacion.opciones.map((o: any) => {
+                  const esRec = comparacion.recomendacion?.tipo === o.tipo;
+                  if (!o.ok) return <tr key={o.tipo} className="border-t border-gray-100 text-gray-400"><td className="py-1.5 pr-2">{o.label}</td><td colSpan={7} className="py-1.5 text-[11px]">⚠️ {o.error}</td></tr>;
+                  return (
+                    <tr key={o.tipo} className={"border-t border-gray-100 " + (esRec ? "bg-emerald-50 font-semibold" : "")}>
+                      <td className="py-1.5 pr-2">{esRec ? "⭐ " : ""}{o.label}</td>
+                      <td className="py-1.5 pr-2">{o.sistema?.kwp} kWp ({o.sistema?.n_paneles} pan.)</td>
+                      <td className="py-1.5 pr-2">{o.sistema?.generacion_anual_kwh?.toLocaleString("es-AR")} kWh/año</td>
+                      <td className="py-1.5 pr-2">{Math.round((o.sistema?.cobertura || 0) * 100)}%</td>
+                      <td className="py-1.5 pr-2">{o.inversion_usd != null ? "USD " + Number(o.inversion_usd).toLocaleString("es-AR", { maximumFractionDigits: 0 }) : "—"}</td>
+                      <td className="py-1.5 pr-2">{o.ahorro_mensual_ars != null ? "$ " + Number(o.ahorro_mensual_ars).toLocaleString("es-AR") : "—"}</td>
+                      <td className="py-1.5 pr-2">{o.repago_anios != null ? o.repago_anios + " años" : "—"}</td>
+                      <td className="py-1.5">{o.autonomia?.horas != null ? `${o.autonomia.horas} h (${o.autonomia.dias} d)` : o.autonomia?.dias != null ? `${o.autonomia.dias} días` : "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {comparacion.recomendacion && (
+            <div className="text-[12px] bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"><b>Sugerencia:</b> {comparacion.recomendacion.motivo}</div>
+          )}
+          {comparacion.opciones.some((o: any) => o.ok && o.faltantes?.length) && (
+            <div className="text-[11px] text-amber-700">⚠️ Ítems sin precio en catálogo: {Array.from(new Set(comparacion.opciones.flatMap((o: any) => o.faltantes || []))).join(", ")} — cargarles costo para que la inversión sea completa.</div>
+          )}
+          <div className="text-[11px] text-gray-500">Para avanzar con una opción: elegila en «Conexión», tocá ⚡ Dimensionar y generá su presupuesto (cada opción tiene su PREV propio).</div>
+        </div>
+      )}
+
       {resultado && (
         <div className="bg-white rounded-xl border-2 border-emerald-300 p-4 space-y-3">
           <div className="text-xs uppercase font-bold text-emerald-700 tracking-wide">Dimensionado — {resultado.sistema?.tipo} {resultado.sistema?.fase === "tri" ? "trifásico" : "monofásico"}</div>
@@ -574,7 +746,8 @@ export default function ProyectoFvClient() {
       {msg && <div className="text-sm px-4 py-2 rounded-lg bg-gray-50 border border-gray-200">{msg}</div>}
       <div className="flex items-center justify-end gap-2">
         <button onClick={guardar} disabled={guardando || dimensionando} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">{guardando ? "Guardando…" : (proyectoId ? "Actualizar proyecto" : "Guardar proyecto")}</button>
-        <button onClick={dimensionar} disabled={dimensionando || guardando} title="Guarda el proyecto y dimensiona el sistema con el motor de cálculo: potencia, paneles, inversor validado y lista de componentes." className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">{dimensionando ? "Dimensionando…" : "⚡ Dimensionar"}</button>
+        <button onClick={dimensionar} disabled={dimensionando || guardando || comparando} title="Guarda el proyecto y dimensiona el sistema con el motor de cálculo: potencia, paneles, inversor validado y lista de componentes." className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">{dimensionando ? "Dimensionando…" : "⚡ Dimensionar"}</button>
+        <button onClick={compararOpciones} disabled={comparando || dimensionando || guardando} title="Corre el motor 3 veces con la misma factura (on-grid / off-grid / híbrido), valoriza cada opción y sugiere la de menor repago. No crea presupuestos." className="px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold disabled:opacity-50">{comparando ? "Comparando…" : "⚡ Calcular las 3 opciones"}</button>
       </div>
     </div>
   );
