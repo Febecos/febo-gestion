@@ -33,6 +33,12 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       FROM fv_proyectos p LEFT JOIN clientes c ON c.id = p.cliente_id WHERE p.id = ${Number(params.id)} LIMIT 1`;
     if (!rows.length) return new NextResponse("Proyecto no encontrado", { status: 404 });
     const p: any = rows[0];
+    // ?opcion=on-grid|off-grid|hibrido → superpone la variante generada, reusando esta misma plantilla.
+    const modoSel = _req.nextUrl.searchParams.get("opcion");
+    if (modoSel && Array.isArray(p.opciones)) {
+      const op = p.opciones.find((o: any) => o.modo === modoSel);
+      if (op) Object.assign(p, { sistema: op.sistema, meta: op.meta, bom: op.bom, presupuesto_numero: op.presupuesto_numero || p.presupuesto_numero });
+    }
     const i = p.inputs || {}, s = p.sistema || {}, m = p.meta || {}, cli = i.cliente || {}, u = i.ubicacion || {};
     const fac = p.factura_ref?.datos || {};
     const sup = m.supuestos || {};

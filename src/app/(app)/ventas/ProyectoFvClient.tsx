@@ -78,6 +78,8 @@ export default function ProyectoFvClient() {
   const [resultado, setResultado] = useState<{ sistema: any; bom: any[]; meta: any } | null>(null);
   const [comparando, setComparando] = useState(false);
   const [comparacion, setComparacion] = useState<{ opciones: any[]; recomendacion: any } | null>(null);
+  const [generandoTres, setGenerandoTres] = useState(false);
+  const [opcionesGeneradas, setOpcionesGeneradas] = useState<{ opciones: any[]; recomendacion: any } | null>(null);
   // WIZARD doble modo: 🗣️ criollo (preguntas simples → traducción MAPEO-CRIOLLO-TECNICO.md de CÁLCULOS)
   // o 🔧 técnico (el form directo). Ambos alimentan el MISMO motor. Uso interno (Guille) — sin roles.
   const [modoCalc, setModoCalc] = useState<"criollo" | "tecnico">("tecnico");
@@ -249,7 +251,7 @@ export default function ProyectoFvClient() {
     setProvincia(""); setLocalidad(""); setLat(null); setLng(null);
     setFase("mono"); setConexion("on-grid"); setTecho("chapa"); setInyeccion("cero"); setFraccionDiurna(""); setInclinacion(""); setAzimut(""); setSitioSinTierra(true); setMetrosCable(""); setMetrosTierra("");
     setKwhMes(""); setPotencia(""); setFacturaLink(""); setFacturaDatos(null); setFacturaRef(null); setFacturaMsg("");
-    setFotos([]); setReferencia(""); setResultado(null); setMsg(""); setArcaMsg(""); setPresupNumero(null); setPresupToken(null); setVista("form");
+    setFotos([]); setReferencia(""); setResultado(null); setMsg(""); setArcaMsg(""); setPresupNumero(null); setPresupToken(null); setComparacion(null); setOpcionesGeneradas(null); setVista("form");
   }
 
   async function cargarLista() {
@@ -287,6 +289,8 @@ export default function ProyectoFvClient() {
     setCargasList(Array.isArray(i.cargas) && i.cargas.length ? i.cargas : null);
     setReferencia(p.referencia || "");
     setResultado(p.sistema ? { sistema: p.sistema, bom: Array.isArray(p.bom) ? p.bom : [], meta: {} } : null);
+    setComparacion(null);
+    setOpcionesGeneradas(Array.isArray(p.opciones) && p.opciones.length ? { opciones: p.opciones, recomendacion: p.recomendacion || null } : null);
     setFacturaMsg(""); setArcaMsg(""); setMsg(""); setVista("form");
   }
 
@@ -438,6 +442,29 @@ export default function ProyectoFvClient() {
       setMsg(rec ? `✅ Comparación lista. Sugerida: ${rec.label} (repago ${rec.repago_anios} años). Elegí el modo en "Conexión" y dimensioná esa opción para generar su presupuesto.` : "✅ Comparación lista (sin repago calculable — revisá factura $ y cargos fijos).");
     } catch (e: any) { setMsg("⚠️ " + e.message); }
     finally { setComparando(false); }
+  }
+
+  // 🎁 GENERAR LAS 3 OPCIONES: corre el orquestador (motor 3× + PREV real por modo), persiste las
+  // opciones en el proyecto y deja los links (presupuesto/informe/presentación por opción + comparativo).
+  async function generarTresOpciones() {
+    if (lat == null || lng == null) { setMsg("⚠️ Elegí la localidad (necesito lat/long para el cálculo de radiación)."); return; }
+    if (!kwhMes && !facturaDatos) { setMsg("⚠️ Cargá el consumo (kWh/mes) o una factura."); return; }
+    setGenerandoTres(true); setMsg("");
+    try {
+      const id = await guardarProyecto(true);
+      if (!id) { setMsg("⚠️ No se pudo guardar el proyecto antes de generar las opciones."); return; }
+      const body = { form_inputs: construirInputs(), cliente: { nombre: nombreFinal(), cuit: cuit.trim() || "", razon_social: razon.trim() || "", localidad: localidad.trim() || "", provincia: provincia || "" }, cliente_id: clienteId, proyecto_id: id, tipo_cliente: "cf" };
+      const r = await safeJson(await fetch("/api/proyecto-generar-opciones", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+      if (!r.ok) { setMsg("⚠️ No se pudieron generar las 3 opciones: " + (r.error || "error")); return; }
+      setOpcionesGeneradas({ opciones: r.opciones || [], recomendacion: r.recomendacion || null });
+      // Persistir en el proyecto (para el comparativo + informe/presentación por opción vía ?opcion=).
+      await fetch("/api/fv-proyectos", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, opciones: r.opciones, recomendacion: r.recomendacion, estado: "cotizado" }) });
+      const oks = (r.opciones || []).filter((o: any) => o.ok).length;
+      const rec = r.recomendacion;
+      setMsg(`✅ ${oks}/3 opciones generadas con su presupuesto.${rec ? ` Sugerida: ${rec.label} (repago ${rec.repago_anios} años).` : ""} Mirá el comparativo y las salidas por opción abajo.`);
+      cargarLista();
+    } catch (e: any) { setMsg("⚠️ " + e.message); }
+    finally { setGenerandoTres(false); }
   }
 
   // 📄 Presupuesto AUTOMÁTICO: la BOM del dimensionado se valoriza con el cotizador (server-side) y se
@@ -790,6 +817,40 @@ export default function ProyectoFvClient() {
         </div>
       )}
 
+      {opcionesGeneradas && (
+        <div className="bg-white rounded-xl border-2 border-emerald-700 p-4 space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="text-xs uppercase font-bold text-emerald-700 tracking-wide">🎁 3 opciones generadas — con presupuesto, informe y presentación por opción</div>
+            {proyectoId && <a href={`/comparativo-fv/${proyectoId}`} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold">📊 Ver comparativo (para el cliente)</a>}
+          </div>
+          {opcionesGeneradas.recomendacion && (
+            <div className="text-[12px] bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2"><b>⭐ Sugerida:</b> {opcionesGeneradas.recomendacion.motivo}</div>
+          )}
+          <div className="grid gap-2">
+            {opcionesGeneradas.opciones.map((o: any) => {
+              const esRec = opcionesGeneradas.recomendacion?.modo === o.modo;
+              if (!o.ok) return <div key={o.modo} className="border border-gray-100 rounded-lg px-3 py-2 text-[12px] text-gray-400">{o.label}: ⚠️ {o.error}</div>;
+              return (
+                <div key={o.modo} className={"rounded-lg border px-3 py-2 " + (esRec ? "border-emerald-400 bg-emerald-50/50" : "border-gray-200")}>
+                  <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-1">
+                    <div className="text-[13px] font-semibold text-febo-azul">{esRec ? "⭐ " : ""}{o.label}</div>
+                    <div className="text-[12px] text-gray-600">{o.sistema?.kwp} kWp · {o.inversion_usd != null ? "US$ " + Number(o.inversion_usd).toLocaleString("es-AR", { maximumFractionDigits: 0 }) : "—"} · repago {o.repago_anios != null ? o.repago_anios + " años" : "—"}</div>
+                    <div className="flex gap-1.5 text-[12px]">
+                      {o.public_token && <a href={`https://fv.febecos.com/ver-presupuesto?token=${o.public_token}`} target="_blank" rel="noreferrer" className="px-2 py-1 rounded border border-emerald-600 text-emerald-700 font-semibold">👁 {o.presupuesto_numero || "PREV"}</a>}
+                      {proyectoId && <a href={`/informe-fv/${proyectoId}?opcion=${o.modo}`} target="_blank" rel="noreferrer" className="px-2 py-1 rounded border border-febo-azul text-febo-azul font-semibold">📋 Informe</a>}
+                      {proyectoId && <a href={`/api/presentacion-fv-html/${proyectoId}?opcion=${o.modo}`} target="_blank" rel="noreferrer" className="px-2 py-1 rounded border border-amber-500 text-amber-600 font-semibold">🎨 Presentación</a>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {opcionesGeneradas.opciones.some((o: any) => o.ok && o.faltantes?.length) && (
+            <div className="text-[11px] text-amber-700">⚠️ Ítems sin precio: {Array.from(new Set(opcionesGeneradas.opciones.flatMap((o: any) => o.faltantes || []))).join(", ")}.</div>
+          )}
+        </div>
+      )}
+
       {resultado && (
         <div className="bg-white rounded-xl border-2 border-emerald-300 p-4 space-y-3">
           <div className="text-xs uppercase font-bold text-emerald-700 tracking-wide">Dimensionado — {resultado.sistema?.tipo} {resultado.sistema?.fase === "tri" ? "trifásico" : "monofásico"}</div>
@@ -827,7 +888,8 @@ export default function ProyectoFvClient() {
       <div className="flex items-center justify-end gap-2">
         <button onClick={guardar} disabled={guardando || dimensionando} className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">{guardando ? "Guardando…" : (proyectoId ? "Actualizar proyecto" : "Guardar proyecto")}</button>
         <button onClick={dimensionar} disabled={dimensionando || guardando || comparando} title="Guarda el proyecto y dimensiona el sistema con el motor de cálculo: potencia, paneles, inversor validado y lista de componentes." className="px-4 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">{dimensionando ? "Dimensionando…" : "⚡ Dimensionar"}</button>
-        <button onClick={compararOpciones} disabled={comparando || dimensionando || guardando} title="Corre el motor 3 veces con la misma factura (on-grid / off-grid / híbrido), valoriza cada opción y sugiere la de menor repago. No crea presupuestos." className="px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold disabled:opacity-50">{comparando ? "Comparando…" : "⚡ Calcular las 3 opciones"}</button>
+        <button onClick={compararOpciones} disabled={comparando || dimensionando || guardando || generandoTres} title="Corre el motor 3 veces con la misma factura (on-grid / off-grid / híbrido), valoriza cada opción y sugiere la de menor repago. No crea presupuestos." className="px-4 py-2 rounded-lg bg-amber-500 text-white text-sm font-semibold disabled:opacity-50">{comparando ? "Comparando…" : "⚡ Calcular las 3 opciones"}</button>
+        <button onClick={generarTresOpciones} disabled={generandoTres || comparando || dimensionando || guardando} title="Genera las 3 opciones COMPLETAS: presupuesto (PREV) + informe técnico + presentación por cada modo, y un comparativo imprimible para el cliente. Guarda todo en el proyecto." className="px-4 py-2 rounded-lg bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50">{generandoTres ? "Generando las 3…" : "🎁 Generar las 3 opciones"}</button>
       </div>
     </div>
   );

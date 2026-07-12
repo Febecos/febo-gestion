@@ -19,6 +19,10 @@ async function migrate(sql: any) {
     created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now())`.catch(() => {});
   await sql`ALTER TABLE fv_proyectos ADD COLUMN IF NOT EXISTS referencia TEXT`.catch(() => {});
   await sql`ALTER TABLE fv_proyectos ADD COLUMN IF NOT EXISTS meta JSONB`.catch(() => {});
+  // opciones: las 3 variantes generadas (on-grid/off-grid/híbrido) con su PREV + meta, para el
+  // comparativo y para ver informe/presentación por opción con ?opcion=. recomendacion = menor repago.
+  await sql`ALTER TABLE fv_proyectos ADD COLUMN IF NOT EXISTS opciones JSONB`.catch(() => {});
+  await sql`ALTER TABLE fv_proyectos ADD COLUMN IF NOT EXISTS recomendacion JSONB`.catch(() => {});
 }
 
 export async function GET(req: NextRequest) {
@@ -74,6 +78,8 @@ export async function POST(req: NextRequest) {
     const meta = b.meta ? JSON.stringify(b.meta) : null;
     const factura_ref = b.factura_ref ? JSON.stringify(b.factura_ref) : null;
     const presupuesto_numero = b.presupuesto_numero ? String(b.presupuesto_numero) : null;
+    const opciones = b.opciones ? JSON.stringify(b.opciones) : null;
+    const recomendacion = b.recomendacion ? JSON.stringify(b.recomendacion) : null;
     const estado = b.estado ? String(b.estado) : "borrador";
     // Referencia editable (nombre de la carpeta destino en COTIZADOS). Se sanea a caracteres válidos de
     // Windows acá también (defensa; el script de sync vuelve a sanear).
@@ -91,6 +97,8 @@ export async function POST(req: NextRequest) {
           meta = COALESCE(${meta}::jsonb, meta),
           factura_ref = COALESCE(${factura_ref}::jsonb, factura_ref),
           presupuesto_numero = COALESCE(${presupuesto_numero}, presupuesto_numero),
+          opciones = COALESCE(${opciones}::jsonb, opciones),
+          recomendacion = COALESCE(${recomendacion}::jsonb, recomendacion),
           referencia = COALESCE(${referencia}, referencia),
           estado = COALESCE(${estado}, estado),
           updated_at = now()

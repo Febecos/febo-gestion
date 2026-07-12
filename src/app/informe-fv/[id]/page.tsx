@@ -18,7 +18,15 @@ export default function InformeFv({ params }: { params: { id: string } }) {
     fetch("/api/fv-proyectos?id=" + params.id).then((r) => r.json())
       .then((d) => {
         if (!d.ok) { setErr(d.error || "no encontrado"); return; }
-        setP(d.proyecto);
+        // ?opcion=on-grid|off-grid|hibrido → superpone la variante generada (sistema/meta/bom/PREV) sobre
+        // el proyecto, reusando este mismo informe para cada opción sin duplicar la página.
+        const modo = new URLSearchParams(window.location.search).get("opcion");
+        const proyecto = d.proyecto;
+        if (modo && Array.isArray(proyecto?.opciones)) {
+          const op = proyecto.opciones.find((o: any) => o.modo === modo);
+          if (op) Object.assign(proyecto, { sistema: op.sistema, meta: op.meta, bom: op.bom, presupuesto_numero: op.presupuesto_numero || proyecto.presupuesto_numero, _opcion_label: op.label });
+        }
+        setP(proyecto);
         // NORMA nombre de PDF: "{NÚMERO} - {cliente} - Informe tecnico" (el título del documento es el
         // nombre que sugiere el navegador al Guardar como PDF — nunca "FEBO-GESTION.pdf").
         const cli = d.proyecto?.inputs?.cliente?.razon_social || d.proyecto?.inputs?.cliente?.nombre || "";
