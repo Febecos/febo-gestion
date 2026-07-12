@@ -99,7 +99,16 @@ export default function InformeFv({ params }: { params: { id: string } }) {
       {/* 3. Dimensionado */}
       <h2 className="text-[13px] font-bold text-[#0b3d6b] uppercase border-b border-gray-300 mb-2">3 · Dimensionado</h2>
       <div className="mb-4 text-[12px] space-y-0.5">
-        <div>Criterio: {sup.inyeccion === "cero" ? <>inyección <b>cero</b> — se dimensiona al consumo diurno (fracción diurna {sup.fraccion_diurna ?? "0.5"})</> : sup.inyeccion === "futuro" ? "cobertura 100% + limitador (inyección a futuro)" : sup.inyeccion === "con-inyeccion" ? "cobertura 100% con inyección" : "off-grid"}{sup.cobertura_dimensionada ? ` · cobertura dimensionada ${Math.round(sup.cobertura_dimensionada * 100)}%` : ""}</div>
+        <div>Criterio: {(() => {
+          // El modo real: sup.inyeccion (motor) → i.inyeccion (form). "off-grid" SOLO si el tipo lo es
+          // (bug: proyectos viejos sin sup.inyeccion caían al label "off-grid" siendo on-grid).
+          const iny = sup.inyeccion || i.inyeccion;
+          const esOff = /off/i.test(String(s.tipo || i.tipo_conexion || ""));
+          if (esOff) return "off-grid";
+          if (iny === "futuro") return "cobertura 100% + limitador (inyección a futuro)";
+          if (iny === "con-inyeccion") return "cobertura 100% con inyección";
+          return <>on-grid inyección <b>cero</b> — se dimensiona al consumo diurno (fracción diurna {sup.fraccion_diurna ?? "0.5"})</>;
+        })()}{sup.cobertura_dimensionada ? ` · cobertura dimensionada ${Math.round(sup.cobertura_dimensionada * 100)}%` : ""}</div>
         <div>Generación anual estimada: <b>{fmt(s.generacion_anual_kwh)} kWh</b> = {s.kwp} kWp × {fmt(m.pvout)} · Cobertura del consumo: <b>{Math.round((s.cobertura || 0) * 100)}%</b></div>
         {sup.ratio_dc_ac ? <div>Ratio DC/AC: <b>{sup.ratio_dc_ac}</b> {sup.ratio_ok ? "✔ dentro de rango" : "⚠ fuera de rango objetivo"}</div> : null}
         {sup.autonomia_dias ? <div>Off-grid: autonomía {sup.autonomia_dias} días · DoD {sup.dod}%</div> : null}
