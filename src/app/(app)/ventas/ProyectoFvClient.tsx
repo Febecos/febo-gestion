@@ -648,6 +648,11 @@ export default function ProyectoFvClient() {
               </select>
               <div className="text-[10px] text-gray-400 mt-0.5">Backup: ahorro = parte variable. Desconexión: ahorro = factura completa (si se da de baja el suministro).</div></div>
           )}
+          {conexion === "off-grid" && (
+            <div><label className={lbl}>Días de autonomía</label>
+              <input type="number" min={1} max={5} value={offgridExtra?.autonomia_dias ?? 2} onChange={(e) => setOffgridExtra({ ...(offgridExtra || {}), autonomia_dias: Number(e.target.value) || 2 })} className={inp} />
+              <div className="text-[10px] text-gray-400 mt-0.5">Días nublados seguidos que aguanta el banco (default 2; zona brava 3).</div></div>
+          )}
           <div><label className={lbl}>Cable solar (metros)</label><input value={metrosCable} onChange={(e) => setMetrosCable(e.target.value)} type="number" className={inp} placeholder="default 20" /></div>
           <div><label className={lbl}>Cable de tierra (metros)</label><input value={metrosTierra} onChange={(e) => setMetrosTierra(e.target.value)} type="number" className={inp} placeholder="default 20" /></div>
           <div><label className={lbl}>Inclinación del plano (°)</label><input value={inclinacion} onChange={(e) => setInclinacion(e.target.value)} type="number" min={0} max={60} className={inp} placeholder="default: 30 inclinada / 10 coplanar" />
