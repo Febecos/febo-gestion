@@ -75,10 +75,6 @@ export async function GET(req: NextRequest) {
       ) c ON true
       WHERE (${tipo} = '' OR COALESCE(p.tipo,'bomba') = ${tipo})
         AND (${estado} = '' OR p.estado = ${estado})
-        -- Vista por DEFECTO (sin filtro de estado): ocultar los descartados (anulado/cancelado/
-        -- reemplazado) para no ensuciar la lista con iteraciones viejas. Siguen visibles si se
-        -- filtra explícitamente por ese estado (${estado} <> '').
-        AND (${estado} <> '' OR COALESCE(p.estado,'') NOT IN ('anulado','cancelado','reemplazado'))
         AND (${vendedor} = '' OR p.revendedor_nombre = ${vendedor})
         AND (${q} = '' OR lower(
               coalesce(p.numero,'')||' '||coalesce(p.cliente_nombre,'')||' '||coalesce(p.cliente_apellido,'')||' '||
