@@ -1273,6 +1273,13 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const netoUsd = Number(totF.neto ?? totF.total ?? 0);
       const sumIvaUsd = Array.isArray(totF.iva_detalle) ? totF.iva_detalle.reduce((a: number, d: any) => a + (Number(d.monto ?? d.importe) || 0), 0) : 0;
       const totalUsd = esFacturaC ? +netoUsd.toFixed(2) : +(netoUsd + sumIvaUsd).toFixed(2);
+      // ARS-NATIVO (presupuesto que guarda SOLO el total en pesos, ej. bombas): totalUsd/netoUsd quedan
+      // en PESOS. La cuenta corriente es SIEMPRE en USD → el `debe` debe ir en USD (pesos/TC), NO el
+      // monto en pesos (bug: la cta cte mostraba $ = pesos×dólar, inflado ×TC). Para facturas en USD o
+      // ARS con presupuesto USD, totalUsd YA es USD → no se convierte.
+      const arsNativoF = !!((arsNatF || (normalizarTotales(tot).arsNativo)) && facturaMoneda === "ARS");
+      const totalUsdCta = (arsNativoF && tc > 0) ? +(totalUsd / tc).toFixed(2) : totalUsd;
+      const netoUsdCta = (arsNativoF && tc > 0) ? +(netoUsd / tc).toFixed(2) : netoUsd;
       const desglose = desglosarFactura({ items, tot: totF, conv: convF, esFacturaC });
       // IVA a GUARDAR = el del desglose (consistente con neto/total de la factura), NO el del
       // presupuesto. Si no, el PDF mostraría un IVA que no cierra con el total (subtotal+IVA≠total).
@@ -1349,7 +1356,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         let monId = "PES", monCotiz = 1, canMis: string | null = null;
         if (facturaMoneda === "USD") { monId = "DOL"; canMis = "S"; try { const cz = await callSelector("wsfe-cotizacion&mon=DOL"); monCotiz = Number(cz?.cotiz) || tc || 1; } catch { monCotiz = tc || 1; } }
         const afipPayload = { ptoVta, cbteTipo, concepto: 1, docTipo: doc.tipo, docNro: doc.nro, neto, iva: ivaArr, impIVA, impTotal: total, monId, monCotiz, canMisMonExt: canMis, condicionIvaReceptorId: condId, esFacturaC };
-        const afipMeta = { ref, pref, letraFac, ptoVta, cliente_id, revendedor_id, receptorFinalId, totalUsd, netoUsd, facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null };
+        const afipMeta = { ref, pref, letraFac, ptoVta, cliente_id, revendedor_id, receptorFinalId, totalUsd, netoUsd, totalUsdCta, netoUsdCta, arsNativo: arsNativoF, facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null };
         const comp = (await sql`
           INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, revendedor_id, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte, afip_payload, afip_meta)
           VALUES ('factura','borrador',NULL,${letraFac},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, now(), ${desglose.neto}, ${desglose.total}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalleStore.length ? JSON.stringify(ivaDetalleStore) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null}, ${JSON.stringify(afipPayload)}::jsonb, ${JSON.stringify(afipMeta)}::jsonb)
@@ -1363,16 +1370,16 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const n = await numeroDesdeTalonario(sql, talId);
       if (!n) return NextResponse.json({ ok: false, error: "talonario inválido" }, { status: 400 });
       const facturaNum = n.numero; const letraM = n.letra || letraFac;
-      const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, totalUsd, netoUsd);
+      const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, totalUsdCta, netoUsdCta);
       const comp = (await sql`
         INSERT INTO fg_comprobantes (tipo, estado, numero, letra, talonario_id, cliente_id, cliente_nombre, revendedor_id, comision_pct, comision_monto, fecha, subtotal, total, moneda, tc, notas, token, leyendas, condicion_iva_receptor, iva_detalle, condiciones_venta, forma_pago, lugar_entrega, tipo_transporte)
         VALUES ('factura','proforma',${facturaNum},${letraM},${talId || null},${cliente_id},${receptorNombre}, ${revendedor_id}, ${comisionPct || null}, ${comisionMonto || null}, now(), ${desglose.neto}, ${desglose.total}, ${facturaMoneda}, ${facturaMoneda === "ARS" ? tc : null}, ${"Pedido " + ref}, gen_random_uuid()::text, ${JSON.stringify(leyendas)}::jsonb, ${condRecept || null}, ${ivaDetalle ? JSON.stringify(ivaDetalle) : null}::jsonb, ${dvF.condiciones_venta || null}, ${dvF.forma_pago || null}, ${dvF.lugar_entrega || null}, ${dvF.tipo_transporte || null})
         RETURNING id, token` as any[])[0];
       await insertItems(comp.id);
       await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_token=${comp.token}, factura_estado='emitida' WHERE numero=${ref}`;
-      if (cliente_id && totalUsd > 0) {
-        // La cta cte es USD-base: se debita el total USD REAL (neto+IVA), no el redondeado.
-        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: totalUsd, detalle: { moneda: facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null }, uniq: `fac:${facturaNum}` });
+      if (cliente_id && totalUsdCta > 0) {
+        // La cta cte es USD-base: se debita el total en USD (para ARS-nativo = pesos/TC), no en pesos.
+        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: totalUsdCta, detalle: { moneda: facturaMoneda, tc: facturaMoneda === "ARS" ? tc : null }, uniq: `fac:${facturaNum}` });
       }
       if (revendedor_id && comisionMonto > 0) {
         await movCtaCte(sql, { ambito: "cliente", cliente_id: revendedor_id, fecha: hoy(), concepto: `Comisión ${comisionPct}% s/ ${facturaNum}${receptorFinalId ? " (venta a cliente)" : ""}`, comprobante: facturaNum, pedido_ref: ref, haber: comisionMonto, detalle: { tipo: "comision_revendedor", pct: comisionPct, factura: facturaNum }, uniq: `com:${facturaNum}` });
@@ -1428,12 +1435,19 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       await sql`UPDATE fg_comprobantes SET estado='emitida', numero=${facturaNum}, afip_cae=${res.cae || null}, afip_cae_vto=${res.caeVto || null}, afip_qr=${res.qr || null} WHERE id=${cb.id}`;
       await sql`UPDATE fv_pedidos SET factura_numero=${facturaNum}, factura_estado='emitida' WHERE numero=${ref}`;
       // Recién ahora (CAE válido) se genera la deuda en cta cte y la comisión del revendedor.
-      const totalUsd = Number(meta.totalUsd) || 0; const netoUsd = Number(meta.netoUsd) || totalUsd;
+      const totalUsd = Number(meta.totalUsd) || 0;
+      // Debe/comisión en USD (cta cte es USD-base). Para ARS-nativo (bombas) totalUsd está en PESOS →
+      // se usa totalUsdCta/netoUsdCta (= pesos/TC) que guardó afipMeta. Fallback (facturas viejas sin
+      // esos campos): si es ARS-nativo con tc, convertir; si no, el totalUsd tal cual.
+      const _tcMeta = Number(meta.tc) || 0;
+      const totalUsdCta = meta.totalUsdCta != null ? Number(meta.totalUsdCta)
+        : (meta.arsNativo && _tcMeta > 0 ? +(totalUsd / _tcMeta).toFixed(2) : totalUsd);
+      const netoUsdCta = meta.netoUsdCta != null ? Number(meta.netoUsdCta) : (Number(meta.netoUsd) || totalUsdCta);
       const cliente_id = meta.cliente_id || null; const revendedor_id = meta.revendedor_id || null; const receptorFinalId = Number(meta.receptorFinalId) || 0;
-      if (cliente_id && totalUsd > 0) {
-        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +totalUsd.toFixed(2), detalle: { moneda: meta.facturaMoneda || "USD", tc: meta.tc || null }, uniq: `fac:${facturaNum}` });
+      if (cliente_id && totalUsdCta > 0) {
+        await movCtaCte(sql, { ambito: "cliente", cliente_id, fecha: hoy(), concepto: "Factura " + facturaNum, comprobante: facturaNum, pedido_ref: ref, debe: +totalUsdCta.toFixed(2), detalle: { moneda: meta.facturaMoneda || "USD", tc: meta.tc || null }, uniq: `fac:${facturaNum}` });
       }
-      const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, totalUsd, netoUsd);
+      const { pct: comisionPct, monto: comisionMonto } = await calcComision(sql, revendedor_id, receptorFinalId, totalUsdCta, netoUsdCta);
       if (revendedor_id && comisionMonto > 0) {
         await sql`UPDATE fg_comprobantes SET comision_pct=${comisionPct}, comision_monto=${comisionMonto} WHERE id=${cb.id}`.catch(() => {});
         await movCtaCte(sql, { ambito: "cliente", cliente_id: revendedor_id, fecha: hoy(), concepto: `Comisión ${comisionPct}% s/ ${facturaNum}${receptorFinalId ? " (venta a cliente)" : ""}`, comprobante: facturaNum, pedido_ref: ref, haber: comisionMonto, detalle: { tipo: "comision_revendedor", pct: comisionPct, factura: facturaNum }, uniq: `com:${facturaNum}` });
