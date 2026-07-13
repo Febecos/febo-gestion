@@ -48,6 +48,7 @@ const GRUPOS: Grupo[] = [
     { k: "cobertura_hibrido", label: "Cobertura de dimensionado", tipo: "ratio", min: 0.5, max: 1.2, step: 0.05 },
     { k: "factor_aprovechamiento_hibrido", label: "Factor aprovechamiento (c/batería)", tipo: "ratio", min: 0.6, max: 1.0, step: 0.05 },
     { k: "dias_respaldo_hibrido", label: "Días de respaldo (canasto crítico)", tipo: "num", min: 1, max: 3, step: 1 },
+    { k: "autonomia_backup_dias", label: "Autonomía backup (días)", tipo: "num", min: 1, max: 3, step: 1 },
     { k: "umbral_banco_nh_kwh", label: "Umbral banco NH (kWh)", tipo: "num", min: 5, max: 30, step: 1 },
     { k: "codigo_cable_bateria", label: "Cable batería c/fusible (código)", tipo: "text" },
   ] },

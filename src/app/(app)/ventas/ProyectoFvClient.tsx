@@ -335,12 +335,12 @@ export default function ProyectoFvClient() {
   }
 
   // Canasto crítico default (espejo de config.canasto_critico del motor) — precarga del editor.
+  // ~410 W simultáneos / 3,15 kWh/día. La bomba de agua NO va por default: se agrega acá si el sitio la tiene.
   const CANASTO_DEFAULT = [
     { nombre: "Heladera con freezer", potencia_w: 150, horas_dia: 8, cantidad: 1 },
     { nombre: "Iluminación LED (8-10 luces)", potencia_w: 80, horas_dia: 6, cantidad: 1 },
     { nombre: "Router/comunicación", potencia_w: 30, horas_dia: 24, cantidad: 1 },
     { nombre: "TV + tomas esenciales", potencia_w: 150, horas_dia: 5, cantidad: 1 },
-    { nombre: "Bomba de agua", potencia_w: 750, horas_dia: 0.5, cantidad: 1 },
   ];
 
   // 🗣️→🔧 Traducción criollo→técnico (tabla de CÁLCULOS — MAPEO-CRIOLLO-TECNICO.md; no inventar acá).

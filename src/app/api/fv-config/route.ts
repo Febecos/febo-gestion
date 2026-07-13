@@ -21,6 +21,7 @@ const PARAM_KEYS = [
   "factor_cc", "codigo_fusible_bateria", "codigo_seccionador_bateria_48", "codigo_seccionador_bateria_1224",
   // Híbrido (red + banco de respaldo) — B.4
   "cobertura_hibrido", "factor_aprovechamiento_hibrido", "dias_respaldo_hibrido", "umbral_banco_nh_kwh", "codigo_cable_bateria",
+  "autonomia_backup_dias",
   // Validación de tensión
   "temp_diseno_frio", "temp_diseno_calor", "strings_por_mppt",
   // Armado del BOM
@@ -37,7 +38,7 @@ const DEFAULTS: Record<string, any> = {
   termica_min_a: 16, umbral_embalaje: 4, codigo_embalaje_x1: "EMBALAJEPANELESX1", codigo_embalaje_x2: "EMBALAJEPANELESX2",
   autonomia_dias: 2, dod_litio: 90, dod_plomo: 50, factor_autonomia_default: 1.0, pr_offgrid: 0.72, sobredim_paneles: 1.3, margen_inversor: 1.2,
   factor_cc: 1.56, codigo_fusible_bateria: "HR17-160", codigo_seccionador_bateria_48: "BATTSWITCH48V/275A", codigo_seccionador_bateria_1224: "BATTSWITCH12/24V",
-  cobertura_hibrido: 1.0, factor_aprovechamiento_hibrido: 0.9, dias_respaldo_hibrido: 1, umbral_banco_nh_kwh: 10, codigo_cable_bateria: "CABLE-BAT-35",
+  cobertura_hibrido: 1.0, factor_aprovechamiento_hibrido: 0.9, dias_respaldo_hibrido: 1, umbral_banco_nh_kwh: 10, codigo_cable_bateria: "Cable rojo y negro 35 mm2 2m ojal-Anderson", autonomia_backup_dias: 1,
   temp_diseno_frio: -10, temp_diseno_calor: 65, strings_por_mppt: 2,
   panel_default: "AS-7M144N-HC-580W", estructura_default: "chapa-inclinada", paneles_por_estructura: 4, metros_cable_default: 20, metros_tierra_default: 20, factor_proteccion: 1.25, loss_pvgis: 14,
   codigo_cable_tierra: "CAB-TIE", codigo_cable_solar_metro: "CAB-SOL", codigo_jabalina: "JAB", codigo_limitador_tri: "TPM-E", codigo_limitador_mono: "SPM-E",
