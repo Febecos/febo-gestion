@@ -877,10 +877,15 @@ export default function ProyectoFvClient() {
           </div>
           <div className="flex items-center gap-2 pt-1">
             <button onClick={generarPresupuesto} disabled={generandoPresup} title="Valoriza esta lista con el cotizador (precios/markup reales) y crea el presupuesto PREV. No manda mail." className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50">{generandoPresup ? "Generando…" : "📄 Generar presupuesto"}</button>
-            {presupNumero && presupToken && <a href={`https://fv.febecos.com/ver-presupuesto?token=${presupToken}`} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 text-sm font-semibold">👁 Ver {presupNumero}</a>}
-            {proyectoId && <a href={`/informe-fv/${proyectoId}`} target="_blank" rel="noreferrer" title="Propuesta de Cálculos: informe técnico con consumo vs generación mensual, validación del inversor y componentes. Imprimir/Guardar PDF en la carpeta del proyecto." className="px-4 py-2 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold">📋 Informe técnico</a>}
-            {proyectoId && <a href={`/api/presentacion-fv-html/${proyectoId}`} target="_blank" rel="noreferrer" title="Presentación comercial para el cliente (PLANTILLA OFICIAL poblada con los datos del proyecto): propuesta agrupada SIN precios unitarios, solo el total. Imprimir/Guardar PDF." className="px-4 py-2 rounded-lg border border-amber-500 text-amber-600 text-sm font-semibold">🎨 Presentación</a>}
-            <span className="text-[11px] text-gray-500">El presupuesto usa los precios/markup del cotizador. El informe técnico y la presentación vienen después.</span>
+            {/* Las salidas del flujo INDIVIDUAL (número base del proyecto) se ocultan cuando ya se
+                generaron las 3 opciones: cada opción tiene su propio trío numerado arriba (evita que
+                se abra/guarde la propuesta con el número base viejo — bug PROY-3: salía 0350). */}
+            {!opcionesGeneradas && presupNumero && presupToken && <a href={`https://fv.febecos.com/ver-presupuesto?token=${presupToken}`} target="_blank" rel="noreferrer" className="px-4 py-2 rounded-lg border border-emerald-600 text-emerald-700 text-sm font-semibold">👁 Ver {presupNumero}</a>}
+            {!opcionesGeneradas && proyectoId && <a href={`/informe-fv/${proyectoId}`} target="_blank" rel="noreferrer" title="Propuesta de Cálculos: informe técnico con consumo vs generación mensual, validación del inversor y componentes. Imprimir/Guardar PDF en la carpeta del proyecto." className="px-4 py-2 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold">📋 Informe técnico</a>}
+            {!opcionesGeneradas && proyectoId && <a href={`/api/presentacion-fv-html/${proyectoId}`} target="_blank" rel="noreferrer" title="Presentación comercial para el cliente (PLANTILLA OFICIAL poblada con los datos del proyecto): propuesta agrupada SIN precios unitarios, solo el total. Imprimir/Guardar PDF." className="px-4 py-2 rounded-lg border border-amber-500 text-amber-600 text-sm font-semibold">🎨 Presentación</a>}
+            {opcionesGeneradas
+              ? <span className="text-[11px] text-emerald-700">Ya generaste las 3 opciones ↑ — el presupuesto, informe y presentación de cada una (con su número) están en el panel de opciones.</span>
+              : <span className="text-[11px] text-gray-500">El presupuesto usa los precios/markup del cotizador. El informe técnico y la presentación vienen después.</span>}
           </div>
         </div>
       )}
