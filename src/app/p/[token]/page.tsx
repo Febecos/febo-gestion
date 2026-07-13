@@ -261,7 +261,7 @@ export default function ComprobantePublico({ params }: { params: { token: string
             {items.map((it: any, i: number) => (
               <tr key={i}>
                 <td className="r">{it.cantidad}</td>
-                <td className={esFactura ? "desc desc1" : "desc"}><span title={it.descripcion}>{it.descripcion}</span></td>
+                <td className="desc"><span title={it.descripcion}>{it.descripcion}</span></td>
                 <td className="r">{fmt(it.precio_unitario)}</td>
                 <td className="r">{fmt(it.total)}</td>
               </tr>
