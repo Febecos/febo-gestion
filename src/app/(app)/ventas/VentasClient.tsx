@@ -1549,6 +1549,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                     {env.direccion || "(sin dirección)"}{[env.localidad, env.provincia, env.cp].filter(Boolean).length ? " · " + [env.localidad, env.provincia, env.cp && `(${env.cp})`].filter(Boolean).join(", ") : ""}<br />
                     {[env.telefono, env.email].filter(Boolean).join(" · ")}
                     {(env.empresa || env.tipo_envio) && <><br />🚚 {[env.empresa, env.tipo_envio].filter(Boolean).join(" · ")}</>}
+                    {env.empresa && <><br /><span className={String(env.cuit_transporte || "").trim() ? "text-gray-500" : "text-amber-700 font-semibold"}>CUIT transporte: {String(env.cuit_transporte || "").trim() || "— falta —"}</span></>}
                     {(env.domicilio_transporte || env.telefono_transporte) && <><br /><span className="text-gray-400">{[env.domicilio_transporte, env.telefono_transporte].filter(Boolean).join(" · ")}</span></>}
                   </div>
                 ) : (
@@ -1621,6 +1622,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         legacyToken={legacyFull ? pl.remito_token : null}
                         envioCompleto={completo}
                         transporteOk={!!String(env.empresa || "").trim()}
+                        cuitTransporteOk={!!String(env.cuit_transporte || "").trim()}
                         facturado={facturado}
                         pagadoOk={pagadoOk}
                         busy={busy}
@@ -2173,7 +2175,7 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, transporteNombre, facturado, pagadoOk, busy, valorBase, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion, remitosExternos, onRemitoExterno, onEliminarRemitoExterno, onEnviarRemitoExterno }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, cuitTransporteOk, transporteNombre, facturado, pagadoOk, busy, valorBase, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion, remitosExternos, onRemitoExterno, onEliminarRemitoExterno, onEnviarRemitoExterno }: any) {
   const leerArchivo = (file: File, cb: (a: any) => void) => { const fr = new FileReader(); fr.onload = () => cb({ nombre: file.name, tipo: file.type, b64: String(fr.result) }); fr.readAsDataURL(file); };
   // Cargar el remito del TRANSPORTE (Via Cargo, etc.) directo, sin generar el nuestro: valida con IA y confirma despacho.
   const cargarRemitoExterno = (file: File) => leerArchivo(file, async (archivo) => {
@@ -2228,8 +2230,12 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
   const valDeclAuto = Math.round((Number(valorBase) || 0) * shareSel);
   const [valDecl, setValDecl] = useState("");
 
-  const faltan = [!envioCompleto && "cargar los datos de envío del cliente", !transporteOk && "cargar el transporte", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean) as string[];
-  const habil = envioCompleto && transporteOk && facturado && pagadoOk;
+  // CUIT del transporte: obligatorio para el remito (sale en el comprobante), SALVO que el
+  // operador lo omita a propósito con el botón "generar igual" (Guille 13/07).
+  const [omitirCuit, setOmitirCuit] = useState(false);
+  const cuitFalta = transporteOk && !cuitTransporteOk && !omitirCuit;
+  const faltan = [!envioCompleto && "cargar los datos de envío del cliente", !transporteOk && "cargar el transporte", cuitFalta && "cargar el CUIT del transporte", !facturado && "facturar", !pagadoOk && "registrar el pago"].filter(Boolean) as string[];
+  const habil = envioCompleto && transporteOk && (cuitTransporteOk || omitirCuit) && facturado && pagadoOk;
   const links = (remitos || []);
 
   return (
@@ -2305,6 +2311,13 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
       ) : (
         <>
           {faltan.length > 0 && <div className="text-xs text-amber-600">Para generar un remito primero: {faltan.join(" · ")}.</div>}
+          {cuitFalta && (
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-2">
+              <span>🚚 Falta el <b>CUIT del transporte</b> ({transporteNombre || "transporte"}). Cargalo en la ficha del cliente (CRM › Datos Envíos) para que salga en el remito — o generá igual si no lo tenés a mano.</span>
+              <button type="button" onClick={() => setOmitirCuit(true)} className="px-2.5 py-1 rounded-lg border border-amber-400 text-amber-700 text-xs font-semibold hover:bg-amber-100 whitespace-nowrap">Falta CUIT — generar igual ▸</button>
+            </div>
+          )}
+          {omitirCuit && !cuitTransporteOk && <div className="text-[11px] text-gray-500">⚠️ Generando el remito sin CUIT del transporte. <button type="button" onClick={() => setOmitirCuit(false)} className="underline">deshacer</button></div>}
           {hayPendientes && (
             <div className="border border-gray-200 rounded-lg overflow-hidden">
               <table className="w-full text-sm">
