@@ -1558,6 +1558,18 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   </div>
                 )}
                 {!completo && tieneAlgo && <div className="text-[11px] text-amber-600 mb-2">Falta: {["nombre","direccion","localidad","provincia"].filter((k)=>!String((env as any)[k]||"").trim()).map((k)=>({nombre:"destinatario",direccion:"dirección",localidad:"localidad",provincia:"provincia"} as any)[k]).join(", ")}.</div>}
+                {tieneAlgo && (() => {
+                  // Datos del transporte (aparte de la dirección): si faltan, figura pendiente para completarlo nosotros.
+                  const emp = String(env.empresa || "").trim();
+                  const miss: string[] = [];
+                  if (!emp) miss.push("empresa de transporte");
+                  if (!String(env.tipo_envio || "").trim()) miss.push("tipo de envío");
+                  if (emp && !/v[ií]a\s*cargo/i.test(emp)) {
+                    if (!String(env.cuit_transporte || "").trim()) miss.push("CUIT del transporte");
+                    if (!String(env.telefono_transporte || "").trim()) miss.push("teléfono del transporte");
+                  }
+                  return miss.length ? <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">🚚 Faltan datos del transporte: <b>{miss.join(", ")}</b>. <span className="opacity-80">Completalos en la ficha del cliente (CRM › Datos Envíos) antes de despachar.</span></div> : null;
+                })()}
 
                 {/* Valor declarado para el transporte — propio del pedido (lo indica el cliente). */}
                 {(() => {

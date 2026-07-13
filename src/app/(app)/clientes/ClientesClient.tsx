@@ -192,6 +192,22 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
   // Faltantes para poder despachar (mismos campos obligatorios que el visor / el remito).
   const envioFalta = ["nombre", "direccion", "localidad", "provincia"].filter((k) => !String(envioForm[k] || "").trim());
   const envioOk = envioFalta.length === 0;
+  // Datos del TRANSPORTE (aparte de la dirección): NO bloquean el guardado — el cliente puede
+  // cargar lo que sabe — pero si faltan, a nosotros nos figura pendiente para completarlo.
+  // Regla (Guille): empresa + tipo de envío siempre; y si NO es Vía Cargo → CUIT + teléfono del transporte.
+  const transporteFalta = (() => {
+    const emp = String(envioForm.empresa || "").trim();
+    const miss: string[] = [];
+    if (!emp) miss.push("empresa de transporte");
+    if (!String(envioForm.tipo_envio || "").trim()) miss.push("tipo de envío");
+    const esViaCargo = /v[ií]a\s*cargo/i.test(emp);
+    if (emp && !esViaCargo) {
+      if (!String(envioForm.cuit_transporte || "").trim()) miss.push("CUIT del transporte");
+      if (!String(envioForm.telefono_transporte || "").trim()) miss.push("teléfono del transporte");
+    }
+    return miss;
+  })();
+  const transporteOk = transporteFalta.length === 0;
   const [tags, setTags] = useState<string[]>(cliente?.tags || []);
   const [optOut, setOptOut] = useState<boolean>(!!cliente?.email_opt_out);
   const [arca, setArca] = useState(""); const [saving, setSaving] = useState(false);
@@ -230,6 +246,13 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
       (t.zonas_detalle || []).some((z: any) => { const zt = normT([z.locality, z.province].filter(Boolean).join(" ")); return (loc && zt.includes(loc)) || (prov && zt.includes(prov)); })
     );
   })();
+  // Elegir un transporte del maestro → completa empresa + CUIT/teléfono/domicilio de la sucursal.
+  const pickTransporte = (t: any) => {
+    const cont: any[] = Array.isArray(t.contactos) ? t.contactos : [];
+    const tel = cont.find((c) => /phone|tel|mobile|cel|whats/i.test(c.type || ""))?.value || "";
+    const dir = cont.find((c) => /address|domicil|direcc/i.test(c.type || ""))?.value || "";
+    setEnvioForm((p: any) => ({ ...p, empresa: t.nombre, cuit_transporte: t.tax_id || "", telefono_transporte: tel, domicilio_transporte: dir }));
+  };
 
   // Hidratar comisiones al abrir (las filas de la lista no las traen).
   useEffect(() => {
@@ -333,7 +356,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
           <div className="flex gap-1 mb-4 border-b border-gray-200 -mx-1">
             {([["datos", "Datos"], ["fiscales", "🧾 Fiscales"], ["envio", "🚚 Datos Envíos"], ["operaciones", "Operaciones / Cuenta"]] as const).map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)}
-                className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-400 hover:text-gray-600"}`}>{l}{k === "envio" && !esNuevo ? <span className={envioOk ? "text-emerald-500" : "text-amber-500"}> {envioOk ? "✅" : "⏳"}</span> : null}</button>
+                className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px ${tab === k ? "border-febo-azul text-febo-azul" : "border-transparent text-gray-400 hover:text-gray-600"}`}>{l}{k === "envio" && !esNuevo ? <span className={envioOk && transporteOk ? "text-emerald-500" : "text-amber-500"}> {envioOk && transporteOk ? "✅" : "⏳"}</span> : null}</button>
             ))}
           </div>
         )}
@@ -359,7 +382,8 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
         ) : !esNuevo && tab === "envio" ? (
           <div>
             <div className={`rounded-lg px-3 py-2 mb-3 text-[12px] font-semibold ${envioOk ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
-              {envioOk ? "✅ Datos de envío completos — el remito se puede generar." : `⏳ Datos de envío pendientes — falta: ${envioFalta.map((k) => ({ nombre: "destinatario", direccion: "dirección", localidad: "localidad", provincia: "provincia" } as any)[k] || k).join(", ")}.`}
+              {envioOk ? "✅ Dirección de entrega completa — el remito se puede generar." : `⏳ Datos de envío pendientes — falta: ${envioFalta.map((k) => ({ nombre: "destinatario", direccion: "dirección", localidad: "localidad", provincia: "provincia" } as any)[k] || k).join(", ")}.`}
+              {!transporteOk && <div className="mt-1 text-amber-700 flex items-start gap-1"><span>🚚</span><span>Faltan datos del transporte: <b>{transporteFalta.join(", ")}</b>. <span className="font-normal opacity-80">El cliente puede guardar sin esto — a nosotros nos figura pendiente para completarlo (buscar CUIT/teléfono del transporte).</span></span></div>}
               <div className="font-normal text-[11px] mt-0.5 opacity-80">Estos datos son la fuente única: se ven (no editables) en el pedido y habilitan el remito. El cliente también puede cargarlos desde el link de envío.</div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -372,6 +396,19 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
               <label className={lbl}>CÓDIGO POSTAL<input value={envioForm.cp} onChange={(e) => setE("cp", e.target.value)} className={inp} /></label>
               <label className={lbl}>EMAIL<input value={envioForm.email} onChange={(e) => setE("email", e.target.value)} className={inp} /></label>
               <div className="col-span-2 border-t border-gray-100 mt-1 pt-2 text-[11px] font-bold text-gray-400 uppercase">🚚 Transporte</div>
+              {sugeridos.length > 0 && (
+                <div className="col-span-2 -mb-1">
+                  <div className="text-[10px] font-semibold text-emerald-700 mb-1">⭐ Sugeridos para {envioForm.localidad || envioForm.provincia} — clic para elegir:</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {sugeridos.map((t: any) => (
+                      <button type="button" key={t.id} onClick={() => pickTransporte(t)}
+                        className={`px-2.5 py-1 rounded-full border text-[11px] font-semibold transition-colors ${normT(envioForm.empresa) === normT(t.nombre) ? "bg-emerald-600 text-white border-emerald-600" : "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"}`}>
+                        🚚 {t.nombre}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <label className={lbl + " col-span-2"}>EMPRESA DE TRANSPORTE
                 <input value={envioForm.empresa} onChange={(e) => {
                   const v = e.target.value;
@@ -385,7 +422,7 @@ function ClienteModal({ cliente, onClose, onSaved, initialTab }: { cliente: Clie
                   } else setE("empresa", v);
                 }} list="cli-transportes-envio" className={inp} placeholder={(envioForm.provincia || envioForm.localidad) ? "Elegí de la lista (sugeridos por zona) o escribí…" : "Cargá localidad/provincia para ver sugerencias"} />
                 <datalist id="cli-transportes-envio">{[...sugeridos, ...transportes.filter((t: any) => !sugeridos.some((s: any) => s.id === t.id))].map((t: any) => <option key={t.id} value={t.nombre} />)}</datalist>
-                {sugeridos.length > 0 && <span className="text-[10px] text-emerald-600 font-normal">✓ {sugeridos.length} sugeridos por zona ({envioForm.localidad || envioForm.provincia}) — la lista incluye TODOS los transportes</span>}
+                {sugeridos.length > 0 && <span className="text-[10px] text-gray-400 font-normal">Los {sugeridos.length} de la zona están arriba como botones ⭐ — o elegí cualquier otro de la lista completa / escribí el nombre.</span>}
               </label>
               <label className={lbl + " col-span-2"}>TIPO DE ENVÍO<select value={envioForm.tipo_envio} onChange={(e) => setE("tipo_envio", e.target.value)} className={inp}>{TIPOS_ENVIO.map((t) => <option key={t} value={t}>{t || "Seleccioná…"}</option>)}</select></label>
               <label className={lbl + " col-span-2"}>DOMICILIO DE LA SUCURSAL<input value={envioForm.domicilio_transporte} onChange={(e) => setE("domicilio_transporte", e.target.value)} className={inp} placeholder="Si es a sucursal de transporte" /></label>
