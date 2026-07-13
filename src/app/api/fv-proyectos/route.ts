@@ -85,6 +85,26 @@ export async function POST(req: NextRequest) {
     // Windows acá también (defensa; el script de sync vuelve a sanear).
     const referencia = b.referencia != null ? String(b.referencia).replace(/[/\\:*?"<>|]/g, " ").replace(/\s{2,}/g, " ").trim().slice(0, 80) : null;
 
+    // Al REGENERAR las 3 opciones (llega opciones nuevas), marcar los PREV viejos del proyecto como
+    // 'reemplazado' (traza en notas_internas → el PREV nuevo del mismo modo). NO tocar los que ya
+    // avanzaron en la cadena de venta (convertido/confirmado/pedido/emitido) — plata en curso.
+    if (b.id && b.opciones) {
+      try {
+        const prevRow = await sql`SELECT opciones FROM fv_proyectos WHERE id = ${Number(b.id)} LIMIT 1`;
+        const viejas: any[] = Array.isArray(prevRow[0]?.opciones) ? prevRow[0].opciones : [];
+        const nuevasPorModo = new Map((b.opciones as any[]).map((o) => [o.modo, o.presupuesto_numero]));
+        const nuevosNums = new Set((b.opciones as any[]).map((o) => o.presupuesto_numero).filter(Boolean));
+        for (const o of viejas) {
+          const viejo = o.presupuesto_numero;
+          if (!viejo || nuevosNums.has(viejo)) continue; // sigue vigente en el set nuevo
+          const reemplazoPor = nuevasPorModo.get(o.modo) || null;
+          await sql`UPDATE presupuestos SET estado = 'reemplazado',
+              notas_internas = COALESCE(notas_internas || ' · ', '') || ${'Reemplazado por ' + (reemplazoPor || 'nueva versión') + ' (regeneración de opciones ' + new Date().toISOString().slice(0, 10) + ')'}
+            WHERE numero = ${viejo} AND estado NOT IN ('convertido', 'confirmado', 'pedido', 'emitido')`;
+        }
+      } catch (e) { /* traza best-effort: no frenar la persistencia de las opciones nuevas */ }
+    }
+
     if (b.id) {
       // UPDATE: solo pisa los campos provistos (coalesce), para no borrar lo que no vino.
       const r = await sql`
