@@ -89,6 +89,16 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
     let empresa: any = null;
     try { const e = await sql`SELECT cuit, razon_social, nombre_fantasia, domicilio, localidad, provincia, cod_postal, condicion_iva, iibb, inicio_actividades FROM fg_empresa WHERE id=1`; empresa = e[0] || null; } catch {}
 
+    // Referencias del comprobante: N° de PEDIDO + PRESUPUESTO que le dieron origen (para el encabezado).
+    // Se resuelven desde el pedido FV que quedó vinculado a esta factura (fv_pedidos.factura_numero).
+    // Las facturas manuales (sin pedido) no matchean → no se muestra la banda.
+    try {
+      if (c.numero) {
+        const ped = await sql`SELECT numero, payload->>'presupuesto_numero' AS presup FROM fv_pedidos WHERE factura_numero = ${c.numero} LIMIT 1` as any[];
+        if (ped.length) { c.pedido_numero = ped[0].numero || null; c.presupuesto_numero = ped[0].presup || null; }
+      }
+    } catch { /* sin referencias */ }
+
     // no-store: el comprobante cambia de estado (borrador→emitida con CAE/QR); nunca servir cacheado.
     return NextResponse.json({ ok: true, comprobante: c, items, cliente, empresa }, { headers: { "Cache-Control": "no-store, max-age=0" } });
   } catch (e: any) {

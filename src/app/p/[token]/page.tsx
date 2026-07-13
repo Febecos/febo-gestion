@@ -145,6 +145,9 @@ export default function ComprobantePublico({ params }: { params: { token: string
         .btn.sec { background:#fff; color:#334155; border:1px solid #cbd5e1; }
         .sheet { background:#fff; border:1px solid #d1d5db; border-radius:12px; padding:30px 34px; color:#1f2937; font-size:12px; position:relative; display:flex; flex-direction:column; min-height:1120px; }
         .head { display:grid; grid-template-columns: 1fr 70px 1.05fr; align-items:flex-start; border-bottom:2px solid var(--azul); padding-bottom:14px; column-gap:10px; }
+        /* Banda de referencias (Presupuesto / Pedido) — renglón entre dos líneas azules, a la derecha. */
+        .refband { display:flex; justify-content:flex-end; gap:26px; border-bottom:2px solid var(--azul); padding:8px 2px; font-size:12px; color:#333; }
+        .refband b { color:var(--azul); }
         .logo img { max-height:62px; max-width:200px; }
         .emisor { font-size:11px; line-height:1.45; }
         .emisor .rs { font-size:15px; font-weight:800; color:var(--azul); }
@@ -228,6 +231,13 @@ export default function ComprobantePublico({ params }: { params: { token: string
             </div>
           </div>
         </div>
+
+        {(c.presupuesto_numero || c.pedido_numero) && (
+          <div className="refband">
+            {c.presupuesto_numero && <span>Presupuesto Nº: <b>{c.presupuesto_numero}</b></span>}
+            {c.pedido_numero && <span>Pedido Nº: <b>{c.pedido_numero}</b></span>}
+          </div>
+        )}
 
         <div className="parties">
           <div className="lbl">Señor (es)</div>
