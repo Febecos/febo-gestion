@@ -103,9 +103,20 @@ export async function POST(req: NextRequest) {
             descuento_pct: descPct || null, descuento_monto: descMonto || null,
             moneda: pr.moneda || (pr.tipo === "bomba" ? "ARS" : "USD"), tc: pr.tc ? Number(pr.tc) : null,
           };
+          // Capturar el PROVEEDOR real del catálogo al crear el pedido (los fv_items del presupuesto no lo
+          // traen → sin esto todo caía en "Sin proveedor"). Fila NO-espejo (origen ≠ pumps/kit_bomba),
+          // mismo criterio anti-espejo del ruteo/costo. Es red de seguridad en origen; el enrichEmisor del
+          // pedido igual lo resuelve al leer, pero así queda persistido y no depende del fallback.
+          const provMap: Record<string, string> = {};
+          const faltanProv = items.filter((it: any) => !it.emisor && !it.proveedor && it.codigo).map((it: any) => String(it.codigo));
+          if (faltanProv.length) {
+            try { const pr2 = await sql`SELECT codigo, proveedor FROM fg_productos WHERE COALESCE(proveedor,'') <> '' AND codigo = ANY(${faltanProv}) AND COALESCE(origen,'') NOT IN ('pumps','kit_bomba')` as any[];
+              for (const r of pr2) if (provMap[String(r.codigo)] == null) provMap[String(r.codigo)] = r.proveedor; } catch {}
+          }
           const itemsPed = items.map((it: any) => ({
             ...it,
             pvp_sin_iva_usd: it.pvp_sin_iva_usd ?? +(((Number(it.subtotal) || 0) / (Number(it.cantidad) || 1)).toFixed(2)),
+            proveedor: it.proveedor || provMap[String(it.codigo)] || it.proveedor,
           }));
           const clienteNombre = [pr.cliente_nombre, pr.cliente_apellido].filter(Boolean).join(" ").trim() || pr.revendedor_nombre || "";
           const payload = {

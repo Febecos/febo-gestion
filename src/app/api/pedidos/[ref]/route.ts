@@ -176,9 +176,13 @@ async function enrichEmisor(sql: any, items: any[]): Promise<any[]> {
   if (!Array.isArray(items) || !items.length) return items || [];
   const faltanEmi = items.filter((it) => !it.emisor && it.codigo).map((it) => String(it.codigo));
   const faltanCosto = items.filter((it) => it.costo_usd == null && it.codigo).map((it) => String(it.codigo));
-  if (!faltanEmi.length && !faltanCosto.length) return items;
+  // Ruteo a proveedor: ítem sin emisor NI proveedor → resolver el proveedor real del catálogo (bug
+  // PED-0045: el pedido guardaba proveedor:"" → todo caía en "Sin proveedor").
+  const faltanProv = items.filter((it) => !it.emisor && !it.proveedor && it.codigo).map((it) => String(it.codigo));
+  if (!faltanEmi.length && !faltanCosto.length && !faltanProv.length) return items;
   const emi: Record<string, string> = {};
   const costo: Record<string, number> = {};
+  const prov: Record<string, string> = {};
   if (faltanEmi.length) {
     try { const rows = await sql`SELECT codigo, emisor FROM fg_productos WHERE emisor IS NOT NULL AND codigo = ANY(${faltanEmi})` as any[];
       for (const r of rows) if (emi[String(r.codigo)] == null) emi[String(r.codigo)] = r.emisor; } catch {}
@@ -188,11 +192,18 @@ async function enrichEmisor(sql: any, items: any[]): Promise<any[]> {
     try { const rows = await sql`SELECT codigo, costo_usd FROM fg_productos WHERE costo_usd IS NOT NULL AND codigo = ANY(${faltanCosto}) AND COALESCE(origen,'') NOT IN ('pumps','kit_bomba')` as any[];
       for (const r of rows) if (costo[String(r.codigo)] == null) costo[String(r.codigo)] = Number(r.costo_usd); } catch {}
   }
+  if (faltanProv.length) {
+    // Proveedor real de la fila NO-espejo (K4SP11→LV Energy, accesorios→Lista Manual). Mismo criterio
+    // anti-espejo que el costo. Se toma la primera fila con proveedor cargado por código.
+    try { const rows = await sql`SELECT codigo, proveedor FROM fg_productos WHERE COALESCE(proveedor,'') <> '' AND codigo = ANY(${faltanProv}) AND COALESCE(origen,'') NOT IN ('pumps','kit_bomba')` as any[];
+      for (const r of rows) if (prov[String(r.codigo)] == null) prov[String(r.codigo)] = r.proveedor; } catch {}
+  }
   return items.map((it) => {
     const k = String(it.codigo);
     let out = it;
     if (!it.emisor && emi[k] != null) out = { ...out, emisor: emi[k] };
     if (it.costo_usd == null && costo[k] != null) out = { ...out, costo_usd: costo[k] };
+    if (!it.emisor && !it.proveedor && prov[k] != null) out = { ...out, proveedor: prov[k] };
     return out;
   });
 }
