@@ -20,9 +20,12 @@ export default function InformeFv({ params }: { params: { id: string } }) {
         if (!d.ok) { setErr(d.error || "no encontrado"); return; }
         // ?opcion=on-grid|off-grid|hibrido → superpone la variante generada (sistema/meta/bom/PREV) sobre
         // el proyecto, reusando este mismo informe para cada opción sin duplicar la página.
-        const modo = new URLSearchParams(window.location.search).get("opcion");
         const proyecto = d.proyecto;
-        if (modo && Array.isArray(proyecto?.opciones)) {
+        // Con opciones y sin ?opcion= explícito → usa la RECOMENDADA (nunca el nº base del proyecto).
+        const tieneOps = Array.isArray(proyecto?.opciones) && proyecto.opciones.length > 0;
+        const modo = new URLSearchParams(window.location.search).get("opcion")
+          || (tieneOps ? (proyecto.recomendacion?.modo || proyecto.opciones[0]?.modo) : null);
+        if (modo && tieneOps) {
           const op = proyecto.opciones.find((o: any) => o.modo === modo);
           if (op) Object.assign(proyecto, { sistema: op.sistema, meta: op.meta, bom: op.bom, presupuesto_numero: op.presupuesto_numero || proyecto.presupuesto_numero, _opcion_label: op.label });
         }

@@ -34,8 +34,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     if (!rows.length) return new NextResponse("Proyecto no encontrado", { status: 404 });
     const p: any = rows[0];
     // ?opcion=on-grid|off-grid|hibrido → superpone la variante generada, reusando esta misma plantilla.
-    const modoSel = _req.nextUrl.searchParams.get("opcion");
-    if (modoSel && Array.isArray(p.opciones)) {
+    // Si el proyecto TIENE opciones y NO se pidió una explícita, se usa la RECOMENDADA (o la primera):
+    // así la presentación NUNCA sale con el número BASE del proyecto cuando hay opciones (bug: cada
+    // propuesta se pisaba en el nº base). Cada opción → su propio nº de presupuesto.
+    const tieneOpciones = Array.isArray(p.opciones) && p.opciones.length > 0;
+    const modoSel = _req.nextUrl.searchParams.get("opcion")
+      || (tieneOpciones ? (p.recomendacion?.modo || p.opciones[0]?.modo) : null);
+    if (modoSel && tieneOpciones) {
       const op = p.opciones.find((o: any) => o.modo === modoSel);
       if (op) Object.assign(p, { sistema: op.sistema, meta: op.meta, bom: op.bom, presupuesto_numero: op.presupuesto_numero || p.presupuesto_numero });
     }
