@@ -106,58 +106,6 @@ async function netoPanelKit(sql: any, presupNum: string | null, totalConIva: num
   } catch { return null; }
 }
 
-// DETALLE por línea de un kit de bomba: en vez de 2 renglones agrupados (Paneles / Resto), emite UNA
-// línea por componente preservando EXACTO las bases por alícuota (baseP 10,5% + baseR 21%). Los precios
-// por línea salen del catálogo (components.precio_ars); la BOMBA no tiene precio propio → toma el RESTO
-// del bloque 21% (así el bloque suma exacto). Devuelve null si no se puede (sin precios o bomba ≤ 0) →
-// el caller cae al agrupado de 2 líneas. `esPanelIt` clasifica paneles (10,5%).
-async function lineasDetalleKit(
-  sql: any, items: any[], baseP: number, baseR: number, esPanelIt: (it: any) => boolean,
-): Promise<{ codigo: string; descripcion: string; cantidad: number; total: number; iva_pct: number }[] | null> {
-  try {
-    if (!Array.isArray(items) || !items.length) return null;
-    const panels = items.filter(esPanelIt);
-    const resto = items.filter((it: any) => !esPanelIt(it));
-    const accs = resto.filter((it: any) => !it.es_bomba);
-    const bombas = resto.filter((it: any) => it.es_bomba);
-    if (!bombas.length || !panels.length) return null; // necesita bomba + panel para el split
-    // Precios de catálogo de los accesorios (components → precio_ars). Bomba = resto del bloque.
-    const codsAcc = accs.map((it: any) => String(it.codigo)).filter(Boolean);
-    const precio: Record<string, number> = {};
-    if (codsAcc.length) {
-      const cat = await sql`SELECT codigo, precio_ars FROM components WHERE codigo = ANY(${codsAcc})` as any[];
-      for (const c of cat) if (precio[String(c.codigo)] == null) precio[String(c.codigo)] = Number(c.precio_ars) || 0;
-    }
-    // Redondeo a 2 decimales (las bases del desglose son de 2 decimales; NO redondear a entero →
-    // introduciría 1 peso de descuadre vs el total AFIP). Bomba/último-panel absorben el residuo exacto.
-    const R2 = (x: number) => +x.toFixed(2);
-    const out: { codigo: string; descripcion: string; cantidad: number; total: number; iva_pct: number }[] = [];
-    // 10,5% — paneles: reparten baseP por cantidad; el último absorbe el residuo → Σ == baseP exacto.
-    const totPanCant = panels.reduce((a: number, it: any) => a + (Number(it.cantidad) || 1), 0) || 1;
-    let accPan = 0;
-    panels.forEach((p: any, i: number) => {
-      const cant = Number(p.cantidad) || 1;
-      const t = i === panels.length - 1 ? R2(baseP - accPan) : R2(baseP * cant / totPanCant);
-      accPan = R2(accPan + t);
-      out.push({ codigo: String(p.codigo || ""), descripcion: p.descripcion || p.codigo || "", cantidad: cant, total: t, iva_pct: 10.5 });
-    });
-    // 21% — accesorios a su precio de catálogo; la BOMBA toma el resto (baseR − Σ accesorios) al centavo.
-    let accSum = 0;
-    const accLines = accs.map((a: any) => {
-      const cant = Number(a.cantidad) || 1;
-      const t = R2((precio[String(a.codigo)] || 0) * cant);
-      accSum = R2(accSum + t);
-      return { codigo: String(a.codigo || ""), descripcion: a.descripcion || a.codigo || "", cantidad: cant, total: t, iva_pct: 21 };
-    });
-    const bombaTotal = R2(baseR - accSum);
-    if (!(bombaTotal > 0)) return null; // accesorios exceden el bloque → data mala, no detallar
-    // La bomba primero (renglón principal), luego los accesorios.
-    for (const b of bombas) out.push({ codigo: String(b.codigo || ""), descripcion: b.descripcion || b.codigo || "", cantidad: Number(b.cantidad) || 1, total: bombaTotal, iva_pct: 21 });
-    out.push(...accLines);
-    return out;
-  } catch { return null; }
-}
-
 // Comisión del revendedor (USD). RI → base TOTAL (c/IVA); otra condición → base NETO.
 async function calcComision(sql: any, revendedor_id: number | null, receptorFinalId: number, totalUsd: number, netoUsd: number): Promise<{ pct: number; monto: number }> {
   if (!revendedor_id) return { pct: 0, monto: 0 };
@@ -1201,18 +1149,12 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       if (panelNetoP > 0) {
         const baseP = +(Number(des.ivaArr.find((x) => x.id === 4)?.base) || 0).toFixed(2);
         const baseR = +(Number(des.ivaArr.find((x) => x.id === 5)?.base) || 0).toFixed(2);
-        // DETALLE por línea (igual que la emisión). Fallback a 2 líneas si no se puede.
-        const detalle = await lineasDetalleKit(sql, items, baseP, baseR, esPanelIt);
-        if (detalle && detalle.length) {
-          items_factura = detalle.map((l) => ({ cantidad: l.cantidad || 1, descripcion: l.descripcion || l.codigo || "", total: l.total, alic: l.iva_pct === 10.5 ? "10,5%" : "21%" }));
-        } else {
-          const panels = items.filter(esPanelIt); const resto = items.filter((it: any) => !esPanelIt(it));
-          const cantPan = panels.reduce((a: number, it: any) => a + (Number(it.cantidad) || 1), 0) || 1;
-          items_factura = [
-            { cantidad: cantPan, descripcion: "Paneles solares" + (panels.length ? " — " + detIt(panels) : ""), total: baseP, alic: "10,5%" },
-            { cantidad: 1, descripcion: "Bomba, controlador y accesorios — " + detIt(resto), total: baseR, alic: "21%" },
-          ];
-        }
+        const panels = items.filter(esPanelIt); const resto = items.filter((it: any) => !esPanelIt(it));
+        const cantPan = panels.reduce((a: number, it: any) => a + (Number(it.cantidad) || 1), 0) || 1;
+        items_factura = [
+          { cantidad: cantPan, descripcion: "Paneles solares" + (panels.length ? " — " + detIt(panels) : ""), total: baseP, alic: "10,5%" },
+          { cantidad: 1, descripcion: "Bomba, controlador y accesorios — " + detIt(resto), total: baseR, alic: "21%" },
+        ];
       } else {
         items_factura = items.map((it: any) => ({ cantidad: it.cantidad || 1, descripcion: it.descripcion || it.codigo || "", total: convP(it.subtotal) }));
       }
@@ -1376,18 +1318,6 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         if (panelNetoF > 0) {
           const baseP = +(Number(desglose.ivaArr.find((x) => x.id === 4)?.base) || 0).toFixed(2); // 10,5%
           const baseR = +(Number(desglose.ivaArr.find((x) => x.id === 5)?.base) || 0).toFixed(2); // 21%
-          // DETALLE por línea (una por componente, precios del catálogo, bomba = resto). Si no se puede
-          // (sin precios / data mala) cae al agrupado de 2 líneas. Preserva baseP + baseR exactos.
-          const detalle = await lineasDetalleKit(sql, items, baseP, baseR, esPanelItem);
-          if (detalle && detalle.length) {
-            let ordn = 0;
-            for (const l of detalle) {
-              const cant = l.cantidad || 1;
-              await sql`INSERT INTO fg_items (comprobante_id, descripcion, cantidad, precio_unitario, total, orden)
-                VALUES (${compId}, ${(l.descripcion || l.codigo || "").slice(0, 300)}, ${cant}, ${+(l.total / cant).toFixed(2)}, ${l.total}, ${ordn++})`;
-            }
-            return;
-          }
           const panels = items.filter(esPanelItem); const resto = items.filter((it: any) => !esPanelItem(it));
           const cantPan = panels.reduce((a: number, it: any) => a + (Number(it.cantidad) || 1), 0) || 1;
           const descP = "Paneles solares" + (panels.length ? " — " + detalleItems(panels) : "");
