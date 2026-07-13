@@ -22,7 +22,13 @@ export async function middleware(req: NextRequest) {
   // En ese host: se sirve esa ruta + su API pública; TODO lo demás (incluida la raíz) → 404.
   const host = (req.headers.get("host") || "").toLowerCase();
   if (host.startsWith("visor.")) {
-    if (pathname === "/lista-precios-revendedores" || pathname.startsWith("/api/public/")) return NextResponse.next();
+    // El visor sirve el visor de precios + las PÁGINAS PÚBLICAS cara-al-cliente por token
+    // (comprobante /p/[token], envío /envio/[token]) y su API pública. El token ES la credencial;
+    // no revela el dominio de gestión (mantiene el señuelo). Todo lo demás → 404.
+    // (Bug 13/07: los mails/links al cliente se arman con base visor.febecos.com pero el visor 404eaba
+    //  /p/ y /envio/ → el cliente veía "No encontrado". Al permitirlos acá, esos links funcionan.)
+    if (pathname === "/lista-precios-revendedores" || pathname.startsWith("/api/public/")
+        || pathname.startsWith("/p/") || pathname.startsWith("/envio/")) return NextResponse.next();
     return new NextResponse("No encontrado", { status: 404 });
   }
 
