@@ -137,7 +137,10 @@ export async function POST(req: NextRequest) {
           const nro = numRow[0].ultimo_numero;
           pedido_numero = "PED-" + String(nro).padStart(4, "0");
           try {
-            await sql`INSERT INTO fv_pedidos (numero, recibido, estado, payload) VALUES (${pedido_numero}, ${new Date().toISOString()}, 'pendiente_confirmacion', ${JSON.stringify(payload)}::jsonb)`;
+            // public_token: credencial del link PÚBLICO del pedido (datos de envío que carga el cliente).
+            // Se genera SIEMPRE al crear el pedido — sin esto el link salía vacío → 404 (bug PED-0045).
+            const pedToken = (globalThis.crypto?.randomUUID?.() || (await import("crypto")).randomUUID());
+            await sql`INSERT INTO fv_pedidos (numero, recibido, estado, payload, public_token) VALUES (${pedido_numero}, ${new Date().toISOString()}, 'pendiente_confirmacion', ${JSON.stringify(payload)}::jsonb, ${pedToken})`;
             // ── Stock propio: al CONFIRMAR se descuenta del depósito todo ítem que tenga stock cargado
             //    (descontarStock saltea lo que no existe en fg_productos) y el pedido queda con
             //    stock_validado=true en un solo paso (auto). ──
