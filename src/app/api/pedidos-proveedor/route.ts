@@ -371,7 +371,9 @@ export async function PATCH(req: NextRequest) {
       const moneda = pg.moneda === "ARS" ? "ARS" : "USD";
       const tc = Number(pg.tc) || 0;
       const montoUsd = moneda === "USD" ? monto : (tc > 0 ? monto / tc : 0);
-      const pago = { monto, moneda, tc: tc || null, medio: pg.medio || "transferencia", fecha: pg.fecha || new Date().toISOString().slice(0, 10), nota: pg.nota || "", monto_usd: +montoUsd.toFixed(2) };
+      // Comprobante de pago adjunto (cheque/transferencia leído por visión) — queda con el pago.
+      const arch = b.pago?.archivo && b.pago.archivo.b64 ? { nombre: String(b.pago.archivo.nombre || "comprobante"), tipo: String(b.pago.archivo.tipo || ""), b64: String(b.pago.archivo.b64) } : null;
+      const pago = { monto, moneda, tc: tc || null, medio: pg.medio || "transferencia", fecha: pg.fecha || new Date().toISOString().slice(0, 10), nota: pg.nota || "", monto_usd: +montoUsd.toFixed(2), archivo: arch };
       const pagos = Array.isArray(row.pagos) ? row.pagos : [];
       pagos.push(pago);
       const totalPagUsd = pagos.reduce((a: number, p: any) => a + (Number(p.monto_usd) || 0), 0);

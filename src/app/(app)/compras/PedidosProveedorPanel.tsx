@@ -157,6 +157,7 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
   const [recep, setRecep] = useState<any[] | null>(null); const [remito, setRemito] = useState(""); const [notas, setNotas] = useState("");
   // pago
   const [pgMonto, setPgMonto] = useState(""); const [pgMoneda, setPgMoneda] = useState("USD"); const [pgTc, setPgTc] = useState(""); const [pgMedio, setPgMedio] = useState("transferencia"); const [pgFecha, setPgFecha] = useState(""); const [pgNota, setPgNota] = useState("");
+  const [pgArchivo, setPgArchivo] = useState<any | null>(null); const [leyendoPago, setLeyendoPago] = useState(false);
   // selector de unificación (elegir qué pendientes del mismo proveedor enviar juntos)
   const [unif, setUnif] = useState<{ cands: any[]; sel: Record<number, boolean> } | null>(null);
   const [contactos, setContactos] = useState<{ to: string; cc: string[] } | null>(null);  // CRM: Para + copias disponibles
@@ -219,11 +220,37 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
   };
   const iniciarRecep = () => setRecep(items.map((it: any) => ({ codigo: it.codigo, descripcion: it.descripcion, costo_usd: it.costo_usd, cantidad: Number(it.cantidad) || 0, pedida: Number(it.cantidad) || 0 })));
   const guardarRecep = (conDif: boolean) => { post({ accion: "recibir", items_recibidos: recep, numero_remito: remito, notas, con_diferencias: conDif }); setRecep(null); setSolapa("detalle"); };
+  // Subir el COMPROBANTE DE PAGO (cheque/transferencia) y leerlo por visión (mismo endpoint que el
+  // cobro del cliente: /api/leer-pago). PRE-CARGA los campos para que Guille CONFIRME — NO registra
+  // solo (guardrail money-path). El archivo queda adjunto al pago.
+  const leerPago = async (files: FileList | null) => {
+    if (!files?.length) return;
+    const f = files[0];
+    const b64 = await toB64(f);
+    const arch = { nombre: f.name, tipo: f.type, b64 };
+    setPgArchivo(arch);
+    setLeyendoPago(true);
+    try {
+      const r = await fetch("/api/leer-pago", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ b64, tipo: f.type }) });
+      const d = await r.json().catch(() => null);
+      if (d?.ok && d.data) {
+        const dd = d.data;
+        if (dd.monto != null) { setPgMonto(String(dd.monto)); setPgMoneda(dd.moneda === "USD" ? "USD" : "ARS"); }
+        if (dd.medio) { const m = String(dd.medio).toLowerCase(); setPgMedio(m.includes("cheque") ? "cheque" : m.includes("efectivo") ? "efectivo" : "transferencia"); }
+        if (dd.fecha) setPgFecha(String(dd.fecha).slice(0, 10));
+        if (dd.numero) setPgNota((prev) => prev || `${/cheque/i.test(dd.medio || "") ? "N° cheque" : "N° op."} ${dd.numero}${dd.banco ? " · " + dd.banco : ""}`);
+        alert("🔍 Comprobante leído. Revisá los datos precargados (monto/medio/fecha/N°) y tocá «Registrar pago»." + (dd.monto == null ? "\n⚠️ No pude leer el monto — completalo a mano." : ""));
+      } else {
+        alert("No pude leer el comprobante automáticamente. Cargá los datos a mano — el archivo igual quedó adjunto al pago.");
+      }
+    } catch { alert("No se pudo leer el comprobante. Cargá los datos a mano (el archivo queda adjunto)."); }
+    finally { setLeyendoPago(false); }
+  };
   const agregarPago = async () => {
     if (!Number(pgMonto)) { alert("Ingresá el monto del pago."); return; }
     if (pgMoneda === "ARS" && !Number(pgTc)) { alert("Ingresá el TC del momento (pago en $)."); return; }
-    const d = await post({ accion: "pago", pago: { monto: Number(pgMonto), moneda: pgMoneda, tc: Number(pgTc) || 0, medio: pgMedio, fecha: pgFecha || null, nota: pgNota } });
-    if (d) { setPgMonto(""); setPgTc(""); setPgNota(""); if (d.saldado) setSolapa("recepcion"); }
+    const d = await post({ accion: "pago", pago: { monto: Number(pgMonto), moneda: pgMoneda, tc: Number(pgTc) || 0, medio: pgMedio, fecha: pgFecha || null, nota: pgNota, archivo: pgArchivo || null } });
+    if (d) { setPgMonto(""); setPgTc(""); setPgNota(""); setPgArchivo(null); if (d.saldado) setSolapa("recepcion"); }
   };
   const subirFactura = async (files: FileList | null) => { if (!files?.length) return; const f = files[0]; const d = await post({ accion: "factura", archivo: { nombre: f.name, tipo: f.type, b64: await toB64(f) } }); if (d?.datos?.nro_factura) alert("📄 Factura leída · N° " + d.datos.nro_factura + (d.datos.total ? ` · total USD/$ ${d.datos.total}` : "")); else if (d) alert("Factura cargada. No pude leer el N° automáticamente (cargá imagen JPG/PNG si es PDF)."); };
   const subirProforma = async (files: FileList | null) => {
@@ -476,7 +503,7 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
               {proformas.length > 0 && (
                 <div className="text-[11px] text-gray-500 mb-2">{proformas.length} proforma{proformas.length > 1 ? "s" : ""}: {proformas.map((pf: any, i: number) => <span key={i}>{i > 0 ? " + " : ""}{pf.numero ? `N° ${pf.numero} ` : ""}{pf.moneda || "USD"} {Number(pf.monto || 0).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</span>)}</div>
               )}
-              {pagos.length > 0 && <div className="text-xs text-gray-600 mb-2 space-y-0.5">{pagos.map((x: any, i: number) => <div key={i}>• {fmtF(x.fecha)} · {x.medio} · {x.moneda === "ARS" ? "$ " + Number(x.monto).toLocaleString("es-AR") + (x.tc ? ` (TC ${x.tc})` : "") : fUSD(x.monto)} → {fUSD(x.monto_usd)}{x.nota ? " · " + x.nota : ""}</div>)}</div>}
+              {pagos.length > 0 && <div className="text-xs text-gray-600 mb-2 space-y-0.5">{pagos.map((x: any, i: number) => <div key={i}>• {fmtF(x.fecha)} · {x.medio} · {x.moneda === "ARS" ? "$ " + Number(x.monto).toLocaleString("es-AR") + (x.tc ? ` (TC ${x.tc})` : "") : fUSD(x.monto)} → {fUSD(x.monto_usd)}{x.nota ? " · " + x.nota : ""}{x.archivo?.b64 ? <a href={`data:${x.archivo.tipo};base64,${x.archivo.b64}`} download={x.archivo.nombre || "comprobante"} className="text-febo-azul underline ml-1" title="Comprobante de pago adjunto">📎</a> : ""}</div>)}</div>}
               <div className="flex flex-wrap items-end gap-2 mb-2">
                 <label className="text-xs text-gray-500">Monto<input type="number" value={pgMonto} onChange={(ev) => setPgMonto(ev.target.value)} className="block w-28 border border-gray-300 rounded px-2 py-1 text-sm" /></label>
                 <label className="text-xs text-gray-500">Moneda<select value={pgMoneda} onChange={(ev) => setPgMoneda(ev.target.value)} className="block border border-gray-300 rounded px-2 py-1 text-sm"><option value="USD">USD</option><option value="ARS">$ (ARS)</option></select></label>
@@ -486,6 +513,8 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
                 <button disabled={busy} onClick={agregarPago} className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-sm font-semibold disabled:opacity-50">+ Registrar pago</button>
               </div>
               <input value={pgNota} onChange={(ev) => setPgNota(ev.target.value)} placeholder="nota del pago (opcional, ej. N° cheque)" className="w-full border border-gray-300 rounded px-2 py-1 text-xs mb-2" />
+              {/* Comprobante de PAGO (cheque/transferencia): lo lee por visión y precarga los campos para confirmar. */}
+              <label className="block text-xs text-gray-500 mb-2">🔍 Comprobante de pago (cheque/transferencia — se lee y precarga monto/medio/fecha/N°){pgArchivo?.nombre ? <a href={`data:${pgArchivo.tipo};base64,${pgArchivo.b64}`} download={pgArchivo.nombre} className="text-emerald-600 underline ml-1">✓ {pgArchivo.nombre}</a> : ""}{leyendoPago ? <span className="text-blue-600 ml-1">leyendo…</span> : ""}<input type="file" accept="image/*,application/pdf" disabled={leyendoPago} onChange={(ev) => leerPago(ev.target.files)} className="block mt-1 text-xs" /><span className="text-[10px] text-gray-400">Revisá lo precargado y tocá «Registrar pago» — no se registra solo.</span></label>
               <label className="block text-xs text-gray-500">Factura del proveedor (al cargarla se lee el N°){p.factura_archivo?.nombre ? <a href={`data:${p.factura_archivo.tipo};base64,${p.factura_archivo.b64}`} download={p.factura_archivo.nombre} className="text-emerald-600 underline ml-1">✓ {p.factura_archivo.nombre}</a> : ""}<input type="file" accept="image/*,application/pdf" onChange={(ev) => subirFactura(ev.target.files)} className="block mt-1 text-xs" /></label>
               {p.numero_factura && <div className="text-xs text-gray-700 mt-1">🧾 N° factura: <b>{p.numero_factura}</b>{p.factura_total ? ` · total ${fUSD(p.factura_total)}` : ""}{p.factura_fecha ? ` · ${fmtF(p.factura_fecha)}` : ""}</div>}
             </Paso>
