@@ -180,6 +180,10 @@ function Presupuestos() {
   const [tipo, setTipo] = useState(""); const [q, setQ] = useState("");
   const [estado, setEstado] = useState(""); const [vendedor, setVendedor] = useState("");
   const [estados, setEstados] = useState<string[]>([]); const [vendedores, setVendedores] = useState<string[]>([]);
+  // Ocultar los descartados (anulado/cancelado/reemplazado) en la vista por defecto — filtro EN EL
+  // FRONTEND (no en la query del listado) a propósito: así nunca puede vaciar la lista; el peor caso
+  // es mostrar de más. Se ven activando "ver descartados" o filtrando por ese estado explícito.
+  const [verDescartados, setVerDescartados] = useState(false);
   const [loading, setLoading] = useState(true);
   const [editId, setEditId] = useState<number | null>(null);
   const [mailFor, setMailFor] = useState<Presup | null>(null);
@@ -239,6 +243,12 @@ function Presupuestos() {
   }
   const nombreCli = (r: Presup) => titleCase(r.cliente_display || r.cliente_razon_social || [r.cliente_nombre, r.cliente_apellido].filter(Boolean).join(" ")) || "—";
   const selCls = "border border-gray-300 rounded-lg px-3 py-2 text-sm";
+  // Vista visible: oculta descartados salvo que se pidan explícitamente (checkbox o filtro de estado).
+  const DESCARTADOS = new Set(["anulado", "cancelado", "reemplazado"]);
+  const rowsVisibles = (verDescartados || estado)
+    ? rows
+    : rows.filter((r) => !DESCARTADOS.has((r.estado || "").toLowerCase()));
+  const nDescartadosOcultos = rows.length - rowsVisibles.length;
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-4 items-center">
@@ -255,7 +265,13 @@ function Presupuestos() {
           {estados.map((e) => <option key={e} value={e}>{e}</option>)}
         </select>
         <button onClick={() => load()} disabled={loading} title="Actualizar la lista" className="px-3 py-2 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">{loading ? "…" : "🔄 Actualizar"}</button>
-        <span className="text-sm text-gray-500">{rows.length}</span>
+        <span className="text-sm text-gray-500">{rowsVisibles.length}</span>
+        {(nDescartadosOcultos > 0 || verDescartados) && !estado && (
+          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer" title="Anulados / cancelados / reemplazados">
+            <input type="checkbox" checked={verDescartados} onChange={(e) => setVerDescartados(e.target.checked)} />
+            ver descartados{nDescartadosOcultos > 0 ? ` (${nDescartadosOcultos})` : ""}
+          </label>
+        )}
         {selNums.length > 0 && (
           <>
             <button onClick={abrirResumenConsolidado} disabled={selNums.length < 2} title="Genera una propuesta consolidada sumando los presupuestos FV seleccionados: una línea por equipo + GRAN TOTAL + IVA 10,5% y 21% discriminados." className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold disabled:opacity-40">📄 Resumen consolidado ({selNums.length})</button>
@@ -270,8 +286,8 @@ function Presupuestos() {
           </tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={10} className="text-center py-8 text-gray-400">Cargando…</td></tr>
-            : rows.length === 0 ? <tr><td colSpan={10} className="text-center py-8 text-gray-400">Sin presupuestos</td></tr>
-            : rows.map((r) => (
+            : rowsVisibles.length === 0 ? <tr><td colSpan={10} className="text-center py-8 text-gray-400">Sin presupuestos</td></tr>
+            : rowsVisibles.map((r) => (
               <tr key={r.numero} className="border-t border-gray-100 hover:bg-gray-50">
                 <td className="px-2 py-2 text-center">
                   {r.tipo === "fv" && r.public_token
