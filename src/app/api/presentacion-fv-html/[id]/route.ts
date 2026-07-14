@@ -47,13 +47,6 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
       const op = p.opciones.find((o: any) => o.modo === modoSel);
       if (op) Object.assign(p, { sistema: op.sistema, meta: op.meta, bom: op.bom, presupuesto_numero: op.presupuesto_numero || p.presupuesto_numero });
     }
-    if (_req.nextUrl.searchParams.get("debug") === "1") {
-      return NextResponse.json({
-        build: BUILD_MARK, id: Number(params.id), base_db: rows[0].presupuesto_numero,
-        tieneOpciones, modoSel, opciones_modos: (rows[0].opciones || []).map((o: any) => `${o.modo}:${o.presupuesto_numero}`),
-        numRef_resuelto: p.presupuesto_numero, repago: p.meta?.repago_anios,
-      }, { headers: { "Cache-Control": "no-store" } });
-    }
     const i = p.inputs || {}, s = p.sistema || {}, m = p.meta || {}, cli = i.cliente || {}, u = i.ubicacion || {};
     const fac = p.factura_ref?.datos || {};
     const sup = m.supuestos || {};

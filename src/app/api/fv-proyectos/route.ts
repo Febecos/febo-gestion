@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic"; // datos en vivo — nunca servir una versión cacheada (bug ruta stale 14/07)
+export const revalidate = 0;
 
 // Plataforma de proyectos FV (backlog #3). El proyecto vive en Neon (fuente de verdad); el motor de
 // dimensionado (CÁLCULOS FV) y el enganche al cotizador se agregan después. Este endpoint guarda/lee
