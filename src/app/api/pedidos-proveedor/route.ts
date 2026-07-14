@@ -279,6 +279,38 @@ export async function PATCH(req: NextRequest) {
         total_recibido_usd=${+totalRec.toFixed(2)}, numero_remito=${b.numero_remito || null}, notas_recepcion=${b.notas || null} WHERE id=${id}`;
       return NextResponse.json({ ok: true, estado });
     }
+    // Capa 1 — EDITAR ÍTEMS del pedido a proveedor en la etapa de confirmación (cuando llega la
+    // proforma y el proveedor no tiene exactamente lo pedido): sustituir un ítem por otro SKU / línea
+    // manual, cambiar la cantidad, o eliminar el que no va. Recalcula total_costo_usd y re-mapea las
+    // confirmaciones a los ítems que quedan. NO toca la venta al cliente (esto es costo/proveedor).
+    // Bloqueado una vez que hubo plata/recepción (pagado/recibido) o si está anulado.
+    if (accion === "editar_items") {
+      const row = (await sql`SELECT estado, items_confirmados FROM pedidos_proveedores WHERE id=${id} LIMIT 1` as any[])[0];
+      if (!row) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
+      const bloqueado = ["pagado", "recibido_ok", "recibido_diferencias", "anulado"].includes(row.estado);
+      if (bloqueado) return NextResponse.json({ ok: false, error: `No se puede editar ítems con el pedido en estado "${row.estado}" (ya hubo pago/recepción o está anulado).` }, { status: 409 });
+      const its = Array.isArray(b.items) ? b.items : [];
+      const clean = its.map((it: any) => {
+        const o: any = {
+          codigo: String(it.codigo || "").trim(),
+          descripcion: String(it.descripcion || "").trim(),
+          cantidad: Math.max(0, Number(it.cantidad) || 0),
+          costo_usd: Math.max(0, Number(it.costo_usd) || 0),
+        };
+        if (it.emisor != null && it.emisor !== "") o.emisor = it.emisor;
+        if (it.proveedor != null && it.proveedor !== "") o.proveedor = it.proveedor;
+        if (it.manual) o.manual = true;
+        return o;
+      }).filter((it: any) => it.codigo || it.descripcion); // descarta filas vacías
+      if (!clean.length) return NextResponse.json({ ok: false, error: "El pedido debe quedar con al menos un ítem." }, { status: 400 });
+      const total = +clean.reduce((s: number, it: any) => s + it.costo_usd * it.cantidad, 0).toFixed(2);
+      // Conserva las tildes de confirmación para los códigos que sobreviven; los nuevos entran sin confirmar.
+      const prevConf = new Map((row.items_confirmados || []).map((c: any) => [String(c.codigo), !!c.confirmado]));
+      const items_confirmados = clean.map((it: any) => ({ codigo: it.codigo, confirmado: prevConf.get(it.codigo) ?? false }));
+      await sql`UPDATE pedidos_proveedores SET items=${JSON.stringify(clean)}::jsonb, items_confirmados=${JSON.stringify(items_confirmados)}::jsonb, total_costo_usd=${total} WHERE id=${id}`;
+      return NextResponse.json({ ok: true, total, n: clean.length });
+    }
+
     // Confirmación del proveedor: proforma + moneda + monto solicitado + TC + ítems confirmados (tildes).
     // Postea a la cta cte del proveedor lo que LE DEBEMOS (haber, en USD).
     if (accion === "confirmar_proveedor") {

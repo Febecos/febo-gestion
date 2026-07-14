@@ -158,6 +158,9 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
   // pago
   const [pgMonto, setPgMonto] = useState(""); const [pgMoneda, setPgMoneda] = useState("USD"); const [pgTc, setPgTc] = useState(""); const [pgMedio, setPgMedio] = useState("transferencia"); const [pgFecha, setPgFecha] = useState(""); const [pgNota, setPgNota] = useState("");
   const [pgArchivo, setPgArchivo] = useState<any | null>(null); const [leyendoPago, setLeyendoPago] = useState(false);
+  // Capa 1 — edición de ítems del pedido a proveedor (sustituir / cantidad / eliminar).
+  const [editItems, setEditItems] = useState<any[] | null>(null);
+  const [catBusca, setCatBusca] = useState<{ row: number; q: string; res: any[] } | null>(null);
   // selector de unificación (elegir qué pendientes del mismo proveedor enviar juntos)
   const [unif, setUnif] = useState<{ cands: any[]; sel: Record<number, boolean> } | null>(null);
   const [contactos, setContactos] = useState<{ to: string; cc: string[] } | null>(null);  // CRM: Para + copias disponibles
@@ -220,6 +223,25 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
   };
   const iniciarRecep = () => setRecep(items.map((it: any) => ({ codigo: it.codigo, descripcion: it.descripcion, costo_usd: it.costo_usd, cantidad: Number(it.cantidad) || 0, pedida: Number(it.cantidad) || 0 })));
   const guardarRecep = (conDif: boolean) => { post({ accion: "recibir", items_recibidos: recep, numero_remito: remito, notas, con_diferencias: conDif }); setRecep(null); setSolapa("detalle"); };
+  // ── Capa 1: editar ítems (sustituir SKU/línea manual, cambiar cantidad, eliminar) ──
+  const editBloqueado = ["pagado", "recibido_ok", "recibido_diferencias", "anulado"].includes(e);
+  const startEdit = () => setEditItems(items.map((it: any) => ({ codigo: it.codigo || "", descripcion: it.descripcion || "", cantidad: Number(it.cantidad) || 0, costo_usd: Number(it.costo_usd) || 0, emisor: it.emisor ?? null, proveedor: it.proveedor ?? null, manual: !!it.manual })));
+  const editRow = (i: number, patch: any) => setEditItems((arr) => arr!.map((it, j) => j === i ? { ...it, ...patch } : it));
+  const delRow = (i: number) => setEditItems((arr) => arr!.filter((_, j) => j !== i));
+  const addRow = () => setEditItems((arr) => [...arr!, { codigo: "", descripcion: "", cantidad: 1, costo_usd: 0, emisor: null, proveedor: null, manual: true }]);
+  const buscarCat = async (row: number, q: string) => {
+    setCatBusca({ row, q, res: [] });
+    if (q.trim().length < 2) return;
+    try { const r = await fetch("/api/productos?limit=15&q=" + encodeURIComponent(q.trim())); const d = await r.json(); setCatBusca({ row, q, res: d.ok ? d.productos : [] }); } catch { setCatBusca({ row, q, res: [] }); }
+  };
+  const pickCat = (i: number, prod: any) => { editRow(i, { codigo: prod.codigo || "", descripcion: prod.descripcion || "", costo_usd: Number(prod.costo_usd) || 0, emisor: prod.emisor ?? null, proveedor: prod.proveedor ?? null, manual: false }); setCatBusca(null); };
+  const editTotal = (editItems || []).reduce((s, it) => s + (Number(it.costo_usd) || 0) * (Number(it.cantidad) || 0), 0);
+  const guardarEdit = async () => {
+    const limpio = (editItems || []).filter((it) => String(it.codigo || "").trim() || String(it.descripcion || "").trim());
+    if (!limpio.length) { alert("El pedido debe quedar con al menos un ítem."); return; }
+    const d = await post({ accion: "editar_items", items: limpio });
+    if (d) { setEditItems(null); setCatBusca(null); }
+  };
   // Subir el COMPROBANTE DE PAGO (cheque/transferencia) y leerlo por visión (mismo endpoint que el
   // cobro del cliente: /api/leer-pago). PRE-CARGA los campos para que Guille CONFIRME — NO registra
   // solo (guardrail money-path). El archivo queda adjunto al pago.
@@ -521,9 +543,12 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
           )}
 
           {/* Detalle */}
-          {solapa === "detalle" && (
+          {solapa === "detalle" && editItems === null && (
           <div>
-            <div className="text-[11px] font-bold text-gray-400 uppercase mb-1">Detalle</div>
+            <div className="flex items-center justify-between mb-1">
+              <div className="text-[11px] font-bold text-gray-400 uppercase">Detalle</div>
+              {!editBloqueado && <button onClick={startEdit} title="Sustituir un ítem por otro (lo que el proveedor sí tiene), cambiar la cantidad o eliminar el que no va. Recalcula el total del pedido a proveedor." className="text-xs rounded-lg border border-febo-azul text-febo-azul px-2.5 py-1 font-semibold hover:bg-blue-50">✏️ Editar ítems</button>}
+            </div>
             <table className="w-full text-sm">
               <thead className="text-[10px] uppercase text-gray-400"><tr><th className="text-left px-2 py-1">Código</th><th className="text-left px-2 py-1">Descripción</th><th className="text-center px-2 py-1">Cant</th><th className="text-right px-2 py-1">Costo</th><th className="text-right px-2 py-1">Subtotal</th></tr></thead>
               <tbody>
@@ -531,7 +556,55 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
                   <tr key={i} className="border-t border-gray-100"><td className="px-2 py-1 font-semibold text-febo-azul">{it.codigo}</td><td className="px-2 py-1 text-gray-600">{it.descripcion}</td><td className="px-2 py-1 text-center">{it.cantidad}</td><td className="px-2 py-1 text-right">{fUSD(it.costo_usd)}</td><td className="px-2 py-1 text-right font-semibold">{fUSD((Number(it.costo_usd) || 0) * (Number(it.cantidad) || 0))}</td></tr>
                 ))}
               </tbody>
+              <tfoot><tr className="border-t-2 border-gray-200"><td colSpan={4} className="px-2 py-1 text-right text-xs font-semibold text-gray-500">Total costo</td><td className="px-2 py-1 text-right font-bold">{fUSD(p.total_costo_usd)}</td></tr></tfoot>
             </table>
+          </div>
+          )}
+          {solapa === "detalle" && editItems !== null && (
+          <div>
+            <div className="text-[11px] font-bold text-amber-700 uppercase mb-1">✏️ Editar ítems — sustituir · cantidad · eliminar</div>
+            <div className="text-[11px] text-gray-500 mb-2">Cambiá lo que el proveedor no tiene por otro SKU (🔎 buscar en catálogo) o una línea manual, ajustá la cantidad, o eliminá (🗑) el ítem que no va. El total se recalcula solo.</div>
+            <div className="space-y-1.5">
+              {editItems.map((it: any, i: number) => (
+                <div key={i} className="rounded-lg border border-gray-200 p-2">
+                  <div className="flex items-start gap-1.5">
+                    <div className="flex-1 grid grid-cols-12 gap-1.5">
+                      <input value={it.codigo} onChange={(ev) => editRow(i, { codigo: ev.target.value })} placeholder="Código" className="col-span-3 border border-gray-300 rounded px-1.5 py-1 text-xs font-semibold text-febo-azul" />
+                      <input value={it.descripcion} onChange={(ev) => editRow(i, { descripcion: ev.target.value })} placeholder="Descripción" className="col-span-9 border border-gray-300 rounded px-1.5 py-1 text-xs" />
+                      <label className="col-span-3 text-[10px] text-gray-500">Cant<input type="number" min={0} value={it.cantidad} onChange={(ev) => editRow(i, { cantidad: ev.target.value })} className="block w-full border border-gray-300 rounded px-1.5 py-1 text-xs" /></label>
+                      <label className="col-span-3 text-[10px] text-gray-500">Costo USD<input type="number" min={0} step="0.01" value={it.costo_usd} onChange={(ev) => editRow(i, { costo_usd: ev.target.value })} className="block w-full border border-gray-300 rounded px-1.5 py-1 text-xs" /></label>
+                      <div className="col-span-4 text-[10px] text-gray-500 self-end pb-1">Subtotal <b className="text-gray-700">{fUSD((Number(it.costo_usd) || 0) * (Number(it.cantidad) || 0))}</b></div>
+                      <div className="col-span-2 self-end pb-0.5 flex gap-1 justify-end">
+                        <button onClick={() => buscarCat(i, it.descripcion || it.codigo || "")} title="Buscar en el catálogo para sustituir este ítem" className="text-xs rounded border border-gray-300 px-1.5 py-1 hover:bg-gray-50">🔎</button>
+                        <button onClick={() => delRow(i)} title="Eliminar este ítem del pedido" className="text-xs rounded border border-red-300 text-red-600 px-1.5 py-1 hover:bg-red-50">🗑</button>
+                      </div>
+                    </div>
+                  </div>
+                  {catBusca && catBusca.row === i && (
+                    <div className="mt-1.5 border-t border-gray-100 pt-1.5">
+                      <input autoFocus value={catBusca.q} onChange={(ev) => buscarCat(i, ev.target.value)} placeholder="Buscar producto (código o descripción)…" className="w-full border border-gray-300 rounded px-2 py-1 text-xs mb-1" />
+                      <div className="max-h-40 overflow-y-auto">
+                        {catBusca.res.length === 0 ? <div className="text-[11px] text-gray-400 px-1 py-0.5">{catBusca.q.trim().length < 2 ? "Escribí al menos 2 letras…" : "Sin resultados."}</div>
+                          : catBusca.res.map((prod: any, k: number) => (
+                            <button key={k} onClick={() => pickCat(i, prod)} className="block w-full text-left text-[11px] px-1.5 py-1 hover:bg-blue-50 rounded">
+                              <b className="text-febo-azul">{prod.codigo || "(sin código)"}</b> · {prod.descripcion} <span className="text-gray-400">· {prod.costo_usd != null ? fUSD(prod.costo_usd) : "s/costo"}{prod.proveedor ? " · " + prod.proveedor : ""}</span>
+                            </button>
+                          ))}
+                      </div>
+                      <button onClick={() => setCatBusca(null)} className="text-[11px] text-gray-400 hover:underline mt-0.5">cerrar</button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center justify-between mt-2">
+              <button onClick={addRow} className="text-xs rounded-lg border border-gray-300 px-2.5 py-1 font-semibold hover:bg-gray-50">➕ Agregar línea manual</button>
+              <div className="text-sm">Total: <b className="tabular-nums">{fUSD(editTotal)}</b> {editTotal !== Number(p.total_costo_usd) && <span className="text-[11px] text-amber-600">(antes {fUSD(p.total_costo_usd)})</span>}</div>
+            </div>
+            <div className="flex gap-2 mt-3">
+              <button disabled={busy} onClick={guardarEdit} className="px-3 py-1.5 rounded-lg bg-febo-azul text-white text-sm font-semibold disabled:opacity-50">💾 Guardar cambios</button>
+              <button disabled={busy} onClick={() => { setEditItems(null); setCatBusca(null); }} className="px-3 py-1.5 rounded-lg border border-gray-300 text-sm hover:bg-gray-50">Cancelar</button>
+            </div>
           </div>
           )}
         </div>
