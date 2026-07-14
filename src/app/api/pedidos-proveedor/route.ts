@@ -287,8 +287,11 @@ export async function PATCH(req: NextRequest) {
     if (accion === "editar_items") {
       const row = (await sql`SELECT estado, items_confirmados FROM pedidos_proveedores WHERE id=${id} LIMIT 1` as any[])[0];
       if (!row) return NextResponse.json({ ok: false, error: "no encontrado" }, { status: 404 });
-      const bloqueado = ["pagado", "recibido_ok", "recibido_diferencias", "anulado"].includes(row.estado);
-      if (bloqueado) return NextResponse.json({ ok: false, error: `No se puede editar ítems con el pedido en estado "${row.estado}" (ya hubo pago/recepción o está anulado).` }, { status: 409 });
+      // Editable SOLO mientras el pedido no esté confirmado por el proveedor ni despachado/pagado
+      // (Guille 14/07): estados editables = pendiente / enviado. Una vez confirmado ya hay asiento en
+      // la cta cte del proveedor + proformas → no se toca por acá.
+      const editable = ["pendiente", "enviado"].includes(row.estado);
+      if (!editable) return NextResponse.json({ ok: false, error: `No se puede editar ítems con el pedido en estado "${row.estado}" — solo es editable antes de confirmarlo el proveedor (pendiente/enviado).` }, { status: 409 });
       const its = Array.isArray(b.items) ? b.items : [];
       const clean = its.map((it: any) => {
         const o: any = {

@@ -224,7 +224,7 @@ export function PedidoModal({ id, onClose, onChanged }: { id: number; onClose: (
   const iniciarRecep = () => setRecep(items.map((it: any) => ({ codigo: it.codigo, descripcion: it.descripcion, costo_usd: it.costo_usd, cantidad: Number(it.cantidad) || 0, pedida: Number(it.cantidad) || 0 })));
   const guardarRecep = (conDif: boolean) => { post({ accion: "recibir", items_recibidos: recep, numero_remito: remito, notas, con_diferencias: conDif }); setRecep(null); setSolapa("detalle"); };
   // ── Capa 1: editar ítems (sustituir SKU/línea manual, cambiar cantidad, eliminar) ──
-  const editBloqueado = ["pagado", "recibido_ok", "recibido_diferencias", "anulado"].includes(e);
+  const editBloqueado = !["pendiente", "enviado"].includes(e); // editable solo antes de confirmar el proveedor
   const startEdit = () => setEditItems(items.map((it: any) => ({ codigo: it.codigo || "", descripcion: it.descripcion || "", cantidad: Number(it.cantidad) || 0, costo_usd: Number(it.costo_usd) || 0, emisor: it.emisor ?? null, proveedor: it.proveedor ?? null, manual: !!it.manual })));
   const editRow = (i: number, patch: any) => setEditItems((arr) => arr!.map((it, j) => j === i ? { ...it, ...patch } : it));
   const delRow = (i: number) => setEditItems((arr) => arr!.filter((_, j) => j !== i));
