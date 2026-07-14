@@ -4,6 +4,9 @@ import { PLANTILLA_PROPUESTA_FV } from "@/lib/plantilla-propuesta-fv";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+const BUILD_MARK = "opcion-fix-v2";
 
 // GET /api/presentacion-fv-html/[id] — SALIDA C: la PLANTILLA OFICIAL de propuesta comercial poblada
 // con los datos del proyecto (esquema IDÉNTICO a la plantilla de CÁLCULOS; solo cambian los datos).
@@ -43,6 +46,13 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     if (modoSel && tieneOpciones) {
       const op = p.opciones.find((o: any) => o.modo === modoSel);
       if (op) Object.assign(p, { sistema: op.sistema, meta: op.meta, bom: op.bom, presupuesto_numero: op.presupuesto_numero || p.presupuesto_numero });
+    }
+    if (_req.nextUrl.searchParams.get("debug") === "1") {
+      return NextResponse.json({
+        build: BUILD_MARK, id: Number(params.id), base_db: rows[0].presupuesto_numero,
+        tieneOpciones, modoSel, opciones_modos: (rows[0].opciones || []).map((o: any) => `${o.modo}:${o.presupuesto_numero}`),
+        numRef_resuelto: p.presupuesto_numero, repago: p.meta?.repago_anios,
+      }, { headers: { "Cache-Control": "no-store" } });
     }
     const i = p.inputs || {}, s = p.sistema || {}, m = p.meta || {}, cli = i.cliente || {}, u = i.ubicacion || {};
     const fac = p.factura_ref?.datos || {};
