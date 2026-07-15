@@ -1572,25 +1572,30 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                   return miss.length ? <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1 mb-2">🚚 Faltan datos del transporte: <b>{miss.join(", ")}</b>. <span className="opacity-80">Completalos en la ficha del cliente (CRM › Datos Envíos) antes de despachar.</span></div> : null;
                 })()}
 
-                {/* Valor declarado para el transporte — propio del pedido (lo indica el cliente). */}
+                {/* Valor declarado para el transporte — el que indica el CLIENTE. Va en el PRIMER remito
+                    (el 2º remito, si se parte el envío, lleva su propio valor declarado en el panel de abajo). */}
                 {(() => {
                   const netoUsd = Number(tot.neto) || 0;
                   const ivaUsd = tot.iva != null ? Number(tot.iva) : Math.max(0, (Number(tot.total) || 0) - netoUsd);
                   const totalUsd = netoUsd + ivaUsd;
+                  const tcRef = Number(tcMostrar) || Number(tcPed) || 0;
+                  // Total del pedido EN PESOS (el valor declarado va en $). Si es ARS-native (bomba: neto USD 0
+                  // pero total en pesos en tot.total) se usa el total en pesos directo — antes mostraba $0.
+                  const totalArs = (netoUsd === 0 && Number(tot.total) > 0) ? Math.round(Number(tot.total)) : Math.round(totalUsd * (tcRef || 1));
                   return (
                     <div className="bg-blue-50/40 border border-blue-100 rounded-lg p-2.5 mb-2">
-                      <div className="text-[11px] font-bold text-gray-500 uppercase mb-1.5">💰 Valor declarado (transporte)</div>
+                      <div className="text-[11px] font-bold text-gray-500 uppercase mb-1.5">💰 Valor declarado del cliente (transporte)</div>
                       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-600 mb-2">
-                        <span>Neto del pedido: <b>{money(netoUsd)}</b></span>
-                        <span>Con IVA: <b>{money(totalUsd)}</b></span>
+                        <span>Total del pedido: <b>${totalArs.toLocaleString("es-AR")}</b></span>
                       </div>
                       <div className="flex items-end gap-2">
-                        <label className="text-[11px] text-gray-500">Monto declarado por el cliente ($)
+                        <label className="text-[11px] text-gray-500">Valor declarado del cliente ($)
                           <input value={valorDecl} onChange={(e) => setValorDecl(e.target.value.replace(/[^\d.,]/g, ""))} inputMode="decimal" placeholder="0" className="block mt-0.5 w-40 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
                         </label>
-                        <button type="button" onClick={() => setValorDecl(String(Math.round(totalUsd * (enP ? tcMostrar : 1))))} className="px-2.5 py-1.5 rounded-lg border border-gray-300 text-[11px] hover:bg-gray-50" title="Usar el total con IVA del pedido">= Total c/IVA</button>
+                        <button type="button" onClick={() => setValorDecl(String(totalArs))} className="px-2.5 py-1.5 rounded-lg border border-gray-300 text-[11px] hover:bg-gray-50" title="Usar el total con IVA del pedido">= Total del pedido</button>
                         <button disabled={busy} onClick={() => accion({ accion: "valor_declarado", valor_declarado: valorDecl })} className="px-3 py-1.5 rounded-lg border border-febo-azul text-febo-azul text-sm font-semibold hover:bg-blue-50">💾 Guardar</button>
                       </div>
+                      <div className="text-[10px] text-gray-400 mt-1">Es el que carga el cliente en su link de envío (o lo ponés vos). <b>Se imprime en el remito</b> — arranca el 1er remito con este monto; si partís el envío, el 2º remito lleva su propio valor declarado abajo.</div>
                     </div>
                   );
                 })()}
@@ -1627,6 +1632,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         pagadoOk={pagadoOk}
                         busy={busy}
                         valorBase={ped.desglose_iva ? Number(ped.desglose_iva.total) : (enPesos ? Number(totalCobrar) : Math.round((Number(totalUsdReal) || 0) * (Number(tcMostrar) || Number(tcPed) || 1)))}
+                        declaradoCliente={Number(String(valorDecl).replace(/[^\d]/g, "")) || 0}
                         onGenerar={(sel: any[], valorDecl: number) => accion({ accion: "remitir", items: sel, valor_declarado: valorDecl }, "¿Generar el REMITO con los ítems marcados?")}
                         onRegenerar={(numero: string) => accion({ accion: "regenerar_remito", numero }, `¿Regenerar el remito ${numero} con los datos de envío/transporte actuales? Mantiene el mismo número.`)}
                         onEliminar={(numero: string) => accion({ accion: "eliminar_remito", numero }, `¿Eliminar el remito ${numero}? Solo se puede si es el último emitido.`)}
@@ -2175,7 +2181,7 @@ function Cell({ l, v }: { l: string; v: React.ReactNode }) {
 }
 
 // ---------- REMITO / DESPACHO (parcial: varios remitos por pedido) ----------
-function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, cuitTransporteOk, transporteNombre, facturado, pagadoOk, busy, valorBase, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion, remitosExternos, onRemitoExterno, onEliminarRemitoExterno, onEnviarRemitoExterno }: any) {
+function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, legacyNumero, legacyToken, envioCompleto, transporteOk, cuitTransporteOk, transporteNombre, facturado, pagadoOk, busy, valorBase, declaradoCliente, onGenerar, onRegenerar, onEliminar, onConfirmar, onEnviarConfirmacion, onEliminarConfirmacion, remitosExternos, onRemitoExterno, onEliminarRemitoExterno, onEnviarRemitoExterno }: any) {
   const leerArchivo = (file: File, cb: (a: any) => void) => { const fr = new FileReader(); fr.onload = () => cb({ nombre: file.name, tipo: file.type, b64: String(fr.result) }); fr.readAsDataURL(file); };
   // Cargar el remito del TRANSPORTE (Via Cargo, etc.) directo, sin generar el nuestro: valida con IA y confirma despacho.
   const cargarRemitoExterno = (file: File) => leerArchivo(file, async (archivo) => {
@@ -2227,7 +2233,10 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
   const totQtyAll = (items || []).reduce((a: number, it: any) => a + (esFlete(it) ? 0 : (Number(it?.cantidad) || 0)), 0);
   const selQty = seleccion.reduce((a: number, x: any) => a + x.cantidad, 0);
   const shareSel = totalValAll > 0 ? selVal / totalValAll : (totQtyAll > 0 ? selQty / totQtyAll : 1);
-  const valDeclAuto = Math.round((Number(valorBase) || 0) * shareSel);
+  // El PRIMER remito arranca con el valor declarado del cliente (Guille 14/07); los remitos siguientes
+  // (envío partido) por defecto = parte proporcional del pedido. Siempre editable.
+  const esPrimerRemito = !(remitos && remitos.length);
+  const valDeclAuto = (esPrimerRemito && Number(declaradoCliente) > 0) ? Math.round(Number(declaradoCliente)) : Math.round((Number(valorBase) || 0) * shareSel);
   const [valDecl, setValDecl] = useState("");
 
   // CUIT del transporte: obligatorio para el remito (sale en el comprobante), SALVO que el
@@ -2345,8 +2354,8 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
             </div>
           )}
           <div className="flex flex-wrap items-end gap-2">
-            <label className="text-[11px] text-gray-500">💰 Valor declarado de este remito ($)
-              <input value={valDecl} onChange={(e) => setValDecl(e.target.value.replace(/[^\d]/g, ""))} placeholder={valDeclAuto ? valDeclAuto.toLocaleString("es-AR") : "0"} title="Por defecto = parte proporcional del valor del pedido según los ítems marcados. Editable." className="block mt-0.5 w-40 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
+            <label className="text-[11px] text-gray-500">💰 Valor declarado {esPrimerRemito ? "del remito" : "de ESTE remito (envío partido)"} ($)
+              <input value={valDecl} onChange={(e) => setValDecl(e.target.value.replace(/[^\d]/g, ""))} placeholder={valDeclAuto ? valDeclAuto.toLocaleString("es-AR") : "0"} title={esPrimerRemito ? "Arranca con el valor declarado del cliente (arriba). Editable — es lo que se imprime en el remito." : "2º remito: por defecto la parte proporcional del pedido de los ítems marcados. Editable."} className="block mt-0.5 w-40 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
             </label>
             <button disabled={busy || !habil || !seleccion.length}
               title={!habil ? "Faltan pasos: " + faltan.join(", ") : (!seleccion.length ? "Marcá al menos un ítem a despachar" : "Generar remito de los ítems marcados")}

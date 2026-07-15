@@ -743,7 +743,9 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       const totQty = itemsPed.reduce((a: number, it: any) => a + (esFlete(it) ? 0 : (Number(it?.cantidad) || 0)), 0);
       const remQty = aDespachar.reduce((a: number, x: any) => a + x.cantidad, 0);
       const share = totalVal > 0 ? (remVal / totalVal) : (totQty > 0 ? (remQty / totQty) : 1);
-      const baseDeclarado = Number(plr.valor_declarado) || Number(plr.totales?.total) || 0;
+      // Base del valor declarado (si el front no manda uno explícito): el guardado en el pedido, si no
+      // el que cargó el cliente en su link de envío, si no el total del pedido.
+      const baseDeclarado = Number(plr.valor_declarado) || Number(plr.envio?.valor_declarado) || Number(plr.totales?.total) || 0;
       const valorDeclaradoRemito = (b.valor_declarado != null && String(b.valor_declarado) !== "") ? Math.round(Number(b.valor_declarado)) : Math.round(baseDeclarado * share);
       // El remito va al MISMO receptor que la factura (puede ser un cliente final del revendedor).
       const fac = (await sql`SELECT cliente_id, cliente_nombre FROM fg_comprobantes WHERE numero=${row.factura_numero} AND tipo='factura' LIMIT 1` as any[])[0];
