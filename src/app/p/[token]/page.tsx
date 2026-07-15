@@ -396,6 +396,8 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
   const transpCuit = cuitFmt(snap?.transporte?.cuit || "");
   const vdNum = Number(String(snap?.valor_declarado ?? "").replace(/[^\d.,]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
   const valorDeclTxt = vdNum > 0 ? `VALOR DECLARADO $ ${vdNum.toLocaleString("es-AR")}` : "";
+  // Bloque de texto libre del remito (hasta 4 líneas, recuadrado + negrita + grande).
+  const notaRemito = String(snap?.nota || "").trim();
   const fondo = "/images/" + (snap?.imagen_fondo || "remito-fondo.png");
   const leyendas: string[] = Array.isArray(c.leyendas) ? c.leyendas : [];
   const FONT = "Arial, Helvetica, sans-serif";
@@ -436,7 +438,19 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {transpEmpresa && T(POS.transporte, transpEmpresa)}
         {transpDom && T(POS.transporteDom, transpDom)}
         {transpCuit && T(POS.transporteCuit, transpCuit)}
-        {valorDeclTxt && T({ ...POS.valorDeclarado, top: Math.min(85, POS.itemsTop + (items.length + leyendas.length + 1.5) * POS.itemRowH) }, valorDeclTxt)}
+        {(() => {
+          const yBase = POS.itemsTop + (items.length + leyendas.length + 1) * POS.itemRowH;
+          const notaTop = Math.min(72, yBase);
+          const vdTop = notaRemito ? Math.min(87, notaTop + 12.5) : Math.min(85, yBase + 0.5 * POS.itemRowH);
+          return (
+            <>
+              {notaRemito && (
+                <div style={{ position: "absolute", top: notaTop + "%", left: "6%", width: "62%", border: "2px solid #111", borderRadius: "4px", padding: "6px 10px", fontSize: "13pt", fontWeight: 700, color: "#111", lineHeight: 1.28, whiteSpace: "pre-line", fontFamily: FONT }}>{notaRemito}</div>
+              )}
+              {valorDeclTxt && T({ ...POS.valorDeclarado, top: vdTop }, valorDeclTxt)}
+            </>
+          );
+        })()}
         {items.map((it, i) => (
           <div key={i}>
             <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "pt", textAlign: "center", color: "#111", lineHeight: 1, fontFamily: FONT }}>{it.cantidad}</div>

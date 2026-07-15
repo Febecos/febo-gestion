@@ -1637,7 +1637,7 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
                         busy={busy}
                         valorBase={ped.desglose_iva ? Number(ped.desglose_iva.total) : (enPesos ? Number(totalCobrar) : Math.round((Number(totalUsdReal) || 0) * (Number(tcMostrar) || Number(tcPed) || 1)))}
                         declaradoCliente={Number(String(valorDecl).replace(/[^\d]/g, "")) || 0}
-                        onGenerar={(sel: any[], valorDecl: number) => accion({ accion: "remitir", items: sel, valor_declarado: valorDecl }, "¿Generar el REMITO con los ítems marcados?")}
+                        onGenerar={(sel: any[], valorDecl: number, notaRemito: string) => accion({ accion: "remitir", items: sel, valor_declarado: valorDecl, nota_remito: notaRemito }, "¿Generar el REMITO con los ítems marcados?")}
                         onRegenerar={(numero: string) => accion({ accion: "regenerar_remito", numero }, `¿Regenerar el remito ${numero} con los datos de envío/transporte actuales? Mantiene el mismo número.`)}
                         onEliminar={(numero: string) => accion({ accion: "eliminar_remito", numero }, `¿Eliminar el remito ${numero}? Solo se puede si es el último emitido.`)}
                         transporteNombre={String(env.empresa || "")}
@@ -2243,6 +2243,9 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
   const esPrimerRemito = !(remitos && remitos.length);
   const valDeclAuto = (esPrimerRemito && Number(declaradoCliente) > 0) ? Math.round(Number(declaradoCliente)) : 0;
   const [valDecl, setValDecl] = useState("");
+  // Texto libre del remito (bloque destacado de hasta 4 líneas que se imprime recuadrado, negrita, grande).
+  const [notaRemito, setNotaRemito] = useState("");
+  const setNotaLim = (v: string) => setNotaRemito(v.replace(/\r/g, "").split("\n").slice(0, 4).map((l) => l.slice(0, 60)).join("\n"));
 
   // CUIT del transporte: obligatorio para el remito (sale en el comprobante), SALVO que el
   // operador lo omita a propósito con el botón "generar igual" (Guille 13/07).
@@ -2358,13 +2361,17 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
               </table>
             </div>
           )}
+          <label className="block text-[11px] text-gray-500 mb-2">📝 Texto del remito — hasta 4 líneas (se imprime recuadrado, en negrita y grande)
+            <textarea value={notaRemito} onChange={(e) => setNotaLim(e.target.value)} rows={4} placeholder={"Línea 1\nLínea 2\nLínea 3\nLínea 4"} className="block mt-0.5 w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-mono resize-none" />
+            <span className="text-[10px] text-gray-400">{notaRemito.split("\n").filter(Boolean).length}/4 líneas · máx 60 caracteres por línea</span>
+          </label>
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-[11px] text-gray-500">💰 Valor declarado {esPrimerRemito ? "del remito" : "de ESTE remito (envío partido)"} ($)
               <input value={valDecl} onChange={(e) => setValDecl(e.target.value.replace(/[^\d]/g, ""))} placeholder={valDeclAuto ? valDeclAuto.toLocaleString("es-AR") : "0"} title={esPrimerRemito ? "Arranca con el valor declarado del cliente (arriba). Editable — es lo que se imprime en el remito." : "2º remito: por defecto la parte proporcional del pedido de los ítems marcados. Editable."} className="block mt-0.5 w-40 border border-gray-300 rounded-lg px-3 py-1.5 text-sm" />
             </label>
             <button disabled={busy || !habil || !seleccion.length}
               title={!habil ? "Faltan pasos: " + faltan.join(", ") : (!seleccion.length ? "Marcá al menos un ítem a despachar" : "Generar remito de los ítems marcados")}
-              onClick={() => onGenerar(seleccion, valDecl !== "" ? Number(valDecl) : valDeclAuto)}
+              onClick={() => onGenerar(seleccion, valDecl !== "" ? Number(valDecl) : valDeclAuto, notaRemito)}
               className={`px-4 py-2 rounded-lg text-sm font-semibold ${habil && seleccion.length ? "bg-violet-500 text-white hover:bg-violet-600" : "border border-gray-200 text-gray-300 cursor-not-allowed"}`}>
               📦 Generar remito {seleccion.length > 0 && `(${seleccion.reduce((a: number, x: any) => a + x.cantidad, 0)} u.)`}
             </button>

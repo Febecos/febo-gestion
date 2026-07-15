@@ -777,6 +777,8 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
       // SNAPSHOT inmutable: datos fiscales del receptor (congelados al emitir, NO se leen en vivo),
       // datos del transporte (incl. su domicilio), N° de factura e imagen de fondo de la matriz/talonario.
       const recep = cid ? (await sql`SELECT nombre, razon_social, cuit, condicion_fiscal, domicilio, localidad, provincia, cod_postal FROM clientes WHERE id=${cid} LIMIT 1` as any[])[0] : null;
+      // Nota/texto libre del remito (bloque destacado, hasta 4 líneas) que Guille escribe al generar.
+      const notaRemito = String(b.nota_remito ?? "").replace(/\r/g, "").split("\n").slice(0, 4).map((l: string) => l.slice(0, 60)).join("\n").trim();
       const datosRemito = {
         cliente: {
           nombre: recep?.nombre || recep?.razon_social || cnombre || env.nombre || "",
@@ -791,6 +793,7 @@ export async function POST(req: NextRequest, { params }: { params: { ref: string
         emitido_at: new Date().toISOString(),
         parcial: !completo,
         valor_declarado: valorDeclaradoRemito || null,
+        nota: notaRemito || null,
         items: aDespachar.map((x) => ({ codigo: x.codigo, descripcion: x.descripcion, cantidad: x.cantidad })),
       };
       const comp = (await sql`
