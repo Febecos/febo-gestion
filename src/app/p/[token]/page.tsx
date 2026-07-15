@@ -361,7 +361,7 @@ const POS = {
     monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
   itemsTop: 46.0, itemRowH: 2.74, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 11, detMaxChars: 70,
-  valorDeclarado: { top: 87.2, left: 58, w: 38, size: 12, bold: true }, // pie del remito: la "V" arranca en la ZONA BLANCA a la DERECHA del código de barras (barcode termina ~53%; se deja gap), no lo pisa — Guille 15/07
+  valorDeclarado: { top: 87.2, left: 61.3, w: 34, size: 12, bold: true }, // pie del remito, a la derecha del barcode (+7mm respecto de 58%) — Guille 15/07
 };
 
 // Recorta una frase al máximo de caracteres SIN cortar palabras (corta la frase, no la palabra).
