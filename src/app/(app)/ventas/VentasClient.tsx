@@ -857,8 +857,12 @@ function PedidoModal({ refId, onClose, onChanged }: { refId: string; onClose: ()
         lugar_entrega: dvp.lugar_entrega || cond.lugar || "",
         tipo_transporte: dvp.tipo_transporte || "",
       });
-      // Valor declarado: propio del pedido (fallback al que pudiera haber quedado en envio viejo).
-      setValorDecl(String(d.pedido.payload?.valor_declarado ?? d.pedido.payload?.envio?.valor_declarado ?? ""));
+      // Valor declarado = SOLO lo que declara el cliente (nunca el total). Prioridad: valor cargado por
+      // el cliente en su link (/envio → payload.envio.valor_declarado) → override manual guardado en
+      // gestión (payload.valor_declarado). Nunca se autocompleta con el total (Guille 14/07).
+      const vdCli = String(d.pedido.payload?.envio?.valor_declarado ?? "").trim();
+      const vdManual = String(d.pedido.payload?.valor_declarado ?? "").trim();
+      setValorDecl(vdCli || vdManual);
       // Si el presupuesto se hizo en $ → arrancar pedido y factura en pesos con su TC (una sola vez).
       if (!monedaInit) {
         const tt = d.pedido.payload?.totales || {};
@@ -2233,10 +2237,11 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
   const totQtyAll = (items || []).reduce((a: number, it: any) => a + (esFlete(it) ? 0 : (Number(it?.cantidad) || 0)), 0);
   const selQty = seleccion.reduce((a: number, x: any) => a + x.cantidad, 0);
   const shareSel = totalValAll > 0 ? selVal / totalValAll : (totQtyAll > 0 ? selQty / totQtyAll : 1);
-  // El PRIMER remito arranca con el valor declarado del cliente (Guille 14/07); los remitos siguientes
-  // (envío partido) por defecto = parte proporcional del pedido. Siempre editable.
+  // Valor declarado = SOLO lo que declara el cliente, NUNCA el total del pedido (Guille 14/07).
+  // El 1er remito arranca con el valor declarado del cliente (si lo cargó); los siguientes (envío
+  // partido) arrancan vacíos y se cargan a mano. Nunca se autocompleta con la parte del total.
   const esPrimerRemito = !(remitos && remitos.length);
-  const valDeclAuto = (esPrimerRemito && Number(declaradoCliente) > 0) ? Math.round(Number(declaradoCliente)) : Math.round((Number(valorBase) || 0) * shareSel);
+  const valDeclAuto = (esPrimerRemito && Number(declaradoCliente) > 0) ? Math.round(Number(declaradoCliente)) : 0;
   const [valDecl, setValDecl] = useState("");
 
   // CUIT del transporte: obligatorio para el remito (sale en el comprobante), SALVO que el
