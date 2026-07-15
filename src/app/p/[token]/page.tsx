@@ -361,7 +361,7 @@ const POS = {
     monotributista: { top: 32.8, left: 70.3 },
   } as Record<string, { top: number; left: number }>,
   itemsTop: 46.0, itemRowH: 2.74, cantLeft: 8, cantW: 9, detLeft: 22.3, detW: 73, itemSize: 11, detMaxChars: 70,
-  valorDeclarado: { top: 84.5, left: 22.3, w: 60, size: 11, bold: true }, // top se recalcula en el render (debajo de los ítems)
+  valorDeclarado: { top: 87.2, left: 54, w: 42, size: 12, bold: true, right: true }, // pie del remito, a la DERECHA, a la altura del código de barras (pedido Guille 14/07)
 };
 
 // Recorta una frase al máximo de caracteres SIN cortar palabras (corta la frase, no la palabra).
@@ -438,19 +438,12 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {transpEmpresa && T(POS.transporte, transpEmpresa)}
         {transpDom && T(POS.transporteDom, transpDom)}
         {transpCuit && T(POS.transporteCuit, transpCuit)}
-        {(() => {
-          const yBase = POS.itemsTop + (items.length + leyendas.length + 1) * POS.itemRowH;
-          const notaTop = Math.min(72, yBase);
-          const vdTop = notaRemito ? Math.min(87, notaTop + 12.5) : Math.min(85, yBase + 0.5 * POS.itemRowH);
-          return (
-            <>
-              {notaRemito && (
-                <div style={{ position: "absolute", top: notaTop + "%", left: "6%", width: "62%", border: "2px solid #111", borderRadius: "4px", padding: "6px 10px", fontSize: "13pt", fontWeight: 700, color: "#111", lineHeight: 1.28, whiteSpace: "pre-line", fontFamily: FONT }}>{notaRemito}</div>
-              )}
-              {valorDeclTxt && T({ ...POS.valorDeclarado, top: vdTop }, valorDeclTxt)}
-            </>
-          );
+        {/* Nota (recuadro destacado) en la zona baja del detalle; el VALOR DECLARADO va fijo al pie, a la derecha (altura del barcode). */}
+        {notaRemito && (() => {
+          const notaTop = Math.min(72, POS.itemsTop + (items.length + leyendas.length + 1) * POS.itemRowH);
+          return <div style={{ position: "absolute", top: notaTop + "%", left: "6%", width: "62%", border: "2px solid #111", borderRadius: "4px", padding: "6px 10px", fontSize: "13pt", fontWeight: 700, color: "#111", lineHeight: 1.28, whiteSpace: "pre-line", fontFamily: FONT }}>{notaRemito}</div>;
         })()}
+        {valorDeclTxt && T(POS.valorDeclarado, valorDeclTxt)}
         {items.map((it, i) => (
           <div key={i}>
             <div style={{ position: "absolute", top: (POS.itemsTop + i * POS.itemRowH) + "%", left: POS.cantLeft + "%", width: POS.cantW + "%", fontSize: POS.itemSize + "pt", textAlign: "center", color: "#111", lineHeight: 1, fontFamily: FONT }}>{it.cantidad}</div>
