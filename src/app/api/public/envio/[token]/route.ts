@@ -59,7 +59,10 @@ export async function GET(_req: NextRequest, { params }: { params: { token: stri
         }
       }
     } catch {}
-    const envio = envioCrm || envioPayload;
+    // Merge (no "CRM o payload" excluyente): la ficha del cliente (CRM) pisa campo a campo, pero el
+    // payload del pedido rellena lo que a la copia del CRM le falte — así un campo como valor_declarado
+    // que quedó en payload.envio nunca se pierde si la copia del CRM es más vieja (round-trip robusto).
+    const envio = envioCrm ? { ...envioPayload, ...envioCrm } : envioPayload;
     // El nombre del destinatario sigue al canónico del cliente (CRM), no a una copia vieja.
     if (clienteNombre) envio.nombre = clienteNombre;
     return NextResponse.json({
