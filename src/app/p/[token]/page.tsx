@@ -441,7 +441,7 @@ function RemitoForm({ c, cli, items, onPrint }: { c: any; cli: any; items: any[]
         {/* Nota (recuadro destacado) en la zona baja del detalle; el VALOR DECLARADO va fijo al pie, a la derecha (altura del barcode). */}
         {notaRemito && (() => {
           const notaTop = Math.min(72, POS.itemsTop + (items.length + leyendas.length + 1) * POS.itemRowH);
-          return <div style={{ position: "absolute", top: notaTop + "%", left: "20.3%", width: "66.8%", border: "2px solid #111", borderRadius: "4px", padding: "6px 10px", fontSize: "15pt", fontWeight: 700, color: "#111", lineHeight: 1.28, whiteSpace: "pre-line", fontFamily: FONT }}>{notaRemito}</div>;
+          return <div style={{ position: "absolute", top: notaTop + "%", left: "20.3%", width: "66.8%", border: "2px solid #111", borderRadius: "4px", padding: "6px 10px", fontSize: "15pt", fontWeight: 700, color: "#111", lineHeight: 1.28, whiteSpace: "pre", overflow: "hidden", fontFamily: FONT }}>{notaRemito}</div>;
         })()}
         {valorDeclTxt && T(POS.valorDeclarado, valorDeclTxt)}
         {items.map((it, i) => (

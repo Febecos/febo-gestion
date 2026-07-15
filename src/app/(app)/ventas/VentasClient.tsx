@@ -2245,7 +2245,7 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
   const [valDecl, setValDecl] = useState("");
   // Texto libre del remito (bloque destacado de hasta 4 líneas que se imprime recuadrado, negrita, grande).
   const [notaRemito, setNotaRemito] = useState("");
-  const setNotaLim = (v: string) => setNotaRemito(v.replace(/\r/g, "").split("\n").slice(0, 4).map((l) => l.slice(0, 60)).join("\n"));
+  const setNotaLim = (v: string) => setNotaRemito(v.replace(/\r/g, "").split("\n").slice(0, 4).map((l) => l.slice(0, 42)).join("\n"));
 
   // CUIT del transporte: obligatorio para el remito (sale en el comprobante), SALVO que el
   // operador lo omita a propósito con el botón "generar igual" (Guille 13/07).
@@ -2363,7 +2363,7 @@ function RemitoPanel({ items, remitos, despachoCompleto, despachoConfirmado, leg
           )}
           <label className="block text-[11px] text-gray-500 mb-2">📝 Texto del remito — hasta 4 líneas (se imprime recuadrado, en negrita y grande)
             <textarea value={notaRemito} onChange={(e) => setNotaLim(e.target.value)} rows={4} placeholder={"Línea 1\nLínea 2\nLínea 3\nLínea 4"} className="block mt-0.5 w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-mono resize-none" />
-            <span className="text-[10px] text-gray-400">{notaRemito.split("\n").filter(Boolean).length}/4 líneas · máx 60 caracteres por línea</span>
+            <span className="text-[10px] text-gray-400">{notaRemito.split("\n").filter(Boolean).length}/4 líneas · máx 42 caracteres por línea</span>
           </label>
           <div className="flex flex-wrap items-end gap-2">
             <label className="text-[11px] text-gray-500">💰 Valor declarado {esPrimerRemito ? "del remito" : "de ESTE remito (envío partido)"} ($)
